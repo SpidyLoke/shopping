@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Kaimono Check</title>
+  <meta name="description" content="Snap a Japanese price tag, get it translated, and compare against Shopee and Carousell Malaysia.">
+  <meta name="theme-color" content="#c8102e">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Kaimono">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <button class="brand" id="homeBtn" type="button" aria-label="Home">
+      <span class="brand-mark" aria-hidden="true">買</span>
+      <span class="brand-name">Kaimono Check</span>
+    </button>
+    <div class="topbar-actions">
+      <button class="icon-btn" id="historyBtn" type="button" aria-label="Scan history">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7v5l3 2M3.5 12a8.5 8.5 0 1 0 2.5-6M3 4v4h4"/></svg>
+      </button>
+      <button class="icon-btn" id="settingsBtn" type="button" aria-label="Settings">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <main>
+    <!-- Home -->
+    <section class="view" id="homeView">
+      <div class="hero">
+        <h1>Worth buying here, or cheaper back home?</h1>
+        <p class="muted">Snap the box, tag or shelf label. You get the translation, the yen price in RM, and what it goes for on Shopee and Carousell Malaysia.</p>
+      </div>
+
+      <div class="notice" id="keyNotice" hidden>
+        <strong>Add your Google API key first.</strong>
+        <span>One key covers Vision, Translate and Gemini.</span>
+        <button class="btn btn-small" type="button" data-open-settings>Open settings</button>
+      </div>
+
+      <label class="capture" for="cameraInput">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/></svg>
+        <span>Take a photo</span>
+      </label>
+      <input id="cameraInput" type="file" accept="image/*" capture="environment" hidden>
+
+      <label class="btn btn-ghost btn-block" for="galleryInput">Choose from gallery</label>
+      <input id="galleryInput" type="file" accept="image/*" hidden>
+
+      <p class="rate-pill" id="ratePill">Loading exchange rate…</p>
+
+      <div class="recent" id="recentWrap" hidden>
+        <div class="section-head">
+          <h2>Recent scans</h2>
+          <button class="link" type="button" id="seeAllBtn">See all</button>
+        </div>
+        <ul class="history-list" id="recentList"></ul>
+      </div>
+    </section>
+
+    <!-- Result -->
+    <section class="view" id="resultView" hidden>
+      <div class="result-top">
+        <img class="result-photo" id="resPhoto" alt="">
+        <div class="result-title">
+          <p class="eyebrow" id="resBrand"></p>
+          <h1 id="resName">Reading…</h1>
+          <p class="muted small" id="resTime"></p>
+        </div>
+      </div>
+
+      <ol class="steps" id="steps">
+        <li data-step="vision">Reading the Japanese text</li>
+        <li data-step="translate">Translating to English</li>
+        <li data-step="search">Searching Shopee &amp; Carousell MY</li>
+      </ol>
+
+      <p class="error" id="resError" role="alert" hidden></p>
+
+      <div class="verdict" id="verdict" hidden>
+        <p class="verdict-label" id="verdictLabel"></p>
+        <p class="verdict-detail" id="verdictDetail"></p>
+      </div>
+
+      <div class="prices" id="prices" hidden>
+        <div class="price-card">
+          <p class="price-head">Japan</p>
+          <div class="yen-input">
+            <span>¥</span>
+            <input id="yenInput" type="number" inputmode="numeric" min="0" step="1" placeholder="Price" aria-label="Japan price in yen">
+          </div>
+          <p class="price-rm" id="jpRm">–</p>
+          <p class="price-sub" id="jpNote"></p>
+        </div>
+        <div class="price-card">
+          <p class="price-head">MY new</p>
+          <p class="price-rm" id="myNew">–</p>
+          <p class="price-sub" id="myNewRange"></p>
+        </div>
+        <div class="price-card">
+          <p class="price-head">MY second-hand</p>
+          <p class="price-rm" id="myUsed">–</p>
+          <p class="price-sub" id="myUsedRange"></p>
+        </div>
+      </div>
+
+      <div class="toggles" id="toggles" hidden>
+        <label class="switch">
+          <input type="checkbox" id="taxInclToggle">
+          <span>Tag price already includes 10% tax (税込)</span>
+        </label>
+        <label class="switch">
+          <input type="checkbox" id="taxFreeToggle">
+          <span>Claim tourist tax refund (purchases ¥5,000+)</span>
+        </label>
+      </div>
+
+      <div class="search-links" id="searchLinks" hidden>
+        <a class="btn btn-shopee" id="shopeeLink" target="_blank" rel="noopener">Shopee MY</a>
+        <a class="btn btn-carousell" id="carousellLink" target="_blank" rel="noopener">Carousell MY</a>
+      </div>
+
+      <details class="panel" id="listingsPanel" hidden open>
+        <summary>Listings found</summary>
+        <div id="listings"></div>
+        <p class="muted small" id="aiNotes"></p>
+      </details>
+
+      <details class="panel" id="translationPanel" hidden open>
+        <summary>Translation</summary>
+        <p class="translation" id="translation"></p>
+        <details class="sub">
+          <summary>Original Japanese</summary>
+          <p class="original" id="original" lang="ja"></p>
+        </details>
+      </details>
+
+      <details class="panel" id="sourcesPanel" hidden>
+        <summary>Search sources</summary>
+        <ul class="sources" id="sources"></ul>
+      </details>
+
+      <div class="result-actions">
+        <label class="btn btn-primary" for="cameraInput">Scan another</label>
+        <button class="btn btn-ghost" type="button" id="retryBtn" hidden>Retry price search</button>
+        <button class="btn btn-ghost btn-danger" type="button" id="deleteBtn" hidden>Delete scan</button>
+      </div>
+    </section>
+
+    <!-- History -->
+    <section class="view" id="historyView" hidden>
+      <div class="section-head">
+        <h1>Scan history</h1>
+      </div>
+      <p class="muted" id="historyEmpty">No scans yet.</p>
+      <ul class="history-list" id="historyList"></ul>
+    </section>
+  </main>
+
+  <!-- Settings -->
+  <dialog id="settingsDialog">
+    <form method="dialog" id="settingsForm">
+      <h2>Settings</h2>
+      <label class="field">
+        <span>Google API key</span>
+        <input id="apiKeyInput" type="password" autocomplete="off" spellcheck="false" placeholder="AIza…">
+        <small>Needs Cloud Vision, Cloud Translation and Generative Language (Gemini) APIs enabled. Stored on this device only.</small>
+      </label>
+      <label class="field">
+        <span>Gemini model</span>
+        <input id="modelInput" type="text" autocomplete="off" spellcheck="false" placeholder="gemini-flash-latest">
+        <small>Leave as <code>gemini-flash-latest</code> unless you want to pin a version.</small>
+      </label>
+      <label class="switch">
+        <input type="checkbox" id="defaultTaxFree">
+        <span>Assume tourist tax refund by default</span>
+      </label>
+      <div class="dialog-actions">
+        <button class="btn btn-ghost btn-danger" type="button" id="clearHistoryBtn">Clear history</button>
+        <button class="btn btn-primary" value="save" id="saveSettingsBtn">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
