@@ -44,6 +44,14 @@
         <button class="btn btn-small" type="button" data-open-settings>Open settings</button>
       </div>
 
+      <div class="mode">
+        <div class="segmented" id="modeSwitch" role="radiogroup" aria-label="Shopping for">
+          <button type="button" role="radio" data-mode="new" aria-checked="true">New</button>
+          <button type="button" role="radio" data-mode="used" aria-checked="false">Second-hand shop</button>
+        </div>
+        <p class="muted small" id="modeHint"></p>
+      </div>
+
       <label class="capture" for="cameraInput">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/></svg>
         <span>Take a photo</span>
@@ -90,7 +98,7 @@
 
       <div class="prices" id="prices" hidden>
         <div class="price-card">
-          <p class="price-head">Japan</p>
+          <p class="price-head" id="jpHead">Japan</p>
           <div class="yen-input">
             <span>¥</span>
             <input id="yenInput" type="number" inputmode="numeric" min="0" step="1" placeholder="Price" aria-label="Japan price in yen">
@@ -110,7 +118,21 @@
         </div>
       </div>
 
+      <details class="panel condition" id="conditionPanel" hidden open>
+        <summary id="conditionSummary">Condition</summary>
+        <div class="grade" id="conditionGrade" hidden>
+          <span class="grade-chip" id="conditionGradeValue"></span>
+          <span id="conditionGradeMeaning"></span>
+        </div>
+        <ul class="issues" id="issueList"></ul>
+        <p class="muted small" id="conditionNote"></p>
+      </details>
+
       <div class="toggles" id="toggles" hidden>
+        <label class="switch">
+          <input type="checkbox" id="secondHandToggle">
+          <span>Second-hand item (compare against MY second-hand)</span>
+        </label>
         <label class="switch">
           <input type="checkbox" id="taxInclToggle">
           <span>Tag price already includes 10% tax (税込)</span>

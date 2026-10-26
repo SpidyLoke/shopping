@@ -37,6 +37,7 @@ const settings = {
   get geminiKey() { return store.get('geminiKey', '') || this.apiKey; },
   get model() { return store.get('model', '') || DEFAULT_MODEL; },
   get taxFree() { return store.get('taxFree', false); },
+  get secondHand() { return store.get('secondHand', false); },
 };
 
 function loadHistory() {
@@ -233,7 +234,7 @@ async function translate(text) {
   return { translation: t.translatedText || '', sourceLang: t.detectedSourceLanguage || '' };
 }
 
-function buildPrompt({ ocrText, webGuess }) {
+function buildPrompt({ ocrText, webGuess, secondHand }) {
   return `You are helping a Malaysian shopper standing in a shop in Japan decide whether to buy an item here or back home in Malaysia.
 
 The attached photo shows a product, box, price tag or shelf label in a Japanese shop.
@@ -242,7 +243,7 @@ OCR text from the photo:
 ${ocrText || '(none detected)'}
 """
 Google's visual best guess for the photo: "${webGuess || 'none'}"
-
+${secondHand ? '\nThe shopper is in a second-hand shop (e.g. Hard Off, 2nd Street, Book Off, Sofmap used), so this is a used item. When searching Malaysia, prioritise second-hand listings in similar condition.\n' : ''}
 Tasks:
 1. Identify the exact product: brand, model or variant, size or capacity.
 2. Read the Japanese shop price in yen from the photo or OCR text. If both tax-inclusive (税込) and tax-exclusive (税抜) prices are shown, use the tax-inclusive one. Say whether the number you picked includes Japan's 10% consumption tax. Use null if no price is visible.
@@ -250,6 +251,7 @@ Tasks:
    - New: Shopee Malaysia (shopee.com.my). If Shopee has none, use Lazada Malaysia or official Malaysian retailers.
    - Second-hand: Carousell Malaysia (carousell.com.my), plus used listings on Shopee Malaysia.
    Only use Malaysian listings priced in RM. Exclude accessories, cases, spare parts and different variants. Never invent listings, prices or URLs; if you cannot find any, use null or an empty list.
+4. Read any condition information on the tag or label: the shop's condition grade or rank and what it means on that shop's scale, and every issue, defect or caveat mentioned (e.g. ジャンク, 動作未確認, 通電のみ, 欠品, キズ, 箱なし, 返品不可, 保証なし). Translate each into plain English and rate it: "high" = may not work, sold as-is, no returns or no warranty; "medium" = missing parts, visible damage or heavy wear; "low" = minor cosmetic. List stated positives (e.g. 動作確認済, 美品, 付属品完備) with severity "good". Ignore marketing claims on new-product packaging (e.g. 傷つきにくい means scratch-resistant, not scratched).
 
 Reply with only a JSON object inside a \`\`\`json code block, with exactly these keys:
 {
@@ -264,10 +266,19 @@ Reply with only a JSON object inside a \`\`\`json code block, with exactly these
   "listings": [
     { "platform": "Shopee | Carousell | Lazada | Other", "condition": "new | used", "title": "listing title", "price_rm": 0, "url": "listing URL or null" }
   ],
+  "condition": {
+    "is_used": true,
+    "grade": "grade or rank exactly as shown (e.g. B, ランクA, ジャンク), or null",
+    "grade_meaning": "what that grade means in plain English, or null",
+    "issues": [
+      { "jp": "original Japanese wording", "en": "plain English meaning", "severity": "high | medium | low | good" }
+    ],
+    "missing": ["items stated as missing, in English"]
+  },
   "confidence": "high | medium | low",
   "notes": "one or two sentences on matching caveats (Japan-only variant, voltage, region lock, etc.)"
 }
-Use null for any price you could not find.`;
+Use null for any price you could not find. Use an empty issues list if the tag mentions no condition information.`;
 }
 
 function parseJson(text) {
@@ -279,10 +290,10 @@ function parseJson(text) {
   return JSON.parse(body.slice(start, end + 1));
 }
 
-async function askGemini({ imageB64, ocrText, webGuess }) {
+async function askGemini({ imageB64, ocrText, webGuess, secondHand }) {
   const parts = [];
   if (imageB64) parts.push({ inline_data: { mime_type: 'image/jpeg', data: imageB64 } });
-  parts.push({ text: buildPrompt({ ocrText, webGuess }) });
+  parts.push({ text: buildPrompt({ ocrText, webGuess, secondHand }) });
   const data = await googlePost(
     `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(settings.model)}:generateContent`,
     { contents: [{ role: 'user', parts }], tools: [{ google_search: {} }] },
@@ -317,6 +328,116 @@ function parseYen(text) {
     }
   }
   return best ? best.n : null;
+}
+
+// ---------- condition (second-hand tags) ----------
+
+// Common wording on Japanese second-hand tags (Hard Off, 2nd Street, Book Off, Sofmap…).
+// Gives an instant read before Gemini answers, and a fallback if it fails.
+const TAG_TERMS = [
+  [['ジャンク'], 'high', 'Junk: sold as-is, may not work, no returns'],
+  [['動作未確認', '動作確認なし', '未チェック'], 'high', 'Untested: not confirmed working'],
+  [['通電のみ', '通電確認のみ'], 'high', 'Only checked that it powers on'],
+  [['動作不良', '不具合', '故障'], 'high', 'Faulty or broken'],
+  [['動作不可', '起動不可', '電源入らず', '電源が入らない', '不動'], 'high', "Doesn't work or won't power on"],
+  [['現状品', '現状渡し', '現状販売', 'ノークレーム'], 'high', 'Sold as-is'],
+  [['返品不可', '返品・交換不可', '返品交換不可'], 'high', 'No returns'],
+  [['保証なし', '保証無し', '保証対象外'], 'high', 'No warranty'],
+  [['水没'], 'high', 'Water damage'],
+  [['部品取り'], 'high', 'For parts only'],
+  [['画面割れ', '液晶割れ'], 'high', 'Cracked screen'],
+  [['アクティベーションロック'], 'high', 'Activation lock: may be unusable'],
+  [['ネットワーク利用制限', '利用制限'], 'medium', 'Network restriction status listed: make sure it shows ○'],
+  [['付属品なし', '付属品無し', '欠品'], 'medium', 'Missing parts or accessories'],
+  [['元箱なし', '外箱なし', '箱なし', '箱無し'], 'medium', 'No box'],
+  [['説明書なし', '取説なし'], 'medium', 'No manual'],
+  [['ACアダプターなし', 'アダプターなし', '充電器なし', 'ケーブルなし'], 'medium', 'No charger or cable'],
+  [['展示品'], 'medium', 'Ex-display unit'],
+  [['難あり', '訳あり', '訳アリ'], 'medium', 'Flagged as having a flaw'],
+  [['使用感'], 'medium', 'Visible wear'],
+  [['焼き付き', '画面焼け'], 'medium', 'Screen burn-in'],
+  [['ドット抜け'], 'medium', 'Dead pixels'],
+  [['バッテリー劣化', 'バッテリー消耗'], 'medium', 'Worn battery'],
+  [['日焼け', '黄ばみ', '変色'], 'medium', 'Discolouration or yellowing'],
+  [['異音'], 'medium', 'Makes unusual noises'],
+  [['社外品', '非純正'], 'medium', 'Non-genuine parts'],
+  [['書き込み', '線引き'], 'medium', 'Writing or underlining inside'],
+  [['キズ', '傷', 'スレ'], 'low', 'Scratches or scuffs'],
+  [['汚れ', 'シミ'], 'low', 'Dirt or stains'],
+  [['凹み', 'へこみ', 'ヘコミ'], 'low', 'Dents'],
+  [['割れ', '欠け', 'ヒビ'], 'medium', 'Cracks or chips'],
+  [['動作確認済', '動作品', '動作OK'], 'good', 'Tested working'],
+  [['付属品完備', '付属品完品'], 'good', 'All accessories included'],
+  [['新品同様'], 'good', 'Like new'],
+  [['未使用'], 'good', 'Unused'],
+  [['開封品', '開封済'], 'good', 'Opened box, otherwise new'],
+  [['美品'], 'good', 'Good condition'],
+];
+
+const SEVERITY_ORDER = { high: 0, medium: 1, low: 2, good: 3 };
+
+function detectIssues(text) {
+  if (!text) return [];
+  const found = [];
+  const taken = [];
+  const terms = TAG_TERMS.flatMap(([words, severity, en]) => words.map((jp) => ({ jp, severity, en })))
+    .sort((a, b) => b.jp.length - a.jp.length);
+  for (const t of terms) {
+    let i = text.indexOf(t.jp);
+    while (i !== -1) {
+      const end = i + t.jp.length;
+      if (!taken.some(([a, b]) => i < b && end > a)) {
+        taken.push([i, end]);
+        // "傷なし" / "欠品無し" etc. mean the problem is absent.
+        const negated = t.severity !== 'high' && t.severity !== 'good' && !t.jp.endsWith('なし')
+          && /^(な[しい]|無し?|ナシ)/.test(text.slice(end));
+        const hit = negated
+          ? { jp: text.slice(i, end + 2), severity: 'good', en: `No ${t.en.charAt(0).toLowerCase()}${t.en.slice(1)}` }
+          : { jp: t.jp, severity: t.severity, en: t.en };
+        if (!found.some((f) => f.en === hit.en)) found.push(hit);
+      }
+      i = text.indexOf(t.jp, end);
+    }
+  }
+  return found.sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]);
+}
+
+function detectGrade(text) {
+  const m = (text || '').normalize('NFKC').match(/(?:ランク|RANK|状態|中古)\s*[:：]?\s*([SABCD][+-]?)(?![A-Za-z])/i);
+  return m ? m[1].toUpperCase() : null;
+}
+
+const GRADE_MEANINGS = {
+  S: 'Unused or like new',
+  A: 'Very good, light signs of use',
+  B: 'Used, some visible wear',
+  C: 'Heavy wear or noticeable flaws',
+  D: 'Significant damage or problems',
+};
+
+// Gemini's read wins once it arrives; the keyword check covers the wait and failures.
+function conditionFor(entry) {
+  const c = entry.ai?.condition;
+  if (c && Array.isArray(c.issues)) {
+    const issues = c.issues
+      .filter((i) => i && (i.en || i.jp))
+      .map((i) => ({ jp: i.jp || '', en: i.en || i.jp, severity: SEVERITY_ORDER[i.severity] !== undefined ? i.severity : 'medium' }))
+      .sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]);
+    return { source: 'ai', grade: c.grade || null, gradeMeaning: c.grade_meaning || null, issues, missing: Array.isArray(c.missing) ? c.missing : [] };
+  }
+  if (!entry.secondHand) return null;
+  const grade = detectGrade(entry.ocrText);
+  return {
+    source: 'local',
+    grade,
+    gradeMeaning: grade ? `${GRADE_MEANINGS[grade[0]] || ''} (typical scale; shops vary)` : null,
+    issues: detectIssues(entry.ocrText),
+    missing: [],
+  };
+}
+
+function seriousIssues(entry) {
+  return (conditionFor(entry)?.issues || []).filter((i) => i.severity === 'high');
 }
 
 // ---------- pricing & verdict ----------
@@ -356,8 +477,12 @@ function verdictFor(entry) {
   if (!entry.ai) return null;
   if (!jp) return { cls: 'none', label: 'Need the yen price', detail: 'Type the price from the tag to get a verdict.' };
   if (!myNew && !myUsed) return { cls: 'none', label: 'No Malaysian prices found', detail: 'Check the Shopee and Carousell links below.' };
+  return entry.secondHand ? usedVerdict(entry, jp, myNew, myUsed) : newVerdict(jp, myNew, myUsed);
+}
 
-  const pct = (a, b) => Math.round((a / b) * 100);
+const pct = (a, b) => Math.round((a / b) * 100);
+
+function newVerdict(jp, myNew, myUsed) {
   if (myNew) {
     const save = myNew - jp;
     if (jp <= myNew * 0.9) {
@@ -379,6 +504,31 @@ function verdictFor(entry) {
     return { cls: 'maybe', label: 'Cheaper second-hand at home', detail: `Second-hand in Malaysia is ${rm(jp - myUsed)} less. No new listings found.` };
   }
   return { cls: 'buy', label: 'Buy it here', detail: `Even second-hand costs ${rm(myUsed - jp)} more in Malaysia. No new listings found.` };
+}
+
+// Second-hand: compare like for like against Malaysian used prices, then let tag issues temper it.
+function usedVerdict(entry, jp, myNew, myUsed) {
+  let v;
+  if (myUsed) {
+    const save = myUsed - jp;
+    if (jp <= myUsed * 0.9) v = { cls: 'buy', label: 'Buy it here', detail: `${rm(save)} cheaper than second-hand in Malaysia (${pct(save, myUsed)}% less).` };
+    else if (save > 0) v = { cls: 'maybe', label: 'Marginal', detail: `Only ${rm(save)} cheaper than second-hand in Malaysia (${pct(save, myUsed)}% less).` };
+    else v = { cls: 'skip', label: 'Skip it', detail: `${rm(-save)} cheaper second-hand in Malaysia.` };
+    if (myNew && myNew <= jp) v = { cls: 'skip', label: 'Skip it', detail: `It's ${rm(jp - myNew)} cheaper brand new in Malaysia.` };
+  } else {
+    // No used listings to compare: a used item should be well under the new price to be worth it.
+    const save = myNew - jp;
+    if (jp <= myNew * 0.7) v = { cls: 'buy', label: 'Buy it here', detail: `${pct(save, myNew)}% under the new price in Malaysia (${rm(save)} less). No MY second-hand listings found.` };
+    else if (save > 0) v = { cls: 'maybe', label: 'Marginal', detail: `Only ${pct(save, myNew)}% under the new price in Malaysia. No MY second-hand listings found.` };
+    else v = { cls: 'skip', label: 'Skip it', detail: `It's ${rm(-save)} cheaper brand new in Malaysia.` };
+  }
+  const serious = seriousIssues(entry);
+  if (serious.length) {
+    const flags = serious.map((i) => i.en.split(':')[0]).join(', ');
+    if (v.cls === 'buy') v = { cls: 'maybe', label: 'Cheap, but read the issues', detail: v.detail };
+    v.detail += ` Tag says: ${flags}.`;
+  }
+  return v;
 }
 
 function searchQuery(entry) {
@@ -423,6 +573,7 @@ async function startScan(file) {
     yen: null,
     taxIncluded: true,
     taxFree: settings.taxFree,
+    secondHand: settings.secondHand,
     rate: rate?.value || null,
     status: { vision: 'active', translate: 'pending', search: 'pending' },
     errors: [],
@@ -473,7 +624,7 @@ async function searchPrices(entry, imageB64, update) {
   entry.errors = entry.errors.filter((m) => !m.startsWith('Gemini'));
   update();
   try {
-    const { ai, sources } = await askGemini({ imageB64, ocrText: entry.ocrText, webGuess: entry.webGuess });
+    const { ai, sources } = await askGemini({ imageB64, ocrText: entry.ocrText, webGuess: entry.webGuess, secondHand: entry.secondHand });
     entry.ai = ai;
     entry.sources = sources;
     if (!entry.yenEdited) {
@@ -516,7 +667,14 @@ function historyItem(entry) {
   const v = verdictFor(entry);
   const tagCls = { buy: 'tag-buy', maybe: 'tag-maybe', skip: 'tag-skip' }[v?.cls] || '';
   const tagText = { buy: 'Buy', maybe: 'Maybe', skip: 'Skip' }[v?.cls] || (running.has(entry.id) ? '…' : '–');
-  const meta = [toNum(entry.yen) ? yen(entry.yen) : null, jp ? rm(jp) : null, dateFmt.format(entry.createdAt)].filter(Boolean).join(' · ');
+  const serious = seriousIssues(entry).length;
+  const meta = [
+    entry.secondHand ? 'Used' : null,
+    toNum(entry.yen) ? yen(entry.yen) : null,
+    jp ? rm(jp) : null,
+    serious ? `${serious} issue${serious > 1 ? 's' : ''}` : null,
+    dateFmt.format(entry.createdAt),
+  ].filter(Boolean).join(' · ');
   return el('li', {},
     el('button', { class: 'history-item', type: 'button', onclick: () => { location.hash = `#/scan/${entry.id}`; } },
       el('img', { src: entry.thumb, alt: '' }),
@@ -531,10 +689,21 @@ function historyItem(entry) {
 
 function renderHome() {
   $('#keyNotice').hidden = Boolean(settings.apiKey);
+  renderMode();
   const list = loadHistory().slice(0, 3);
   $('#recentWrap').hidden = list.length === 0;
   $('#recentList').replaceChildren(...list.map(historyItem));
   renderRate();
+}
+
+function renderMode() {
+  const used = settings.secondHand;
+  for (const b of document.querySelectorAll('#modeSwitch [data-mode]')) {
+    b.setAttribute('aria-checked', String((b.dataset.mode === 'used') === used));
+  }
+  $('#modeHint').textContent = used
+    ? 'Compares against Malaysian second-hand prices and flags any issues on the tag.'
+    : 'Compares against new prices in Malaysia.';
 }
 
 function renderHistory() {
@@ -563,6 +732,8 @@ function renderPrices(entry) {
   if (document.activeElement !== $('#yenInput')) $('#yenInput').value = toNum(entry.yen) ?? '';
   $('#taxInclToggle').checked = entry.taxIncluded !== false;
   $('#taxFreeToggle').checked = Boolean(entry.taxFree);
+  $('#secondHandToggle').checked = Boolean(entry.secondHand);
+  $('#jpHead').textContent = entry.secondHand ? 'Japan used' : 'Japan';
 
   for (const [key, valueSel, rangeSel] of [['my_new', '#myNew', '#myNewRange'], ['my_used', '#myUsed', '#myUsedRange']]) {
     const r = entry.ai?.[key];
@@ -579,6 +750,48 @@ function renderPrices(entry) {
     $('#verdictLabel').textContent = v.label;
     $('#verdictDetail').textContent = v.detail;
   }
+}
+
+function renderCondition(entry) {
+  const c = conditionFor(entry);
+  const panel = $('#conditionPanel');
+  const show = c && (c.issues.length || c.grade || c.missing.length || entry.secondHand);
+  panel.hidden = !show || entry.status.vision === 'active';
+  if (panel.hidden) return;
+
+  $('#conditionGrade').hidden = !c.grade;
+  $('#conditionGradeValue').textContent = c.grade || '';
+  $('#conditionGradeMeaning').textContent = c.gradeMeaning || '';
+
+  const items = c.issues.map((i) => el('li', { class: `issue sev-${i.severity}` },
+    el('span', { class: 'issue-dot', 'aria-hidden': 'true' }),
+    el('div', {},
+      el('span', { class: 'issue-en' }, i.en),
+      i.jp ? el('span', { class: 'issue-jp', lang: 'ja' }, i.jp) : null,
+    ),
+    el('span', { class: 'visually-hidden' }, ` (${i.severity === 'good' ? 'positive' : `${i.severity} concern`})`),
+  ));
+  if (c.missing.length) {
+    items.push(el('li', { class: 'issue sev-medium' },
+      el('span', { class: 'issue-dot', 'aria-hidden': 'true' }),
+      el('div', {}, el('span', { class: 'issue-en' }, `Missing: ${c.missing.join(', ')}`)),
+    ));
+  }
+  $('#issueList').replaceChildren(...items);
+
+  const highs = c.issues.filter((i) => i.severity === 'high').length;
+  const concerns = c.issues.filter((i) => i.severity !== 'good').length + (c.missing.length ? 1 : 0);
+  $('#conditionSummary').textContent = highs
+    ? `Condition: ${highs} serious issue${highs > 1 ? 's' : ''}`
+    : concerns ? `Condition: ${concerns} thing${concerns > 1 ? 's' : ''} to check` : 'Condition';
+  panel.classList.toggle('has-serious', highs > 0);
+
+  let note = '';
+  if (!c.issues.length && !c.missing.length) {
+    note = c.source === 'ai' ? 'No issues mentioned on the tag.' : 'No issue keywords spotted on the tag.';
+  }
+  if (c.source === 'local') note = `${note} Quick keyword check; the full read arrives with the price search.`.trim();
+  $('#conditionNote').textContent = note;
 }
 
 function renderListings(entry) {
@@ -623,6 +836,7 @@ function renderResult(entry) {
   $('#prices').hidden = !visionDone;
   $('#toggles').hidden = !visionDone;
   renderPrices(entry);
+  renderCondition(entry);
 
   const q = searchQuery(entry);
   $('#searchLinks').hidden = !q;
@@ -717,6 +931,7 @@ function editCurrent(fn) {
   fn(current);
   saveEntry(current);
   renderPrices(current);
+  renderCondition(current);
 }
 
 $('#yenInput').addEventListener('input', (e) => editCurrent((entry) => {
@@ -725,6 +940,14 @@ $('#yenInput').addEventListener('input', (e) => editCurrent((entry) => {
 }));
 $('#taxInclToggle').addEventListener('change', (e) => editCurrent((entry) => { entry.taxIncluded = e.target.checked; }));
 $('#taxFreeToggle').addEventListener('change', (e) => editCurrent((entry) => { entry.taxFree = e.target.checked; }));
+$('#secondHandToggle').addEventListener('change', (e) => editCurrent((entry) => { entry.secondHand = e.target.checked; }));
+
+for (const b of document.querySelectorAll('#modeSwitch [data-mode]')) {
+  b.addEventListener('click', () => {
+    store.set('secondHand', b.dataset.mode === 'used');
+    renderMode();
+  });
+}
 
 $('#retryBtn').addEventListener('click', retrySearch);
 $('#deleteBtn').addEventListener('click', () => {

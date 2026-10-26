@@ -382,6 +382,64 @@ h2 { font-size: 1.05rem; margin: 0; }
 .translation, .original { white-space: pre-wrap; margin: 0 0 10px; overflow-wrap: anywhere; }
 .original { color: var(--muted); font-size: 0.92rem; }
 
+/* Mode switch */
+.mode { display: flex; flex-direction: column; gap: 6px; }
+.mode p { margin: 0; }
+.segmented {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: 4px;
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+.segmented button {
+  min-height: 40px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 600;
+  cursor: pointer;
+}
+.segmented button[aria-checked="true"] {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.12);
+}
+
+/* Condition */
+.condition.has-serious { border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); }
+.condition.has-serious > summary { color: var(--bad); }
+.grade { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font-size: 0.92rem; }
+.grade-chip {
+  flex: none;
+  min-width: 36px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: var(--text);
+  color: var(--bg);
+  font-weight: 750;
+  text-align: center;
+}
+.issues { list-style: none; margin: 0 0 6px; padding: 0; }
+.issue { display: flex; align-items: flex-start; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--line); }
+.issue:last-child { border-bottom: 0; }
+.issue-dot { width: 10px; height: 10px; flex: none; margin-top: 7px; border-radius: 50%; background: var(--muted); }
+.sev-high .issue-dot { background: var(--bad); }
+.sev-medium .issue-dot { background: var(--warn); }
+.sev-good .issue-dot { background: var(--good); }
+.sev-high .issue-en { font-weight: 650; }
+.issue-en { display: block; }
+.issue-jp { display: block; color: var(--muted); font-size: 0.82rem; }
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
 .listing-group { margin-bottom: 12px; }
 .listing-group h3 {
   font-size: 0.78rem;

@@ -50,6 +50,16 @@ Repo **Settings → Pages → Build and deployment → Deploy from a branch → 
 - **Claim tourist tax refund:** knocks the 10% consumption tax off for purchases of ¥5,000 or more. Set it as the default in Settings.
 - **Shopee MY / Carousell MY** buttons open a live search for the product, for when you want to eyeball listings yourself.
 
+### Second-hand shops
+
+Switch the home screen to **Second-hand shop** before scanning at Hard Off, 2nd Street, Book Off, Sofmap and the like. Each scan then:
+
+- Compares the Japan price against **Malaysian second-hand prices** (like for like), and calls it a skip if it's cheaper brand new at home. With no Malaysian used listings, it needs to be 30%+ under the new price to count as a buy.
+- Shows a **Condition** card: the shop's grade (ランクA/B/C…) in plain English, and every issue on the tag ranked by severity. Red: junk, untested, sold as-is, no returns, no warranty. Amber: missing parts, no box, wear. Green: tested working, no scratches.
+- Downgrades a "Buy" to **Cheap, but read the issues** when the tag has a serious issue.
+
+A built-in keyword check flags issues the moment the text is read, so you still get the warnings if Gemini is slow or fails. Gemini's fuller read replaces it when it arrives. The **Second-hand item** switch on any result flips the comparison after the fact.
+
 ### Verdict rules
 
 | Verdict | When |
