@@ -2,6 +2,8 @@
 // for Shopee / Carousell Malaysia prices. Everything runs in the browser; the API key
 // lives in localStorage on the user's device only.
 
+// Bump together with version.json on every release so open copies of the app offer a reload.
+const APP_VERSION = '2026.10.26-5';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -327,17 +329,25 @@ function sameProduct(a, b) {
 
 // ---------- Google APIs ----------
 
-async function googlePost(url, body, service, key = settings.apiKey) {
+// Without a timeout a hung request leaves the scan spinning forever and blocks rescans.
+async function googlePost(url, body, service, key = settings.apiKey, timeoutMs = 30000) {
   let res;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
     res = await fetch(`${url}?key=${encodeURIComponent(key)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+      signal: ctrl.signal,
     });
   } catch {
-    throw new Error(`${service}: network error. Check your connection.`);
+    clearTimeout(timer);
+    throw new Error(ctrl.signal.aborted
+      ? `${service}: no answer after ${timeoutMs / 1000}s. Tap ↻ to try again.`
+      : `${service}: network error. Check your connection.`);
   }
+  clearTimeout(timer);
   let data = null;
   try {
     data = await res.json();
@@ -440,6 +450,7 @@ async function askGemini({ imageB64, ocrText, webGuess, secondHand }) {
     { contents: [{ role: 'user', parts }], tools: [{ google_search: {} }] },
     'Gemini',
     settings.geminiKey,
+    90000, // grounded search regularly takes 20-40s
   );
   const cand = data.candidates?.[0];
   const text = (cand?.content?.parts || []).filter((p) => !p.thought).map((p) => p.text || '').join('');
@@ -925,7 +936,7 @@ function renderPrices(entry) {
     const r = entry.ai?.[key];
     const lo = toNum(r?.low);
     const hi = toNum(r?.high);
-    $(valueSel).textContent = entry.ai ? rm(rangeValue(r)) : '…';
+    $(valueSel).textContent = entry.ai || entry.status.search === 'failed' ? rm(rangeValue(r)) : '…';
     $(rangeSel).textContent = lo && hi && lo !== hi ? `${rm(lo)} to ${rm(hi)}` : (entry.ai && !rangeValue(r) ? 'None found' : '');
   }
 
@@ -1257,3 +1268,23 @@ fetchRate().then(() => {
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }
+
+// The app never reloads itself (hash routing), so check for a newer release on launch and whenever it comes back on screen.
+async function checkForUpdate() {
+  try {
+    const r = await fetch(`version.json?t=${Date.now()}`, { cache: 'no-store' });
+    const { version } = await r.json();
+    $('#updateBar').hidden = !version || version === APP_VERSION;
+  } catch {
+    // offline: try again next time
+  }
+}
+
+$('#updateBtn').addEventListener('click', () => {
+  if (running.size && !confirm('A scan is still running. Reload anyway?')) return;
+  location.reload();
+});
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') checkForUpdate();
+});
+checkForUpdate();
