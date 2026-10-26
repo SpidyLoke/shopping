@@ -589,6 +589,15 @@ div.history-item { cursor: default; }
 .stat-value { font-size: 1.1rem; font-weight: 700; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .stat-value.over { color: var(--bad); }
 .stat-sub { font-size: 0.78rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.trip-saved { padding: 12px 14px; border-radius: 12px; background: var(--good-bg); color: var(--good); }
+.trip-saved.neg { background: var(--bad-bg); color: var(--bad); }
+.trip-saved p { margin: 0; }
+.trip-saved-value { font-size: 1.35rem; font-weight: 750; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+.trip-saved-note { font-size: 0.85rem; color: var(--text); opacity: 0.75; }
+.saved-sum { font-weight: 700; color: var(--good); font-variant-numeric: tabular-nums; }
+.saved-sum.neg { color: var(--bad); }
+.history-saved { margin: 2px 0 0; font-size: 0.83rem; font-weight: 650; color: var(--good); }
+.history-saved.neg { color: var(--bad); }
 .meter { height: 8px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
 .meter-fill { height: 100%; width: 0; border-radius: inherit; background: var(--good); transition: width 0.3s ease; }
 .meter-fill.over { background: var(--bad); }

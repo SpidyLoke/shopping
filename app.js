@@ -3,7 +3,7 @@
 // lives in localStorage on the user's device only.
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.10.26-6';
+const APP_VERSION = '2026.10.26-7';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -1231,7 +1231,7 @@ function scanFailed(entry) {
   return !running.has(entry.id) && Object.values(entry.status).some((st) => st === 'failed' || st === 'active');
 }
 
-function historyItem(entry) {
+function historyItem(entry, opts = {}) {
   if (entry.kind === 'shelf') return shelfHistoryItem(entry);
   const jp = japanPrice(entry).rm;
   const v = verdictFor(entry);
@@ -1264,6 +1264,9 @@ function historyItem(entry) {
         el('p', { class: 'history-name' }, entry.ai?.product_name || entry.webGuess || 'Unidentified item'),
         el('p', { class: 'history-meta' }, meta),
         where ? el('p', { class: 'history-where' }, where) : null,
+        Number.isFinite(opts.saved)
+          ? el('p', { class: `history-saved${opts.saved < 0 ? ' neg' : ''}` }, opts.saved >= 0 ? `Saved ${rm(opts.saved)}` : `${rm(-opts.saved)} more than MY`)
+          : null,
       ),
       el('span', { class: `tag ${tagCls}` }, tagText),
     ),
@@ -1619,6 +1622,13 @@ function renderResult(entry) {
 
 // ---------- trip spending ----------
 
+// What the same thing costs in Malaysia, like for like: a second-hand scan is measured against MY second-hand.
+function malaysiaBaseline(e) {
+  return e.secondHand
+    ? rangeValue(e.ai?.my_used) || rangeValue(e.ai?.my_new)
+    : rangeValue(e.ai?.my_new) || rangeValue(e.ai?.my_used);
+}
+
 function paidYen(e) {
   const y = toNum(e.yen);
   if (!y) return 0;
@@ -1651,7 +1661,20 @@ function tripSummary() {
     // Assume you claim it wherever you qualify; that's the point of tracking it.
     for (const e of g.items) refundRm += (paidYen(e) * TAX / (1 + TAX)) * (fx(e) || 0);
   }
-  return { bought, groups: [...groups.values()].sort((a, b) => b.when - a.when), spentRm, spentYen, refundRm };
+  // Saved = Malaysian price minus what you actually paid here (after the refund where the store qualifies).
+  const savedById = new Map();
+  let savedRm = 0;
+  for (const g of groups.values()) {
+    for (const e of g.items) {
+      const base = malaysiaBaseline(e);
+      if (!base || !fx(e) || !paidYen(e)) continue;
+      const netYen = g.eligible ? paidYen(e) / (1 + TAX) : paidYen(e);
+      const saved = base - netYen * fx(e);
+      savedById.set(e.id, saved);
+      savedRm += saved;
+    }
+  }
+  return { bought, groups: [...groups.values()].sort((a, b) => b.when - a.when), spentRm, spentYen, refundRm, savedRm, savedById };
 }
 
 function renderTrip() {
@@ -1679,8 +1702,16 @@ function renderTrip() {
       ? el('span', { class: 'tag tag-buy' }, 'Tax-free ✓')
       : el('span', { class: 'tag tag-maybe' }, `${yen(TAX_FREE_MIN_YEN - g.yen)} to tax-free`),
   )));
+  const counted = t.savedById.size;
+  $('#tripSaved').hidden = counted === 0;
+  $('#tripSaved').classList.toggle('neg', t.savedRm < 0);
+  $('#tripSavedValue').textContent = t.savedRm >= 0 ? `${rm(t.savedRm)} saved` : `${rm(-t.savedRm)} more`;
+  $('#tripSavedNote').textContent = `${t.savedRm >= 0 ? 'vs' : 'than'} buying in Malaysia${counted < t.bought.length ? ` · ${counted} of ${t.bought.length} items had Malaysian prices` : ''}`;
+  $('#boughtSaved').textContent = counted ? (t.savedRm >= 0 ? `${rm(t.savedRm)} saved` : `${rm(-t.savedRm)} more than MY`) : '';
+  $('#boughtSaved').classList.toggle('neg', t.savedRm < 0);
+
   $('#tripEmpty').hidden = t.bought.length > 0;
-  $('#boughtList').replaceChildren(...t.bought.map(historyItem));
+  $('#boughtList').replaceChildren(...t.bought.map((e) => historyItem(e, { saved: t.savedById.get(e.id) })));
 }
 
 // ---------- side-by-side compare ----------
@@ -1695,7 +1726,7 @@ function renderCompare(ids) {
   }
   const saving = (e) => {
     const jp = japanPrice(e).rm;
-    const base = e.secondHand ? rangeValue(e.ai?.my_used) || rangeValue(e.ai?.my_new) : rangeValue(e.ai?.my_new) || rangeValue(e.ai?.my_used);
+    const base = malaysiaBaseline(e);
     return jp && base ? base - jp : null;
   };
   // Each row: label, cell renderer, and optionally a score to highlight the best (lowest) value.

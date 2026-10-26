@@ -65,7 +65,7 @@ Switch the home screen to **Shelf** and photograph a whole shelf or display case
 ### Favourites, bought list and trip budget
 
 - **♥** on any scan (in lists or on the result) saves it to Favourites, shown on the home screen and as a History filter.
-- **Mark as bought** on a result adds it to **Trip spending** (bag icon, top right): spend in yen and RM, estimated tax back, what's left of your RM budget, and a per-store, per-day tracker showing how far you are from the ¥5,000 tax-free minimum.
+- **Mark as bought** on a result adds it to **Trip spending** (bag icon, top right): spend in yen and RM, estimated tax back, what's left of your RM budget, and a per-store, per-day tracker showing how far you are from the ¥5,000 tax-free minimum. It also totals how much you've **saved vs buying in Malaysia** (Malaysian price minus what you paid after the tax refund; second-hand buys are measured against Malaysian second-hand prices), with the saving on each bought item.
 
 ### Side-by-side compare
 

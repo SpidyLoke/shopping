@@ -266,10 +266,17 @@
           <div><p class="stat-label">Left</p><p class="stat-value" id="tripLeft">–</p></div>
         </div>
         <div class="meter" id="tripMeterWrap" hidden><div class="meter-fill" id="tripMeter"></div></div>
+        <div class="trip-saved" id="tripSaved" hidden>
+          <p class="trip-saved-value" id="tripSavedValue"></p>
+          <p class="trip-saved-note" id="tripSavedNote"></p>
+        </div>
       </div>
       <h2 id="storeHead" hidden>By store</h2>
       <ul class="store-list" id="storeList"></ul>
-      <h2>Bought</h2>
+      <div class="section-head">
+        <h2>Bought</h2>
+        <span class="saved-sum" id="boughtSaved"></span>
+      </div>
       <p class="muted" id="tripEmpty">Nothing marked as bought yet. Open a scan and tap “Mark as bought”.</p>
       <ul class="history-list" id="boughtList"></ul>
     </section>
