@@ -14,7 +14,9 @@ It's a static site on GitHub Pages and installs to your home screen like an app.
 
 ## Setup
 
-### 1. Google API key (one key for everything)
+### 1. Google API keys (two keys)
+
+Google won't let a restricted key cover the Gemini API alongside other APIs, so you need one key for Vision and Translate and a second for Gemini.
 
 In [Google Cloud Console](https://console.cloud.google.com/):
 
@@ -22,11 +24,11 @@ In [Google Cloud Console](https://console.cloud.google.com/):
 2. Enable these three APIs under **APIs & Services → Library**:
    - Cloud Vision API
    - Cloud Translation API
-   - Generative Language API (Gemini)
-3. **APIs & Services → Credentials → Create credentials → API key.**
-4. Edit the key and restrict it, because it lives in a browser:
+   - Gemini API (Generative Language API)
+3. **Cloud key:** **APIs & Services → Credentials → Create credentials → API key.** Edit it:
    - **Application restrictions:** Websites → add `https://spidyloke.github.io/*`
-   - **API restrictions:** restrict to the three APIs above
+   - **API restrictions:** Cloud Vision API and Cloud Translation API
+4. **Gemini key:** create a second API key the same way, with API restrictions set to **Gemini API** only and the same website restriction. (A key made in [Google AI Studio](https://aistudio.google.com/apikey) also works.)
 
 Free tiers at time of writing: Vision gives 1,000 units a month per feature (each scan uses two: text and web detection), Translation gives 500,000 characters a month. Gemini grounded search is billed per search on the paid tier; check [Gemini API pricing](https://ai.google.dev/gemini-api/docs/pricing) for current rates.
 
@@ -38,7 +40,7 @@ Repo **Settings → Pages → Build and deployment → Deploy from a branch → 
 
 1. Open `https://spidyloke.github.io/shopping/`
 2. Add to Home Screen (Safari: Share → Add to Home Screen; Chrome: ⋮ → Add to Home screen)
-3. Tap the gear icon, paste the API key, save
+3. Tap the gear icon, paste both keys, save
 
 ## Using it
 

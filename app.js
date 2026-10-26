@@ -33,6 +33,8 @@ const store = {
 
 const settings = {
   get apiKey() { return store.get('apiKey', ''); },
+  // Google won't let a restricted key cover Gemini plus other APIs, so Gemini can have its own key.
+  get geminiKey() { return store.get('geminiKey', '') || this.apiKey; },
   get model() { return store.get('model', '') || DEFAULT_MODEL; },
   get taxFree() { return store.get('taxFree', false); },
 };
@@ -184,10 +186,10 @@ function renderRate() {
 
 // ---------- Google APIs ----------
 
-async function googlePost(url, body, service) {
+async function googlePost(url, body, service, key = settings.apiKey) {
   let res;
   try {
-    res = await fetch(`${url}?key=${encodeURIComponent(settings.apiKey)}`, {
+    res = await fetch(`${url}?key=${encodeURIComponent(key)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -285,6 +287,7 @@ async function askGemini({ imageB64, ocrText, webGuess }) {
     `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(settings.model)}:generateContent`,
     { contents: [{ role: 'user', parts }], tools: [{ google_search: {} }] },
     'Gemini',
+    settings.geminiKey,
   );
   const cand = data.candidates?.[0];
   const text = (cand?.content?.parts || []).filter((p) => !p.thought).map((p) => p.text || '').join('');
@@ -670,6 +673,7 @@ function route() {
 
 function openSettings() {
   $('#apiKeyInput').value = settings.apiKey;
+  $('#geminiKeyInput').value = store.get('geminiKey', '');
   $('#modelInput').value = store.get('model', '') || DEFAULT_MODEL;
   $('#defaultTaxFree').checked = settings.taxFree;
   $('#settingsDialog').showModal();
@@ -677,6 +681,7 @@ function openSettings() {
 
 $('#settingsForm').addEventListener('submit', () => {
   store.set('apiKey', $('#apiKeyInput').value.trim());
+  store.set('geminiKey', $('#geminiKeyInput').value.trim());
   const model = $('#modelInput').value.trim();
   store.set('model', model && model !== DEFAULT_MODEL ? model : '');
   store.set('taxFree', $('#defaultTaxFree').checked);

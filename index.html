@@ -39,8 +39,8 @@
       </div>
 
       <div class="notice" id="keyNotice" hidden>
-        <strong>Add your Google API key first.</strong>
-        <span>One key covers Vision, Translate and Gemini.</span>
+        <strong>Add your Google API keys first.</strong>
+        <span>One for Vision and Translate, one for Gemini.</span>
         <button class="btn btn-small" type="button" data-open-settings>Open settings</button>
       </div>
 
@@ -168,9 +168,14 @@
     <form method="dialog" id="settingsForm">
       <h2>Settings</h2>
       <label class="field">
-        <span>Google API key</span>
+        <span>Google Cloud API key</span>
         <input id="apiKeyInput" type="password" autocomplete="off" spellcheck="false" placeholder="AIza…">
-        <small>Needs Cloud Vision, Cloud Translation and Generative Language (Gemini) APIs enabled. Stored on this device only.</small>
+        <small>For Cloud Vision and Cloud Translation. Stored on this device only.</small>
+      </label>
+      <label class="field">
+        <span>Gemini API key</span>
+        <input id="geminiKeyInput" type="password" autocomplete="off" spellcheck="false" placeholder="AIza…">
+        <small>A separate key restricted to the Gemini API. Leave blank if your Cloud key is unrestricted.</small>
       </label>
       <label class="field">
         <span>Gemini model</span>
