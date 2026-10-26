@@ -1,5 +1,7 @@
 # Kaimono Check
 
+**Live app:** https://spidyloke.github.io/shopping/
+
 Phone web app for shopping in Japan. Snap a box, price tag or shelf label and it:
 
 1. Reads the Japanese text (Google Cloud Vision)
