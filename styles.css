@@ -403,6 +403,8 @@ h2 { font-size: 1.05rem; margin: 0; }
 
 .prices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .price-card-wide { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.cex-name { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-style: italic; }
+.cex-name:empty { display: none; }
 .search-links .btn-wide { grid-column: 1 / -1; }
 .price-card {
   padding: 12px;

@@ -52,7 +52,7 @@ Repo **Settings → Pages → Build and deployment → Deploy from a branch → 
 
 ### CeX Malaysia
 
-Gemini also checks [CeX Malaysia](https://my.webuy.com) for the same item. The **CeX Malaysia sells** card shows its used price (and grade), and **CeX buys at** shows its trade-in offer in cash and voucher, which is roughly what you could resell it for at home. The verdict mentions CeX when it's cheaper than the Japan price, and the CeX Malaysia button opens the product or a search.
+The app asks [CeX Malaysia](https://my.webuy.com)'s own site search for the same item (Google rarely indexes CeX prices, so this is far more reliable), ignoring accessories and other models; the card says **Live from CeX** and names the listing it matched. If CeX can't be reached (it's an unofficial endpoint and may block some regions), it falls back to Gemini's web search and says **Via web search**. The **CeX Malaysia sells** card shows its used price (and grade), and **CeX buys at** shows its trade-in offer in cash and voucher, which is roughly what you could resell it for at home. The verdict mentions CeX when it's cheaper than the Japan price, and the CeX Malaysia button opens the product or a search.
 
 ### Swipe to delete
 

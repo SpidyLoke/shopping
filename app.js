@@ -3,7 +3,7 @@
 // lives in localStorage on the user's device only.
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.10.26-8';
+const APP_VERSION = '2026.10.26-9';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -410,7 +410,7 @@ Tasks:
    - New: Shopee Malaysia (shopee.com.my). If Shopee has none, use Lazada Malaysia or official Malaysian retailers.
    - Second-hand: Carousell Malaysia (carousell.com.my), plus used listings on Shopee Malaysia.
    Only use Malaysian listings priced in RM. Exclude accessories, cases, spare parts and different variants. Never invent listings, prices or URLs; if you cannot find any, use null or an empty list.
-   Also check CeX Malaysia (my.webuy.com), which sells graded used stock: its selling price in RM for this item, and what it pays to buy one in (cash and voucher), if listed.
+   Also check CeX Malaysia (my.webuy.com), which sells graded used stock: search my.webuy.com for the exact model. Its product pages show "WeSell for" (its selling price), "WeBuy for cash" and "WeBuy for voucher" prices in RM.
    Also search Japan's second-hand market for the same item in comparable condition: Mercari Japan (jp.mercari.com) and Yahoo! Auctions Japan (auctions.yahoo.co.jp), prices in yen.
 4. Read any condition information on the tag or label: the shop's condition grade or rank and what it means on that shop's scale, and every issue, defect or caveat mentioned (e.g. ジャンク, 動作未確認, 通電のみ, 欠品, キズ, 箱なし, 返品不可, 保証なし). Translate each into plain English and rate it: "high" = may not work, sold as-is, no returns or no warranty; "medium" = missing parts, visible damage or heavy wear; "low" = minor cosmetic. List stated positives (e.g. 動作確認済, 美品, 付属品完備) with severity "good". Ignore marketing claims on new-product packaging (e.g. 傷つきにくい means scratch-resistant, not scratched).
 5. Check whether it will work properly in Malaysia: 240V 50Hz mains and Type G three-pin plugs (Japan is 100V with Type A two-pin plugs). Cover only what applies to this product:
@@ -494,6 +494,76 @@ async function callGemini(imageB64, prompt, { search = true } = {}) {
     .filter((w) => w && safeUrl(w.uri))
     .map((w) => ({ title: w.title || w.uri, url: w.uri }));
   return { json: parseJson(text), sources };
+}
+
+// ---------- CeX Malaysia ----------
+// CeX's own site search (an Algolia index behind search.webuy.io). Google rarely indexes CeX prices
+// because its pages render them with JavaScript, so asking CeX directly is far more reliable.
+// It's unofficial and may be region-locked, so Gemini's web search stays as the fallback.
+const CEX_SEARCH = 'https://search.webuy.io/1/indexes/*/queries';
+const CEX_INDEX = 'prod_cex_my';
+
+function words(text) {
+  return new Set((text || '').normalize('NFKC').toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length > 1));
+}
+
+const ACCESSORY_WORDS = ['case', 'cover', 'cable', 'charger', 'adapter', 'adaptor', 'stand', 'skin', 'strap', 'protector',
+  'pouch', 'bag', 'sleeve', 'dock', 'mount', 'holder', 'grip', 'grips', 'pads', 'earpads', 'cushions', 'replacement', 'spare',
+  'tempered', 'glass', 'film', 'sticker', 'decal', 'manual', 'box', 'lanyard', 'hood', 'cap', 'filter'];
+
+// CeX search is fuzzy (cases and cables come back for headphones), so keep only rows naming the same
+// model: most of the query's words, every word with a digit in it (XM5 is not XM6), and no
+// accessory words the query didn't ask for.
+function pickCex(query, hits) {
+  const want = words(query);
+  const modelWords = [...want].filter((t) => /\d/.test(t));
+  let matches = hits.filter((h) => {
+    if (!h?.boxName || !(toNum(h.sellPrice) > 0)) return false;
+    const have = words(h.boxName);
+    const shared = [...want].filter((t) => have.has(t)).length;
+    return want.size && shared / want.size >= 0.6
+      && modelWords.every((t) => have.has(t))
+      && !ACCESSORY_WORDS.some((w) => have.has(w) && !want.has(w));
+  });
+  // Anything priced under a quarter of the typical match is almost certainly a part, not the product.
+  const prices = matches.map((h) => toNum(h.sellPrice)).sort((a, b) => a - b);
+  const median = prices[Math.floor(prices.length / 2)];
+  matches = matches.filter((h) => toNum(h.sellPrice) >= median * 0.25);
+  if (!matches.length) return { found: false };
+  const cheapest = matches.reduce((a, b) => (toNum(b.sellPrice) < toNum(a.sellPrice) ? b : a));
+  // A cash/voucher price of 0 means CeX won't buy it; take the best offer across grades.
+  const best = (key) => Math.max(0, ...matches.map((h) => toNum(h[key]) || 0)) || null;
+  return {
+    found: true,
+    sell: toNum(cheapest.sellPrice),
+    cash: best('cashPriceCalculated'),
+    voucher: best('exchangePriceCalculated'),
+    grade: (cheapest.boxName.match(/,\s*([A-C])\s*$/) || [])[1] || null,
+    name: cheapest.boxName,
+    url: cheapest.boxId ? `https://my.webuy.com/product-detail?id=${encodeURIComponent(cheapest.boxId)}` : null,
+  };
+}
+
+async function cexLookup(query) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 10000);
+  const params = new URLSearchParams({ query, hitsPerPage: '30', filters: 'boxVisibilityOnWeb=1' }).toString();
+  try {
+    const res = await fetch(CEX_SEARCH, {
+      method: 'POST',
+      // A "simple" content type avoids a CORS preflight, as Algolia's own browser client does.
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: JSON.stringify({ requests: [{ indexName: CEX_INDEX, params }] }),
+      signal: ctrl.signal,
+    });
+    if (!res.ok) return { found: false, error: res.status === 403 ? 'blocked by CeX (403)' : `HTTP ${res.status}` };
+    const data = await res.json();
+    return pickCex(query, data.results?.[0]?.hits || []);
+  } catch {
+    return { found: false, error: ctrl.signal.aborted ? 'timed out' : "couldn't reach CeX" };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // Fallback yen reader for when Gemini gives no price: prefers numbers on a 税込 line.
@@ -674,9 +744,21 @@ function jpUsedYen(entry) {
   return rangeValue(entry.ai?.jp_used_yen);
 }
 
+// Live CeX search wins; Gemini's web-search read of CeX is the fallback.
 function cexFor(entry) {
+  const live = entry.cex;
+  if (live?.found) return { ...live, source: 'live' };
   const c = entry.ai?.cex_my || {};
-  return { sell: toNum(c.sell_rm), cash: toNum(c.buy_cash_rm), voucher: toNum(c.buy_voucher_rm), grade: c.grade || null };
+  const sell = toNum(c.sell_rm);
+  return {
+    sell,
+    cash: toNum(c.buy_cash_rm),
+    voucher: toNum(c.buy_voucher_rm),
+    grade: c.grade || null,
+    url: safeUrl(c.url)?.includes('webuy.com') ? c.url : null,
+    source: sell ? 'web' : null,
+    error: live?.error || null,
+  };
 }
 
 function verdictFor(entry) {
@@ -907,6 +989,15 @@ async function searchPrices(entry, imageB64, update) {
     entry.errors.push(e.message);
   }
   update();
+
+  const query = entry.ai?.search_query || entry.ai?.product_name;
+  if (query) {
+    entry.cexPending = true;
+    update();
+    entry.cex = { ...(await cexLookup(query)), checkedAt: Date.now() };
+    entry.cexPending = false;
+    update();
+  }
 }
 
 // ---------- whole-shelf scan ----------
@@ -1507,10 +1598,17 @@ function renderPrices(entry) {
     : entry.ai ? 'None found' : '';
 
   const cex = cexFor(entry);
-  const pending = !entry.ai && entry.status.search !== 'failed';
+  const cexBusy = entry.cexPending && running.has(entry.id);
+  const pending = (!entry.ai && entry.status.search !== 'failed') || cexBusy;
   $('#cexSell').textContent = cex.sell ? rm(cex.sell) : pending ? '…' : '–';
-  $('#cexSellNote').textContent = cex.sell ? `Used${cex.grade ? `, grade ${cex.grade}` : ''}` : entry.ai ? 'Not listed' : '';
-  $('#cexCash').textContent = cex.cash ? `${rm(cex.cash)} cash` : pending ? '…' : '–';
+  let cexNote = '';
+  if (cex.sell) cexNote = `${cex.source === 'live' ? 'Live from CeX' : 'Via web search'}${cex.grade ? ` · grade ${cex.grade}` : ''}`;
+  else if (cexBusy) cexNote = 'Checking CeX…';
+  else if (entry.ai) cexNote = cex.error ? `Not found · CeX lookup ${cex.error}` : 'Not listed at CeX';
+  $('#cexSellNote').textContent = cexNote;
+  $('#cexName').textContent = cex.source === 'live' && cex.name ? cex.name : '';
+  // Live results take CeX's best offer across grades, so it's a ceiling, not a quote.
+  $('#cexCash').textContent = cex.cash ? `${cex.source === 'live' ? 'up to ' : ''}${rm(cex.cash)} cash` : pending ? '…' : '–';
   $('#cexVoucher').textContent = cex.voucher ? `${rm(cex.voucher)} voucher` : '';
 
   const v = verdictFor(entry);
@@ -1718,7 +1816,7 @@ function renderResult(entry) {
   $('#carousellLink').href = `https://www.carousell.com.my/search/${encodeURIComponent(q)}`;
   const qJa = entry.ai?.search_query_ja || q;
   $('#mercariLink').href = `https://jp.mercari.com/search?keyword=${encodeURIComponent(qJa)}`;
-  $('#cexLink').href = safeUrl(entry.ai?.cex_my?.url)?.includes('webuy.com') ? entry.ai.cex_my.url : `https://my.webuy.com/search?stext=${encodeURIComponent(q)}`;
+  $('#cexLink').href = cexFor(entry).url || `https://my.webuy.com/search?stext=${encodeURIComponent(q)}`;
   $('#yahooLink').href = `https://auctions.yahoo.co.jp/search/search?p=${encodeURIComponent(qJa)}`;
 
   renderListings(entry);
