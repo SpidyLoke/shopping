@@ -50,6 +50,27 @@ Repo **Settings → Pages → Build and deployment → Deploy from a branch → 
 - **Claim tourist tax refund:** knocks the 10% consumption tax off for purchases of ¥5,000 or more. Set it as the default in Settings.
 - **Shopee MY / Carousell MY** buttons open a live search for the product, for when you want to eyeball listings yourself.
 
+### Malaysia compatibility
+
+Every scan gets a **Works in Malaysia** card when it applies: 240V or 100V-only (Japan is 100V, Malaysia 240V with three-pin plugs), region locks, Japanese-only menus, Japan-only warranty, and oddities like forced camera shutter sounds. A real problem (e.g. a 100V rice cooker) turns "Buy it here" into **Cheap, but check it works in Malaysia**.
+
+### Japan resale check
+
+Gemini also checks **Mercari Japan** and **Yahoo! Auctions** for the same item second-hand. The price shows as a fourth card, and the verdict mentions it when it's at least 15% cheaper than the shop. Buttons open both searches in Japanese.
+
+### Whole-shelf scan
+
+Switch the home screen to **Shelf** and photograph a whole shelf or display case. You get every priced item listed with a cropped thumbnail, yen and RM. Tap **Check** on one, or **Check all prices**, and each becomes its own full scan in History.
+
+### Favourites, bought list and trip budget
+
+- **♥** on any scan (in lists or on the result) saves it to Favourites, shown on the home screen and as a History filter.
+- **Mark as bought** on a result adds it to **Trip spending** (bag icon, top right): spend in yen and RM, estimated tax back, what's left of your RM budget, and a per-store, per-day tracker showing how far you are from the ¥5,000 tax-free minimum.
+
+### Side-by-side compare
+
+In History tap **Compare**, pick 2 or 3 scans, then **Compare**. Price, Malaysian prices, Japan resale, saving, verdict, condition, compatibility and distance line up in columns with the best value highlighted. The "Same item at other stores" list on a result has a shortcut to it.
+
 ### Rescan
 
 Every scan in **Recent scans** and **History** has a ↻ button beside it, and the same button sits at the top of each result. It reruns whatever failed (red outline means something did) and refreshes the Malaysian prices, using the full-size photo saved on your phone.

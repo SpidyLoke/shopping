@@ -3,7 +3,7 @@
 // lives in localStorage on the user's device only.
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.10.26-5';
+const APP_VERSION = '2026.10.26-6';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -41,6 +41,7 @@ const settings = {
   get taxFree() { return store.get('taxFree', false); },
   get secondHand() { return store.get('secondHand', false); },
   get saveLocation() { return store.get('saveLocation', true); },
+  get scanKind() { return store.get('scanKind', 'item'); },
 };
 
 // Full-size photos live in IndexedDB (localStorage is too small) so old scans can be re-read properly.
@@ -89,7 +90,7 @@ function saveEntry(entry) {
   list = list.slice(0, HISTORY_LIMIT);
   // On quota errors, drop the oldest scans until it fits.
   while (!store.set('history', list) && list.length > 1) list.pop();
-  if (list.length < before) imageDb.prune(new Set(list.map((e) => e.id)));
+  if (list.length < before) imageDb.prune(new Set(list.flatMap((e) => [e.id, e.imageId].filter(Boolean))));
 }
 
 function deleteEntry(id) {
@@ -156,6 +157,7 @@ const dateFmt = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const ICONS = {
   rescan: 'M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5',
+  heart: 'M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21l7.8-7.5 1-1.1a5.5 5.5 0 0 0 0-7.8z',
 };
 
 function icon(name) {
@@ -306,7 +308,7 @@ async function locate(entry, update) {
 
 // Typed name wins, then the shop name Gemini read off the tag, then the map's guess.
 function storeName(entry) {
-  return entry.place?.name || entry.ai?.store_name || entry.place?.poi || null;
+  return entry.place?.name || entry.ai?.store_name || entry.shelfStore || entry.place?.poi || null;
 }
 
 function distanceFromHere(entry) {
@@ -384,7 +386,7 @@ async function translate(text) {
   return { translation: t.translatedText || '', sourceLang: t.detectedSourceLanguage || '' };
 }
 
-function buildPrompt({ ocrText, webGuess, secondHand }) {
+function buildPrompt({ ocrText, webGuess, secondHand, focus }) {
   return `You are helping a Malaysian shopper standing in a shop in Japan decide whether to buy an item here or back home in Malaysia.
 
 The attached photo shows a product, box, price tag or shelf label in a Japanese shop.
@@ -393,7 +395,7 @@ OCR text from the photo:
 ${ocrText || '(none detected)'}
 """
 Google's visual best guess for the photo: "${webGuess || 'none'}"
-${secondHand ? '\nThe shopper is in a second-hand shop (e.g. Hard Off, 2nd Street, Book Off, Sofmap used), so this is a used item. When searching Malaysia, prioritise second-hand listings in similar condition.\n' : ''}
+${focus ? `\nThe photo shows a whole shelf with several products. Evaluate ONLY this one: "${focus.name}"${focus.yen ? `, priced ${yen(focus.yen)}` : ''}. Ignore every other product in the photo.\n` : ''}${secondHand ? '\nThe shopper is in a second-hand shop (e.g. Hard Off, 2nd Street, Book Off, Sofmap used), so this is a used item. When searching Malaysia, prioritise second-hand listings in similar condition.\n' : ''}
 Tasks:
 1. Identify the exact product: brand, model or variant, size or capacity.
 2. Read the Japanese shop price in yen from the photo or OCR text. If both tax-inclusive (税込) and tax-exclusive (税抜) prices are shown, use the tax-inclusive one. Say whether the number you picked includes Japan's 10% consumption tax. Use null if no price is visible.
@@ -401,7 +403,15 @@ Tasks:
    - New: Shopee Malaysia (shopee.com.my). If Shopee has none, use Lazada Malaysia or official Malaysian retailers.
    - Second-hand: Carousell Malaysia (carousell.com.my), plus used listings on Shopee Malaysia.
    Only use Malaysian listings priced in RM. Exclude accessories, cases, spare parts and different variants. Never invent listings, prices or URLs; if you cannot find any, use null or an empty list.
+   Also search Japan's second-hand market for the same item in comparable condition: Mercari Japan (jp.mercari.com) and Yahoo! Auctions Japan (auctions.yahoo.co.jp), prices in yen.
 4. Read any condition information on the tag or label: the shop's condition grade or rank and what it means on that shop's scale, and every issue, defect or caveat mentioned (e.g. ジャンク, 動作未確認, 通電のみ, 欠品, キズ, 箱なし, 返品不可, 保証なし). Translate each into plain English and rate it: "high" = may not work, sold as-is, no returns or no warranty; "medium" = missing parts, visible damage or heavy wear; "low" = minor cosmetic. List stated positives (e.g. 動作確認済, 美品, 付属品完備) with severity "good". Ignore marketing claims on new-product packaging (e.g. 傷つきにくい means scratch-resistant, not scratched).
+5. Check whether it will work properly in Malaysia: 240V 50Hz mains and Type G three-pin plugs (Japan is 100V with Type A two-pin plugs). Cover only what applies to this product:
+   - Power: does it accept 240V? Many chargers and adapters are 100-240V and only need a plug adapter; 100V-only appliances (rice cookers, hair dryers, some kitchen and beauty gear) need a step-down transformer.
+   - Region: game, Blu-ray or DVD region locks, region-specific online services or apps.
+   - Language: Japanese-only menus, firmware or software.
+   - Warranty: Japan-only domestic warranty (国内専用, 国内保証) versus international warranty honoured in Malaysia.
+   - Other: e.g. forced camera shutter sound on Japanese phones, carrier locks, radio frequency bands, items restricted from import into Malaysia.
+   Rate each "ok", "warn" or "bad". Use an empty list when none of this applies (clothes, snacks, books).
 
 Reply with only a JSON object inside a \`\`\`json code block, with exactly these keys:
 {
@@ -409,13 +419,18 @@ Reply with only a JSON object inside a \`\`\`json code block, with exactly these
   "brand": "brand or null",
   "store_name": "shop or chain name if visible in the photo (e.g. HARD OFF, Bic Camera, Don Quijote), else null",
   "search_query": "best English query to type into Shopee or Carousell (brand + model)",
+  "search_query_ja": "best Japanese query for Mercari or Yahoo Auctions",
   "jp_price_yen": 12800,
   "jp_price_tax_included": true,
   "jp_price_note": "short note on which price was read, or null",
   "my_new": { "low": 0, "high": 0, "typical": 0 },
   "my_used": { "low": 0, "high": 0, "typical": 0 },
+  "jp_used_yen": { "low": 0, "high": 0, "typical": 0 },
   "listings": [
-    { "platform": "Shopee | Carousell | Lazada | Other", "condition": "new | used", "title": "listing title", "price_rm": 0, "url": "listing URL or null" }
+    { "platform": "Shopee | Carousell | Lazada | Mercari JP | Yahoo Auctions | Other", "condition": "new | used", "title": "listing title", "price_rm": 0, "price_yen": 0, "url": "listing URL or null" }
+  ],
+  "my_compat": [
+    { "topic": "Power | Region | Language | Warranty | Other", "status": "ok | warn | bad", "note": "short plain-English explanation" }
   ],
   "condition": {
     "is_used": true,
@@ -429,7 +444,7 @@ Reply with only a JSON object inside a \`\`\`json code block, with exactly these
   "confidence": "high | medium | low",
   "notes": "one or two sentences on matching caveats (Japan-only variant, voltage, region lock, etc.)"
 }
-Use null for any price you could not find. Use an empty issues list if the tag mentions no condition information.`;
+Use price_rm for Malaysian listings and price_yen for Japanese ones. Use null for any price you could not find. Use an empty issues list if the tag mentions no condition information.`;
 }
 
 function parseJson(text) {
@@ -441,16 +456,23 @@ function parseJson(text) {
   return JSON.parse(body.slice(start, end + 1));
 }
 
-async function askGemini({ imageB64, ocrText, webGuess, secondHand }) {
+async function askGemini({ imageB64, ocrText, webGuess, secondHand, focus }) {
+  const { json, sources } = await callGemini(imageB64, buildPrompt({ ocrText, webGuess, secondHand, focus }));
+  return { ai: json, sources };
+}
+
+async function callGemini(imageB64, prompt, { search = true } = {}) {
   const parts = [];
   if (imageB64) parts.push({ inline_data: { mime_type: 'image/jpeg', data: imageB64 } });
-  parts.push({ text: buildPrompt({ ocrText, webGuess, secondHand }) });
+  parts.push({ text: prompt });
+  const body = { contents: [{ role: 'user', parts }] };
+  if (search) body.tools = [{ google_search: {} }];
   const data = await googlePost(
     `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(settings.model)}:generateContent`,
-    { contents: [{ role: 'user', parts }], tools: [{ google_search: {} }] },
+    body,
     'Gemini',
     settings.geminiKey,
-    90000, // grounded search regularly takes 20-40s
+    search ? 90000 : 60000, // grounded search regularly takes 20-40s
   );
   const cand = data.candidates?.[0];
   const text = (cand?.content?.parts || []).filter((p) => !p.thought).map((p) => p.text || '').join('');
@@ -462,7 +484,7 @@ async function askGemini({ imageB64, ocrText, webGuess, secondHand }) {
     .map((c) => c.web)
     .filter((w) => w && safeUrl(w.uri))
     .map((w) => ({ title: w.title || w.uri, url: w.uri }));
-  return { ai: parseJson(text), sources };
+  return { json: parseJson(text), sources };
 }
 
 // Fallback yen reader for when Gemini gives no price: prefers numbers on a 税込 line.
@@ -592,6 +614,18 @@ function seriousIssues(entry) {
   return (conditionFor(entry)?.issues || []).filter((i) => i.severity === 'high');
 }
 
+// ---------- Malaysia compatibility ----------
+
+const COMPAT_ORDER = { bad: 0, warn: 1, ok: 2 };
+
+function compatFor(entry) {
+  const list = Array.isArray(entry.ai?.my_compat) ? entry.ai.my_compat : [];
+  return list
+    .filter((c) => c && (c.note || c.topic))
+    .map((c) => ({ topic: c.topic || 'Other', status: COMPAT_ORDER[c.status] !== undefined ? c.status : 'warn', note: c.note || '' }))
+    .sort((a, b) => COMPAT_ORDER[a.status] - COMPAT_ORDER[b.status]);
+}
+
 // ---------- pricing & verdict ----------
 
 function rangeValue(r) {
@@ -622,7 +656,32 @@ function japanPrice(entry) {
   return { rm: payYen * fx, note };
 }
 
+function fx(entry) {
+  return rate?.value || entry.rate || null;
+}
+
+// Typical used price on Mercari / Yahoo Auctions, in yen.
+function jpUsedYen(entry) {
+  return rangeValue(entry.ai?.jp_used_yen);
+}
+
 function verdictFor(entry) {
+  const v = baseVerdict(entry);
+  if (!v || v.cls === 'none') return v;
+  const bad = compatFor(entry).filter((c) => c.status === 'bad');
+  if (bad.length) {
+    if (v.cls === 'buy') Object.assign(v, { cls: 'maybe', label: 'Cheap, but check it works in Malaysia' });
+    v.detail += ` Malaysia: ${bad.map((c) => c.topic.toLowerCase()).join(', ')} problem.`;
+  }
+  const jp = japanPrice(entry).rm;
+  const resale = jpUsedYen(entry);
+  if (resale && fx(entry) && jp && resale * fx(entry) < jp * 0.85) {
+    v.detail += ` Mercari/Yahoo Japan has it second-hand for about ${yen(resale)} (${rm(resale * fx(entry))}).`;
+  }
+  return v;
+}
+
+function baseVerdict(entry) {
   const jp = japanPrice(entry).rm;
   const myNew = rangeValue(entry.ai?.my_new);
   const myUsed = rangeValue(entry.ai?.my_used);
@@ -699,6 +758,10 @@ async function startScan(file) {
     openSettings();
     return;
   }
+  if (settings.scanKind === 'shelf') {
+    await startShelf(file);
+    return;
+  }
 
   let full;
   let thumb;
@@ -752,7 +815,7 @@ async function rescan(id) {
     openSettings();
     return;
   }
-  const image = (current?.id === id && currentImageB64) || (await imageDb.get(id)) || entry.thumb.split(',')[1];
+  const image = (current?.id === id && currentImageB64) || (await imageDb.get(entry.imageId || id)) || entry.thumb.split(',')[1];
   await runScan(entry, image);
 }
 
@@ -760,8 +823,7 @@ function refresh(entry) {
   saveEntry(entry);
   const hash = location.hash || '#/';
   if (hash === `#/scan/${entry.id}`) renderResult(entry);
-  else if (hash.startsWith('#/history')) renderHistory();
-  else if (!hash.startsWith('#/scan/')) renderHome();
+  else if (!hash.startsWith('#/scan/')) route(true);
 }
 
 async function runScan(entry, imageB64) {
@@ -809,7 +871,13 @@ async function searchPrices(entry, imageB64, update) {
   entry.errors = entry.errors.filter((m) => !m.startsWith('Gemini'));
   update();
   try {
-    const { ai, sources } = await askGemini({ imageB64, ocrText: entry.ocrText, webGuess: entry.webGuess, secondHand: entry.secondHand });
+    const { ai, sources } = await askGemini({
+      imageB64,
+      ocrText: entry.ocrText || entry.contextText,
+      webGuess: entry.webGuess,
+      secondHand: entry.secondHand,
+      focus: entry.focus,
+    });
     entry.ai = ai;
     entry.sources = sources;
     if (!entry.yenEdited) {
@@ -824,20 +892,347 @@ async function searchPrices(entry, imageB64, update) {
   update();
 }
 
+// ---------- whole-shelf scan ----------
+// One photo → Vision OCR → Gemini lists every priced item (no search, so it's quick).
+// Each item can then be price-checked as its own scan, sharing the shelf photo.
+
+const shelfChecking = new Set();
+
+function shelfPrompt(ocrText) {
+  return `The attached photo shows a shelf, display case or rack in a Japanese shop with several products and price tags.
+OCR text from the photo:
+"""
+${ocrText || '(none detected)'}
+"""
+
+List every distinct product that has a visible price tag. For each give:
+- name: concise English product name (brand + model or variant)
+- search_query: best English query for Shopee Malaysia
+- jp_price_yen: the price in yen as shown; if both 税込 and 税抜 are shown, use 税込
+- tax_included: whether that price includes Japan's 10% consumption tax
+- box_2d: bounding box of the product together with its price tag, as [ymin, xmin, ymax, xmax] normalised to 0-1000
+Skip items whose price you cannot read. Never guess prices.
+
+Reply with only a JSON object inside a \`\`\`json code block:
+{ "store_name": "shop or chain name if visible, else null", "items": [ { "name": "", "search_query": "", "jp_price_yen": 0, "tax_included": true, "box_2d": [0, 0, 0, 0] } ] }`;
+}
+
+async function startShelf(file) {
+  let full;
+  let thumb;
+  try {
+    const src = await decodeImage(file);
+    full = toJpeg(src, 2048, 0.85); // tags on a shelf are small, so keep more pixels
+    thumb = toJpeg(src, 320, 0.7);
+    src.close?.();
+  } catch {
+    alert('Could not open that image. Try another photo.');
+    return;
+  }
+  const shelf = {
+    id: uid(),
+    kind: 'shelf',
+    createdAt: Date.now(),
+    thumb,
+    ocrText: '',
+    items: [],
+    shelfStore: null,
+    taxFree: settings.taxFree,
+    secondHand: settings.secondHand,
+    place: null,
+    rate: rate?.value || null,
+    status: { vision: 'pending', list: 'pending' },
+    errors: [],
+  };
+  const b64 = full.split(',')[1];
+  imageDb.put(shelf.id, b64);
+  running.set(shelf.id, shelf);
+  saveEntry(shelf);
+  location.hash = `#/shelf/${shelf.id}`;
+  if (settings.saveLocation) locate(shelf, () => refresh(shelf));
+  await runShelf(shelf, b64);
+}
+
+async function rescanShelf(id) {
+  if (running.has(id)) return;
+  const shelf = findEntry(id);
+  if (!shelf) return;
+  const b64 = (await imageDb.get(id)) || shelf.thumb.split(',')[1];
+  await runShelf(shelf, b64);
+}
+
+async function runShelf(shelf, b64) {
+  running.set(shelf.id, shelf);
+  shelf.errors = [];
+  const update = () => refresh(shelf);
+  if (shelf.status.vision !== 'done') {
+    shelf.status.vision = 'active';
+    update();
+    try {
+      shelf.ocrText = (await readImage(b64)).ocrText;
+      shelf.status.vision = 'done';
+    } catch (e) {
+      shelf.status.vision = 'failed';
+      shelf.errors.push(e.message);
+    }
+  }
+  shelf.status.list = 'active';
+  update();
+  try {
+    const { json } = await callGemini(b64, shelfPrompt(shelf.ocrText), { search: false });
+    const previous = new Map(shelf.items.map((i) => [i.name.toLowerCase(), i]));
+    shelf.shelfStore = json.store_name || shelf.shelfStore;
+    shelf.items = (Array.isArray(json.items) ? json.items : [])
+      .filter((i) => i && i.name)
+      .map((i) => ({
+        key: uid(),
+        name: String(i.name),
+        query: i.search_query || i.name,
+        yen: toNum(i.jp_price_yen),
+        taxIncluded: i.tax_included !== false,
+        box: Array.isArray(i.box_2d) ? i.box_2d.map(toNum) : null,
+        childId: previous.get(String(i.name).toLowerCase())?.childId || null,
+      }));
+    await cropThumbs(b64, shelf.items);
+    shelf.status.list = 'done';
+  } catch (e) {
+    shelf.status.list = 'failed';
+    shelf.errors.push(e.message);
+  }
+  running.delete(shelf.id);
+  update();
+}
+
+// Small per-item thumbnails cut from the shelf photo using Gemini's boxes.
+async function cropThumbs(b64, items) {
+  const img = new Image();
+  img.src = `data:image/jpeg;base64,${b64}`;
+  try {
+    await img.decode();
+  } catch {
+    return;
+  }
+  const W = img.naturalWidth;
+  const H = img.naturalHeight;
+  for (const it of items) {
+    const b = it.box;
+    if (!b || b.length !== 4 || !b.every(Number.isFinite)) continue;
+    let [y0, x0, y1, x1] = b.map((n) => n / 1000);
+    if (y1 <= y0 || x1 <= x0) continue;
+    const padY = (y1 - y0) * 0.08;
+    const padX = (x1 - x0) * 0.08;
+    y0 = Math.max(0, y0 - padY);
+    x0 = Math.max(0, x0 - padX);
+    y1 = Math.min(1, y1 + padY);
+    x1 = Math.min(1, x1 + padX);
+    const sw = (x1 - x0) * W;
+    const sh = (y1 - y0) * H;
+    const scale = Math.min(1, 200 / Math.max(sw, sh));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(sw * scale));
+    canvas.height = Math.max(1, Math.round(sh * scale));
+    canvas.getContext('2d').drawImage(img, x0 * W, y0 * H, sw, sh, 0, 0, canvas.width, canvas.height);
+    it.thumb = canvas.toDataURL('image/jpeg', 0.7);
+  }
+}
+
+// Price-check one shelf item as a normal scan focused on that product.
+async function checkShelfItem(shelf, item, image) {
+  if (item.childId && findEntry(item.childId)) {
+    await rescan(item.childId);
+    return;
+  }
+  const child = {
+    id: uid(),
+    createdAt: Date.now(),
+    thumb: item.thumb || shelf.thumb,
+    imageId: shelf.id,
+    parentId: shelf.id,
+    focus: { name: item.name, yen: item.yen },
+    ocrText: '',
+    contextText: shelf.ocrText,
+    webGuess: item.query,
+    translation: '',
+    sourceLang: '',
+    ai: null,
+    sources: [],
+    yen: item.yen,
+    taxIncluded: item.taxIncluded,
+    taxFree: shelf.taxFree,
+    secondHand: shelf.secondHand,
+    place: shelf.place ? { ...shelf.place } : null,
+    shelfStore: shelf.shelfStore,
+    rate: rate?.value || null,
+    status: { vision: 'done', translate: 'skipped', search: 'pending' },
+    errors: [],
+  };
+  // Save onto the latest stored shelf so parallel checks don't overwrite each other's links.
+  item.childId = child.id;
+  const latest = findEntry(shelf.id) || shelf;
+  const stored = latest.items.find((i) => i.key === item.key);
+  if (stored) stored.childId = child.id;
+  saveEntry(latest);
+  saveEntry(child);
+  await runScan(child, image || (await imageDb.get(shelf.id)) || shelf.thumb.split(',')[1]);
+}
+
+async function checkAllShelf(id) {
+  const shelf = findEntry(id);
+  if (!shelf || shelfChecking.has(id)) return;
+  if (!settings.apiKey) {
+    openSettings();
+    return;
+  }
+  shelfChecking.add(id);
+  route(true);
+  const image = (await imageDb.get(id)) || shelf.thumb.split(',')[1];
+  const todo = shelf.items.filter((i) => {
+    const child = i.childId && findEntry(i.childId);
+    return !child || scanFailed(child);
+  });
+  let next = 0;
+  // Two at a time: quicker than one-by-one without tripping Gemini's rate limits.
+  const worker = async () => {
+    while (next < todo.length) {
+      const item = todo[next];
+      next += 1;
+      await checkShelfItem(shelf, item, image);
+    }
+  };
+  await Promise.all([worker(), worker()]);
+  shelfChecking.delete(id);
+  route(true);
+}
+
+function shelfItemPrice(shelf, item) {
+  const rateValue = rate?.value || shelf.rate;
+  if (!item.yen || !rateValue) return null;
+  return (item.taxIncluded === false ? item.yen * (1 + TAX) : item.yen) * rateValue;
+}
+
+function shelfHistoryItem(shelf) {
+  const isRunning = running.has(shelf.id) || shelfChecking.has(shelf.id);
+  const failed = scanFailed(shelf);
+  const checked = shelf.items.filter((i) => i.childId).length;
+  const meta = [`${shelf.items.length} item${shelf.items.length === 1 ? '' : 's'}`, checked ? `${checked} checked` : null, dateFmt.format(shelf.createdAt)]
+    .filter(Boolean).join(' · ');
+  const where = storeName(shelf) || shelf.place?.area;
+  return el('li', { class: 'history-row' },
+    el('button', { class: 'history-item', type: 'button', onclick: () => { location.hash = `#/shelf/${shelf.id}`; } },
+      el('img', { src: shelf.thumb, alt: '' }),
+      el('div', { class: 'history-body' },
+        el('p', { class: 'history-name' }, `Shelf${where ? ` · ${where}` : ''}`),
+        el('p', { class: 'history-meta' }, meta),
+      ),
+      el('span', { class: `tag ${failed ? 'tag-skip' : ''}` }, failed ? 'Failed' : isRunning ? '…' : 'Shelf'),
+    ),
+    rowActions(shelf, running.has(shelf.id), failed),
+  );
+}
+
+function renderShelf(shelf) {
+  current = null;
+  const isRunning = running.has(shelf.id);
+  const checking = shelfChecking.has(shelf.id);
+  const unchecked = shelf.items.filter((i) => !i.childId).length;
+
+  const rows = shelf.items.map((item) => {
+    const child = item.childId ? findEntry(item.childId) : null;
+    const price = shelfItemPrice(shelf, item);
+    let right;
+    if (child && running.has(child.id)) {
+      right = el('span', { class: 'rescan-btn spinning shelf-spin', 'aria-label': 'Checking' }, icon('rescan'));
+    } else if (child) {
+      const v = verdictFor(child);
+      const failed = scanFailed(child);
+      const cls = failed ? 'tag-skip' : { buy: 'tag-buy', maybe: 'tag-maybe', skip: 'tag-skip' }[v?.cls] || '';
+      right = el('span', { class: `tag ${cls}` }, failed ? 'Failed' : { buy: 'Buy', maybe: 'Maybe', skip: 'Skip' }[v?.cls] || '–');
+    } else {
+      right = el('button', {
+        class: 'btn btn-small',
+        type: 'button',
+        onclick: (e) => {
+          e.stopPropagation();
+          checkShelfItem(shelf, item);
+        },
+      }, 'Check');
+    }
+    const body = [
+      el('img', { src: item.thumb || shelf.thumb, alt: '' }),
+      el('div', { class: 'history-body' },
+        el('p', { class: 'history-name' }, child?.ai?.product_name || item.name),
+        el('p', { class: 'history-meta' }, [item.yen ? yen(item.yen) : 'No price read', price ? rm(price) : null].filter(Boolean).join(' · ')),
+      ),
+      right,
+    ];
+    return el('li', { class: 'history-row' }, child
+      ? el('button', { class: 'history-item', type: 'button', onclick: () => { location.hash = `#/scan/${child.id}`; } }, body)
+      : el('div', { class: 'history-item' }, body));
+  });
+
+  let status = '';
+  if (isRunning) status = shelf.status.vision === 'active' ? 'Reading the price tags…' : 'Listing the items…';
+  else if (shelf.status.list === 'done' && !shelf.items.length) status = 'No priced items found. Try a closer photo with the tags in focus.';
+
+  $('#shelfView').replaceChildren(...[
+    el('div', { class: 'result-top' },
+      el('img', { class: 'result-photo', src: shelf.thumb, alt: '' }),
+      el('div', { class: 'result-title' },
+        el('p', { class: 'eyebrow' }, 'Whole shelf'),
+        el('h1', {}, storeName(shelf) || `${shelf.items.length} item${shelf.items.length === 1 ? '' : 's'}`),
+        el('p', { class: 'muted small' }, [shelf.place?.area, dateFmt.format(shelf.createdAt)].filter(Boolean).join(' · ')),
+      ),
+      el('button', {
+        class: `rescan-btn${isRunning ? ' spinning' : ''}${scanFailed(shelf) ? ' attention' : ''}`,
+        type: 'button',
+        'aria-label': 'Re-read shelf',
+        title: 'Re-read shelf',
+        disabled: isRunning,
+        onclick: () => rescanShelf(shelf.id),
+      }, icon('rescan')),
+    ),
+    status ? el('p', { class: 'muted' }, status) : null,
+    shelf.errors.length ? el('p', { class: 'error', role: 'alert' }, shelf.errors.join('\n')) : null,
+    shelf.items.length ? el('button', {
+      class: 'btn btn-primary btn-block',
+      type: 'button',
+      disabled: checking || isRunning || unchecked === 0,
+      onclick: () => checkAllShelf(shelf.id),
+    }, checking ? 'Checking prices…' : unchecked ? `Check all prices (${unchecked})` : 'All items checked') : null,
+    el('ul', { class: 'history-list' }, rows),
+    shelf.items.length ? el('p', { class: 'muted small' }, 'Each checked item becomes its own scan in History, with the full Malaysia comparison.') : null,
+  ].filter(Boolean));
+}
+
 // ---------- rendering ----------
 
-const views = ['homeView', 'resultView', 'historyView'];
+const views = ['homeView', 'resultView', 'historyView', 'tripView', 'compareView', 'shelfView'];
 
-function show(viewId) {
+function show(viewId, keepScroll = false) {
+  const changed = $(`#${viewId}`).hidden;
   for (const v of views) $(`#${v}`).hidden = v !== viewId;
-  window.scrollTo(0, 0);
+  if (changed && !keepScroll) window.scrollTo(0, 0);
 }
+
+function toggleFlag(id, flag) {
+  const entry = findEntry(id);
+  if (!entry) return;
+  entry[flag] = !entry[flag];
+  if (flag === 'bought') entry.boughtAt = entry.bought ? Date.now() : null;
+  saveEntry(entry);
+  route(true);
+}
+
+let historyFilter = 'all';
+let compareMode = false;
+let compareSel = [];
 
 function scanFailed(entry) {
   return !running.has(entry.id) && Object.values(entry.status).some((st) => st === 'failed' || st === 'active');
 }
 
 function historyItem(entry) {
+  if (entry.kind === 'shelf') return shelfHistoryItem(entry);
   const jp = japanPrice(entry).rm;
   const v = verdictFor(entry);
   const isRunning = running.has(entry.id);
@@ -846,6 +1241,7 @@ function historyItem(entry) {
   const tagText = failed ? 'Failed' : { buy: 'Buy', maybe: 'Maybe', skip: 'Skip' }[v?.cls] || (isRunning ? '…' : '–');
   const serious = seriousIssues(entry).length;
   const meta = [
+    entry.bought ? '✓ Bought' : null,
     entry.secondHand ? 'Used' : null,
     toNum(entry.yen) ? yen(entry.yen) : null,
     jp ? rm(jp) : null,
@@ -854,8 +1250,15 @@ function historyItem(entry) {
   ].filter(Boolean).join(' · ');
   const dist = distanceFromHere(entry);
   const where = [storeName(entry) || entry.place?.area, dist !== null ? fmtAway(dist) : null].filter(Boolean).join(' · ');
+  const selecting = compareMode && location.hash.startsWith('#/history');
+  const selected = selecting && compareSel.includes(entry.id);
   return el('li', { class: 'history-row' },
-    el('button', { class: 'history-item', type: 'button', onclick: () => { location.hash = `#/scan/${entry.id}`; } },
+    el('button', {
+      class: `history-item${selected ? ' selected' : ''}`,
+      type: 'button',
+      'aria-pressed': selecting ? String(selected) : null,
+      onclick: () => (selecting ? toggleCompareSel(entry.id) : (location.hash = `#/scan/${entry.id}`)),
+    },
       el('img', { src: entry.thumb, alt: '' }),
       el('div', { class: 'history-body' },
         el('p', { class: 'history-name' }, entry.ai?.product_name || entry.webGuess || 'Unidentified item'),
@@ -864,13 +1267,26 @@ function historyItem(entry) {
       ),
       el('span', { class: `tag ${tagCls}` }, tagText),
     ),
+    rowActions(entry, isRunning, failed),
+  );
+}
+
+function rowActions(entry, isRunning, failed) {
+  return el('div', { class: 'row-actions' },
+    el('button', {
+      class: `fav-btn${entry.fav ? ' on' : ''}`,
+      type: 'button',
+      'aria-label': entry.fav ? 'Remove from favourites' : 'Add to favourites',
+      'aria-pressed': String(Boolean(entry.fav)),
+      onclick: () => toggleFlag(entry.id, 'fav'),
+    }, icon('heart')),
     el('button', {
       class: `rescan-btn${isRunning ? ' spinning' : ''}${failed ? ' attention' : ''}`,
       type: 'button',
       'aria-label': isRunning ? 'Rescanning' : 'Rescan',
       title: 'Rescan',
       disabled: isRunning,
-      onclick: () => rescan(entry.id),
+      onclick: () => (entry.kind === 'shelf' ? rescanShelf(entry.id) : rescan(entry.id)),
     }, icon('rescan')),
   );
 }
@@ -878,7 +1294,11 @@ function historyItem(entry) {
 function renderHome() {
   $('#keyNotice').hidden = Boolean(settings.apiKey);
   renderMode();
-  const list = historyEntries().slice(0, 3);
+  const all = historyEntries();
+  const favs = all.filter((e) => e.fav).slice(0, 3);
+  $('#favWrap').hidden = favs.length === 0;
+  $('#favList').replaceChildren(...favs.map(historyItem));
+  const list = all.slice(0, 3);
   $('#recentWrap').hidden = list.length === 0;
   $('#recentList').replaceChildren(...list.map(historyItem));
   renderRate();
@@ -886,18 +1306,35 @@ function renderHome() {
 
 function renderMode() {
   const used = settings.secondHand;
+  const shelf = settings.scanKind === 'shelf';
   for (const b of document.querySelectorAll('#modeSwitch [data-mode]')) {
     b.setAttribute('aria-checked', String((b.dataset.mode === 'used') === used));
   }
-  $('#modeHint').textContent = used
-    ? 'Compares against Malaysian second-hand prices and flags any issues on the tag.'
-    : 'Compares against new prices in Malaysia.';
+  for (const b of document.querySelectorAll('#kindSwitch [data-kind]')) {
+    b.setAttribute('aria-checked', String((b.dataset.kind === 'shelf') === shelf));
+  }
+  $('#captureLabel').textContent = shelf ? 'Photograph the shelf' : 'Take a photo';
+  $('#modeHint').textContent = [
+    shelf ? 'Lists every priced item in one photo; check them one by one or all at once.' : null,
+    used ? 'Compares against Malaysian second-hand prices and flags any issues on the tag.' : 'Compares against new prices in Malaysia.',
+  ].filter(Boolean).join(' ');
 }
 
 let historySort = 'recent';
 
 function renderHistory() {
   let list = historyEntries();
+  if (historyFilter === 'fav') list = list.filter((e) => e.fav);
+  if (historyFilter === 'bought') list = list.filter((e) => e.bought);
+  if (compareMode) list = list.filter((e) => e.kind !== 'shelf');
+  for (const b of document.querySelectorAll('#historyFilter [data-filter]')) {
+    b.setAttribute('aria-checked', String(b.dataset.filter === historyFilter));
+  }
+  $('#compareToggle').textContent = compareMode ? 'Cancel' : 'Compare';
+  $('#compareBar').hidden = !compareMode;
+  $('#compareCount').textContent = `${compareSel.length} of 3 picked`;
+  $('#compareGo').disabled = compareSel.length < 2;
+  $('#historyEmpty').textContent = { fav: 'No favourites yet. Tap ♥ on a scan.', bought: 'Nothing marked as bought yet.' }[historyFilter] || 'No scans yet.';
   if (historySort === 'nearest' && herePos) {
     const d = (e) => distanceFromHere(e) ?? Infinity;
     list = list.sort((a, b) => d(a) - d(b));
@@ -907,6 +1344,12 @@ function renderHistory() {
   }
   $('#historyEmpty').hidden = list.length > 0;
   $('#historyList').replaceChildren(...list.map(historyItem));
+}
+
+function toggleCompareSel(id) {
+  if (compareSel.includes(id)) compareSel = compareSel.filter((x) => x !== id);
+  else if (compareSel.length < 3) compareSel.push(id);
+  renderHistory();
 }
 
 function renderSteps(entry) {
@@ -939,6 +1382,14 @@ function renderPrices(entry) {
     $(valueSel).textContent = entry.ai || entry.status.search === 'failed' ? rm(rangeValue(r)) : '…';
     $(rangeSel).textContent = lo && hi && lo !== hi ? `${rm(lo)} to ${rm(hi)}` : (entry.ai && !rangeValue(r) ? 'None found' : '');
   }
+
+  const resale = jpUsedYen(entry);
+  const lo = toNum(entry.ai?.jp_used_yen?.low);
+  const hi = toNum(entry.ai?.jp_used_yen?.high);
+  $('#jpUsed').textContent = resale ? yen(resale) : entry.ai || entry.status.search === 'failed' ? '–' : '…';
+  $('#jpUsedRange').textContent = resale && fx(entry)
+    ? `≈ ${rm(resale * fx(entry))}${lo && hi && lo !== hi ? ` · ${yen(lo)} to ${yen(hi)}` : ''}`
+    : entry.ai ? 'None found' : '';
 
   const v = verdictFor(entry);
   $('#verdict').hidden = !v;
@@ -991,6 +1442,35 @@ function renderCondition(entry) {
   $('#conditionNote').textContent = note;
 }
 
+function renderCompat(entry) {
+  const list = compatFor(entry);
+  $('#compatPanel').hidden = !list.length;
+  if (!list.length) return;
+  const mark = { ok: '✓', warn: '!', bad: '✕' };
+  $('#compatList').replaceChildren(...list.map((c) => el('li', { class: `compat-row compat-${c.status}` },
+    el('span', { class: 'compat-mark', 'aria-hidden': 'true' }, mark[c.status]),
+    el('div', {},
+      el('span', { class: 'compat-topic' }, c.topic),
+      el('span', { class: 'visually-hidden' }, ` (${{ ok: 'fine', warn: 'check', bad: 'problem' }[c.status]})`),
+      el('span', { class: 'compat-note' }, c.note),
+    ),
+  )));
+  const bad = list.filter((c) => c.status === 'bad').length;
+  const warn = list.filter((c) => c.status === 'warn').length;
+  $('#compatSummary').textContent = bad
+    ? `Malaysia: ${bad} problem${bad > 1 ? 's' : ''}`
+    : warn ? `Malaysia: ${warn} thing${warn > 1 ? 's' : ''} to check` : 'Works in Malaysia';
+  $('#compatPanel').classList.toggle('has-serious', bad > 0);
+}
+
+function renderChips(entry) {
+  for (const [sel, flag, on, off] of [['#favBtn', 'fav', '♥ Favourite', '♡ Favourite'], ['#boughtBtn', 'bought', '✓ Bought', 'Mark as bought']]) {
+    const b = $(sel);
+    b.setAttribute('aria-pressed', String(Boolean(entry[flag])));
+    b.textContent = entry[flag] ? on : off;
+  }
+}
+
 let herePosRequested = false;
 
 function renderPlace(entry) {
@@ -1031,6 +1511,8 @@ function renderPlace(entry) {
     .map((e) => ({ e, price: japanPrice(e).rm }))
     .sort((a, b) => (a.price ?? Infinity) - (b.price ?? Infinity));
   const cheapest = rows[0].price;
+  const pick = [entry.id, ...rows.filter((r) => r.e.id !== entry.id).slice(0, 2).map((r) => r.e.id)];
+  $('#compareStoresLink').href = `#/compare/${pick.join(',')}`;
   $('#compareList').replaceChildren(...rows.map(({ e, price }) => {
     const d = distanceFromHere(e);
     const isThis = e.id === entry.id;
@@ -1060,8 +1542,11 @@ function renderPlace(entry) {
 
 function renderListings(entry) {
   const listings = Array.isArray(entry.ai?.listings) ? entry.ai.listings : [];
-  const groups = [['new', 'New'], ['used', 'Second-hand']].map(([cond, title]) => {
-    const items = listings.filter((l) => (l.condition || '').toLowerCase().startsWith(cond === 'new' ? 'new' : 'use'));
+  const isJapan = (l) => /mercari|yahoo/i.test(l.platform || '') || (toNum(l.price_yen) && !toNum(l.price_rm));
+  const groups = [['new', 'New in Malaysia'], ['used', 'Second-hand in Malaysia'], ['jp', 'Second-hand in Japan']].map(([cond, title]) => {
+    const items = listings.filter((l) => (cond === 'jp'
+      ? isJapan(l)
+      : !isJapan(l) && (l.condition || '').toLowerCase().startsWith(cond === 'new' ? 'new' : 'use')));
     if (!items.length) return null;
     return el('div', { class: 'listing-group' },
       el('h3', {}, title),
@@ -1073,7 +1558,7 @@ function renderListings(entry) {
             href ? el('a', { href, target: '_blank', rel: 'noopener' }, label) : el('span', { class: 'title' }, label),
             el('span', { class: 'where' }, l.platform || ''),
           ),
-          el('span', { class: 'price' }, rm(toNum(l.price_rm))),
+          el('span', { class: 'price' }, cond === 'jp' ? (toNum(l.price_yen) ? yen(toNum(l.price_yen)) : '–') : rm(toNum(l.price_rm))),
         );
       }),
     );
@@ -1099,14 +1584,19 @@ function renderResult(entry) {
   const visionDone = entry.status.vision === 'done' || entry.status.vision === 'failed';
   $('#prices').hidden = !visionDone;
   $('#toggles').hidden = !visionDone;
+  renderChips(entry);
   renderPrices(entry);
   renderCondition(entry);
+  renderCompat(entry);
   renderPlace(entry);
 
   const q = searchQuery(entry);
   $('#searchLinks').hidden = !q;
   $('#shopeeLink').href = `https://shopee.com.my/search?keyword=${encodeURIComponent(q)}`;
   $('#carousellLink').href = `https://www.carousell.com.my/search/${encodeURIComponent(q)}`;
+  const qJa = entry.ai?.search_query_ja || q;
+  $('#mercariLink').href = `https://jp.mercari.com/search?keyword=${encodeURIComponent(qJa)}`;
+  $('#yahooLink').href = `https://auctions.yahoo.co.jp/search/search?p=${encodeURIComponent(qJa)}`;
 
   renderListings(entry);
 
@@ -1127,27 +1617,187 @@ function renderResult(entry) {
   $('#deleteBtn').hidden = isRunning;
 }
 
+// ---------- trip spending ----------
+
+function paidYen(e) {
+  const y = toNum(e.yen);
+  if (!y) return 0;
+  return e.taxIncluded === false ? y * (1 + TAX) : y;
+}
+
+// Tax-free needs ¥5,000 at one store on one day, so group bought items that way.
+function tripSummary() {
+  const bought = historyEntries().filter((e) => e.bought && e.kind !== 'shelf');
+  const groups = new Map();
+  for (const e of bought) {
+    const when = e.boughtAt || e.createdAt;
+    const storeLabel = storeName(e) || e.place?.area || 'Unknown store';
+    const key = `${storeLabel.toLowerCase()}|${new Date(when).toDateString()}`;
+    if (!groups.has(key)) groups.set(key, { store: storeLabel, when, items: [], yen: 0 });
+    const g = groups.get(key);
+    g.items.push(e);
+    g.yen += paidYen(e);
+  }
+  let spentRm = 0;
+  let spentYen = 0;
+  let refundRm = 0;
+  for (const e of bought) {
+    spentYen += paidYen(e);
+    spentRm += paidYen(e) * (fx(e) || 0);
+  }
+  for (const g of groups.values()) {
+    g.eligible = g.yen >= TAX_FREE_MIN_YEN;
+    if (!g.eligible) continue;
+    // Assume you claim it wherever you qualify; that's the point of tracking it.
+    for (const e of g.items) refundRm += (paidYen(e) * TAX / (1 + TAX)) * (fx(e) || 0);
+  }
+  return { bought, groups: [...groups.values()].sort((a, b) => b.when - a.when), spentRm, spentYen, refundRm };
+}
+
+function renderTrip() {
+  const t = tripSummary();
+  const budget = toNum(store.get('budget', null));
+  const input = $('#budgetInput');
+  if (document.activeElement !== input) input.value = budget ?? '';
+  const net = t.spentRm - t.refundRm;
+  $('#tripSpent').textContent = rm(t.spentRm);
+  $('#tripSpentYen').textContent = t.spentYen ? yen(t.spentYen) : '';
+  $('#tripRefund').textContent = t.refundRm ? `− ${rm(t.refundRm)}` : rm(0);
+  $('#tripLeft').textContent = !budget ? 'Set a budget' : net > budget ? `${rm(net - budget)} over` : rm(budget - net);
+  $('#tripLeft').classList.toggle('over', Boolean(budget) && net > budget);
+  $('#tripMeterWrap').hidden = !budget;
+  if (budget) $('#tripMeter').style.width = `${Math.min(100, (net / budget) * 100)}%`;
+  $('#tripMeter').classList.toggle('over', Boolean(budget) && net > budget);
+
+  $('#storeHead').hidden = !t.groups.length;
+  $('#storeList').replaceChildren(...t.groups.map((g) => el('li', { class: 'store-row' },
+    el('div', { class: 'compare-body' },
+      el('span', { class: 'compare-store' }, g.store),
+      el('span', { class: 'compare-meta' }, `${new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' }).format(g.when)} · ${g.items.length} item${g.items.length > 1 ? 's' : ''} · ${yen(g.yen)}`),
+    ),
+    g.eligible
+      ? el('span', { class: 'tag tag-buy' }, 'Tax-free ✓')
+      : el('span', { class: 'tag tag-maybe' }, `${yen(TAX_FREE_MIN_YEN - g.yen)} to tax-free`),
+  )));
+  $('#tripEmpty').hidden = t.bought.length > 0;
+  $('#boughtList').replaceChildren(...t.bought.map(historyItem));
+}
+
+// ---------- side-by-side compare ----------
+
+function renderCompare(ids) {
+  const items = ids.map(findEntry).filter(Boolean).slice(0, 3);
+  const wrap = $('#cmpTable');
+  wrap.style.setProperty('--cols', items.length || 1);
+  if (items.length < 2) {
+    wrap.replaceChildren(el('p', { class: 'muted' }, 'Pick at least two scans in History to compare.'));
+    return;
+  }
+  const saving = (e) => {
+    const jp = japanPrice(e).rm;
+    const base = e.secondHand ? rangeValue(e.ai?.my_used) || rangeValue(e.ai?.my_new) : rangeValue(e.ai?.my_new) || rangeValue(e.ai?.my_used);
+    return jp && base ? base - jp : null;
+  };
+  // Each row: label, cell renderer, and optionally a score to highlight the best (lowest) value.
+  const rows = [
+    ['Store', (e) => storeName(e) || e.place?.area || '–'],
+    ['Japan price', (e) => [toNum(e.yen) ? yen(paidYen(e)) : '–', el('small', {}, rm(japanPrice(e).rm))], (e) => japanPrice(e).rm],
+    ['MY new', (e) => rm(rangeValue(e.ai?.my_new)), null],
+    ['MY second-hand', (e) => rm(rangeValue(e.ai?.my_used)), null],
+    ['JP second-hand', (e) => (jpUsedYen(e) ? [yen(jpUsedYen(e)), el('small', {}, rm(jpUsedYen(e) * (fx(e) || 0)))] : '–'), (e) => jpUsedYen(e)],
+    ['You save vs MY', (e) => {
+      const s = saving(e);
+      return s === null ? '–' : s >= 0 ? rm(s) : `${rm(-s)} more`;
+    }, (e) => (saving(e) === null ? null : -saving(e))],
+    ['Verdict', (e) => {
+      const v = verdictFor(e);
+      const cls = { buy: 'tag-buy', maybe: 'tag-maybe', skip: 'tag-skip' }[v?.cls] || '';
+      return el('span', { class: `tag ${cls}` }, v?.label || '–');
+    }],
+    ['Condition', (e) => {
+      const n = seriousIssues(e).length;
+      return n ? `${n} serious issue${n > 1 ? 's' : ''}` : e.secondHand ? 'No serious issues' : '–';
+    }],
+    ['Works in Malaysia', (e) => {
+      const c = compatFor(e);
+      const bad = c.filter((x) => x.status === 'bad').length;
+      const warn = c.filter((x) => x.status === 'warn').length;
+      return bad ? `${bad} problem${bad > 1 ? 's' : ''}` : warn ? `${warn} to check` : c.length ? 'Yes' : '–';
+    }],
+  ];
+  if (herePos) {
+    rows.push(['Distance', (e) => {
+      const d = distanceFromHere(e);
+      return d === null ? '–' : d < 0.05 ? 'Here' : fmtDistance(d);
+    }, (e) => distanceFromHere(e)]);
+  }
+
+  const head = el('div', { class: 'cmp-head' }, items.map((e) => el('a', { class: 'cmp-item', href: `#/scan/${e.id}` },
+    el('img', { src: e.thumb, alt: '' }),
+    el('span', {}, e.ai?.product_name || e.webGuess || 'Unidentified item'),
+  )));
+  const body = rows.map(([label, cell, score]) => {
+    const cells = items.map(cell);
+    if (cells.every((c) => c === '–')) return null; // nothing to compare on this row
+    let best = null;
+    if (score) {
+      const scores = items.map(score).filter((x) => x !== null && x !== undefined && Number.isFinite(x));
+      if (scores.length > 1 && new Set(scores).size > 1) best = Math.min(...scores);
+    }
+    return el('div', { class: 'cmp-row' },
+      el('p', { class: 'cmp-label' }, label),
+      el('div', { class: 'cmp-cells' }, items.map((e, i) => {
+        const isBest = best !== null && score(e) === best;
+        return el('div', { class: `cmp-cell${isBest ? ' best' : ''}` }, cells[i]);
+      })),
+    );
+  }).filter(Boolean);
+  wrap.replaceChildren(head, ...body);
+}
+
 // ---------- routing ----------
 
-function route() {
+// keepScroll: re-render the current view in place (e.g. after tapping ♥) without jumping to the top.
+function route(keepScroll = false) {
   const hash = location.hash || '#/';
+  if (!hash.startsWith('#/history') && compareMode) {
+    compareMode = false;
+    compareSel = [];
+  }
   const scan = hash.match(/^#\/scan\/([\w-]+)/);
   if (scan) {
     const entry = findEntry(scan[1]);
     if (entry) {
       if (current?.id !== entry.id) currentImageB64 = null;
       renderResult(entry);
-      show('resultView');
+      show('resultView', keepScroll);
       return;
     }
   }
+  const shelf = hash.match(/^#\/shelf\/([\w-]+)/);
+  if (shelf && findEntry(shelf[1])) {
+    renderShelf(findEntry(shelf[1]));
+    show('shelfView', keepScroll);
+    return;
+  }
+  const cmp = hash.match(/^#\/compare\/([\w,-]+)/);
+  if (cmp) {
+    renderCompare(cmp[1].split(','));
+    show('compareView', keepScroll);
+    return;
+  }
+  if (hash.startsWith('#/trip')) {
+    renderTrip();
+    show('tripView', keepScroll);
+    return;
+  }
   if (hash.startsWith('#/history')) {
     renderHistory();
-    show('historyView');
+    show('historyView', keepScroll);
     return;
   }
   renderHome();
-  show('homeView');
+  show('homeView', keepScroll);
 }
 
 // ---------- settings ----------
@@ -1186,7 +1836,35 @@ $('#settingsBtn').addEventListener('click', openSettings);
 document.querySelectorAll('[data-open-settings]').forEach((b) => b.addEventListener('click', openSettings));
 $('#homeBtn').addEventListener('click', () => { location.hash = '#/'; });
 $('#historyBtn').addEventListener('click', () => { location.hash = '#/history'; });
-$('#seeAllBtn').addEventListener('click', () => { location.hash = '#/history'; });
+$('#tripBtn').addEventListener('click', () => { location.hash = '#/trip'; });
+$('#seeFavsBtn').addEventListener('click', () => {
+  historyFilter = 'fav';
+  location.hash = '#/history';
+});
+$('#favBtn').addEventListener('click', () => current && toggleFlag(current.id, 'fav'));
+$('#boughtBtn').addEventListener('click', () => current && toggleFlag(current.id, 'bought'));
+$('#budgetInput').addEventListener('input', (e) => {
+  store.set('budget', toNum(e.target.value));
+  renderTrip();
+});
+for (const b of document.querySelectorAll('#historyFilter [data-filter]')) {
+  b.addEventListener('click', () => {
+    historyFilter = b.dataset.filter;
+    renderHistory();
+  });
+}
+$('#compareToggle').addEventListener('click', () => {
+  compareMode = !compareMode;
+  compareSel = [];
+  renderHistory();
+});
+$('#compareGo').addEventListener('click', () => {
+  if (compareSel.length >= 2) location.hash = `#/compare/${compareSel.join(',')}`;
+});
+$('#seeAllBtn').addEventListener('click', () => {
+  historyFilter = 'all';
+  location.hash = '#/history';
+});
 
 for (const id of ['#cameraInput', '#galleryInput']) {
   $(id).addEventListener('change', (e) => {
@@ -1215,6 +1893,12 @@ $('#secondHandToggle').addEventListener('change', (e) => editCurrent((entry) => 
 for (const b of document.querySelectorAll('#modeSwitch [data-mode]')) {
   b.addEventListener('click', () => {
     store.set('secondHand', b.dataset.mode === 'used');
+    renderMode();
+  });
+}
+for (const b of document.querySelectorAll('#kindSwitch [data-kind]')) {
+  b.addEventListener('click', () => {
+    store.set('scanKind', b.dataset.kind);
     renderMode();
   });
 }

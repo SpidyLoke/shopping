@@ -21,6 +21,9 @@
       <span class="brand-name">Kaimono Check</span>
     </button>
     <div class="topbar-actions">
+      <button class="icon-btn" id="tripBtn" type="button" aria-label="Trip spending">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5 7.5h13l-1 12.5h-11l-1-12.5zM9 7.5V6a3 3 0 0 1 6 0v1.5"/></svg>
+      </button>
       <button class="icon-btn" id="historyBtn" type="button" aria-label="Scan history">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7v5l3 2M3.5 12a8.5 8.5 0 1 0 2.5-6M3 4v4h4"/></svg>
       </button>
@@ -45,16 +48,22 @@
       </div>
 
       <div class="mode">
-        <div class="segmented" id="modeSwitch" role="radiogroup" aria-label="Shopping for">
-          <button type="button" role="radio" data-mode="new" aria-checked="true">New</button>
-          <button type="button" role="radio" data-mode="used" aria-checked="false">Second-hand shop</button>
+        <div class="mode-row">
+          <div class="segmented" id="modeSwitch" role="radiogroup" aria-label="Shopping for">
+            <button type="button" role="radio" data-mode="new" aria-checked="true">New</button>
+            <button type="button" role="radio" data-mode="used" aria-checked="false">Used</button>
+          </div>
+          <div class="segmented" id="kindSwitch" role="radiogroup" aria-label="Scan">
+            <button type="button" role="radio" data-kind="item" aria-checked="true">Item</button>
+            <button type="button" role="radio" data-kind="shelf" aria-checked="false">Shelf</button>
+          </div>
         </div>
         <p class="muted small" id="modeHint"></p>
       </div>
 
       <label class="capture" for="cameraInput">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/></svg>
-        <span>Take a photo</span>
+        <span id="captureLabel">Take a photo</span>
       </label>
       <input id="cameraInput" type="file" accept="image/*" capture="environment" hidden>
 
@@ -62,6 +71,14 @@
       <input id="galleryInput" type="file" accept="image/*" hidden>
 
       <p class="rate-pill" id="ratePill">Loading exchange rate…</p>
+
+      <div class="recent" id="favWrap" hidden>
+        <div class="section-head">
+          <h2>Favourites</h2>
+          <button class="link" type="button" id="seeFavsBtn">See all</button>
+        </div>
+        <ul class="history-list" id="favList"></ul>
+      </div>
 
       <div class="recent" id="recentWrap" hidden>
         <div class="section-head">
@@ -84,6 +101,11 @@
         <button class="rescan-btn" id="rescanBtn" type="button" aria-label="Rescan" title="Rescan">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5"/></svg>
         </button>
+      </div>
+
+      <div class="chip-row">
+        <button class="chip" id="favBtn" type="button" aria-pressed="false">♡ Favourite</button>
+        <button class="chip" id="boughtBtn" type="button" aria-pressed="false">Mark as bought</button>
       </div>
 
       <ol class="steps" id="steps">
@@ -119,7 +141,17 @@
           <p class="price-rm" id="myUsed">–</p>
           <p class="price-sub" id="myUsedRange"></p>
         </div>
+        <div class="price-card">
+          <p class="price-head">JP second-hand</p>
+          <p class="price-rm" id="jpUsed">–</p>
+          <p class="price-sub" id="jpUsedRange"></p>
+        </div>
       </div>
+
+      <details class="panel condition" id="compatPanel" hidden open>
+        <summary id="compatSummary">Works in Malaysia</summary>
+        <ul class="compat-list" id="compatList"></ul>
+      </details>
 
       <details class="panel condition" id="conditionPanel" hidden open>
         <summary id="conditionSummary">Condition</summary>
@@ -142,6 +174,7 @@
         <div id="comparePlaces" hidden>
           <h3 class="mini-head">Same item at other stores</h3>
           <ul class="compare-list" id="compareList"></ul>
+          <a class="btn btn-small" id="compareStoresLink" href="#/compare/">Compare side by side</a>
         </div>
       </details>
 
@@ -163,6 +196,8 @@
       <div class="search-links" id="searchLinks" hidden>
         <a class="btn btn-shopee" id="shopeeLink" target="_blank" rel="noopener">Shopee MY</a>
         <a class="btn btn-carousell" id="carousellLink" target="_blank" rel="noopener">Carousell MY</a>
+        <a class="btn" id="mercariLink" target="_blank" rel="noopener">Mercari JP</a>
+        <a class="btn" id="yahooLink" target="_blank" rel="noopener">Yahoo Auctions</a>
       </div>
 
       <details class="panel" id="listingsPanel" hidden open>
@@ -195,6 +230,12 @@
     <section class="view" id="historyView" hidden>
       <div class="section-head">
         <h1>Scan history</h1>
+        <button class="link" type="button" id="compareToggle">Compare</button>
+      </div>
+      <div class="segmented seg-3" id="historyFilter" role="radiogroup" aria-label="Show">
+        <button type="button" role="radio" data-filter="all" aria-checked="true">All</button>
+        <button type="button" role="radio" data-filter="fav" aria-checked="false">Favourites</button>
+        <button type="button" role="radio" data-filter="bought" aria-checked="false">Bought</button>
       </div>
       <div class="segmented" id="historySort" role="radiogroup" aria-label="Sort scans">
         <button type="button" role="radio" data-sort="recent" aria-checked="true">Recent</button>
@@ -203,7 +244,46 @@
       <p class="muted small" id="historyHint" hidden></p>
       <p class="muted" id="historyEmpty">No scans yet.</p>
       <ul class="history-list" id="historyList"></ul>
+      <div class="compare-bar" id="compareBar" hidden>
+        <span id="compareCount">0 of 3 picked</span>
+        <button class="btn btn-small btn-primary" type="button" id="compareGo" disabled>Compare</button>
+      </div>
     </section>
+
+    <!-- Trip -->
+    <section class="view" id="tripView" hidden>
+      <div class="section-head">
+        <h1>Trip spending</h1>
+      </div>
+      <div class="trip-card">
+        <label class="budget-field">
+          <span>Trip budget</span>
+          <span class="rm-input"><span>RM</span><input id="budgetInput" type="number" inputmode="decimal" min="0" placeholder="e.g. 3000"></span>
+        </label>
+        <div class="trip-stats">
+          <div><p class="stat-label">Spent</p><p class="stat-value" id="tripSpent">RM 0</p><p class="stat-sub" id="tripSpentYen"></p></div>
+          <div><p class="stat-label">Tax back (est.)</p><p class="stat-value" id="tripRefund">RM 0</p></div>
+          <div><p class="stat-label">Left</p><p class="stat-value" id="tripLeft">–</p></div>
+        </div>
+        <div class="meter" id="tripMeterWrap" hidden><div class="meter-fill" id="tripMeter"></div></div>
+      </div>
+      <h2 id="storeHead" hidden>By store</h2>
+      <ul class="store-list" id="storeList"></ul>
+      <h2>Bought</h2>
+      <p class="muted" id="tripEmpty">Nothing marked as bought yet. Open a scan and tap “Mark as bought”.</p>
+      <ul class="history-list" id="boughtList"></ul>
+    </section>
+
+    <!-- Compare -->
+    <section class="view" id="compareView" hidden>
+      <div class="section-head">
+        <h1>Compare</h1>
+      </div>
+      <div class="cmp" id="cmpTable"></div>
+    </section>
+
+    <!-- Shelf -->
+    <section class="view" id="shelfView" hidden></section>
   </main>
 
   <!-- Settings -->
