@@ -38,6 +38,40 @@ const settings = {
   get model() { return store.get('model', '') || DEFAULT_MODEL; },
   get taxFree() { return store.get('taxFree', false); },
   get secondHand() { return store.get('secondHand', false); },
+  get saveLocation() { return store.get('saveLocation', true); },
+};
+
+// Full-size photos live in IndexedDB (localStorage is too small) so old scans can be re-read properly.
+const imageDb = {
+  open() {
+    this.db ||= new Promise((resolve, reject) => {
+      const req = indexedDB.open('kaimono', 1);
+      req.onupgradeneeded = () => req.result.createObjectStore('images');
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    return this.db;
+  },
+  async run(mode, fn) {
+    try {
+      const db = await this.open();
+      return await new Promise((resolve, reject) => {
+        const req = fn(db.transaction('images', mode).objectStore('images'));
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    } catch {
+      return null;
+    }
+  },
+  get(id) { return this.run('readonly', (s) => s.get(id)); },
+  put(id, b64) { return this.run('readwrite', (s) => s.put(b64, id)); },
+  del(id) { return this.run('readwrite', (s) => s.delete(id)); },
+  clear() { return this.run('readwrite', (s) => s.clear()); },
+  async prune(keepIds) {
+    const keys = (await this.run('readonly', (s) => s.getAllKeys())) || [];
+    await Promise.all(keys.filter((k) => !keepIds.has(k)).map((k) => this.del(k)));
+  },
 };
 
 function loadHistory() {
@@ -49,13 +83,21 @@ function saveEntry(entry) {
   let list = loadHistory().filter((e) => e.id !== entry.id);
   list.unshift(entry);
   list.sort((a, b) => b.createdAt - a.createdAt);
+  const before = list.length;
   list = list.slice(0, HISTORY_LIMIT);
   // On quota errors, drop the oldest scans until it fits.
   while (!store.set('history', list) && list.length > 1) list.pop();
+  if (list.length < before) imageDb.prune(new Set(list.map((e) => e.id)));
 }
 
 function deleteEntry(id) {
   store.set('history', loadHistory().filter((e) => e.id !== id));
+  imageDb.del(id);
+}
+
+// Stored copies, swapped for the live object of any scan still in flight.
+function historyEntries() {
+  return loadHistory().map((e) => running.get(e.id) || e);
 }
 
 function findEntry(id) {
@@ -108,6 +150,37 @@ function yen(n) {
 }
 
 const dateFmt = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+const ICONS = {
+  rescan: 'M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5',
+};
+
+function icon(name) {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('aria-hidden', 'true');
+  const path = document.createElementNS(SVG_NS, 'path');
+  path.setAttribute('d', ICONS[name]);
+  svg.append(path);
+  return svg;
+}
+
+function distanceKm(a, b) {
+  const rad = (d) => (d * Math.PI) / 180;
+  const dLat = rad(b.lat - a.lat);
+  const dLng = rad(b.lng - a.lng);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return 12742 * Math.asin(Math.sqrt(h));
+}
+
+function fmtAway(km) {
+  return km < 0.05 ? 'You are here' : `${fmtDistance(km)} away`;
+}
+
+function fmtDistance(km) {
+  return km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(km < 10 ? 1 : 0)} km`;
+}
 
 function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -185,6 +258,73 @@ function renderRate() {
   pill.textContent = `¥1,000 = ${rm(rate.value * 1000)}${rate.date ? ` · ${rate.date}` : ''}`;
 }
 
+// ---------- location ----------
+
+let herePos = null;
+
+// maxAge 0 for scans: a reading from a minute ago could be the previous shop.
+function getPosition({ timeout = 10000, maxAge = 0 } = {}) {
+  return new Promise((resolve) => {
+    if (!navigator.geolocation) return resolve(null);
+    navigator.geolocation.getCurrentPosition(
+      (p) => resolve({ lat: p.coords.latitude, lng: p.coords.longitude, accuracy: Math.round(p.coords.accuracy) }),
+      () => resolve(null),
+      { enableHighAccuracy: true, timeout, maximumAge: maxAge },
+    );
+  });
+}
+
+// OpenStreetMap reverse lookup: free, no key. Gives the area and, when the pin lands on one, the shop's name.
+async function reverseGeocode(lat, lng) {
+  try {
+    const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1&accept-language=en`);
+    const d = await r.json();
+    const a = d.address || {};
+    const area = [...new Set([a.quarter || a.neighbourhood || a.suburb, a.city || a.town || a.city_district || a.village].filter(Boolean))];
+    const poi = ['shop', 'amenity'].includes(d.category) && d.name ? d.name : null;
+    return { area: area.join(', ') || null, poi };
+  } catch {
+    return { area: null, poi: null };
+  }
+}
+
+async function locate(entry, update) {
+  const pos = await getPosition();
+  if (!pos) {
+    entry.place = { ...(entry.place || {}), unavailable: !entry.place?.lat };
+    update();
+    return;
+  }
+  herePos = pos;
+  entry.place = { ...(entry.place || {}), ...pos, unavailable: false, area: null, poi: null };
+  update();
+  Object.assign(entry.place, await reverseGeocode(pos.lat, pos.lng));
+  update();
+}
+
+// Typed name wins, then the shop name Gemini read off the tag, then the map's guess.
+function storeName(entry) {
+  return entry.place?.name || entry.ai?.store_name || entry.place?.poi || null;
+}
+
+function distanceFromHere(entry) {
+  return herePos && entry.place?.lat ? distanceKm(herePos, entry.place) : null;
+}
+
+function productTokens(entry) {
+  const text = (entry.ai?.search_query || entry.ai?.product_name || '').normalize('NFKC').toLowerCase();
+  return new Set(text.split(/[^a-z0-9\u3040-\u30ff\u4e00-\u9fff]+/).filter((t) => t.length > 1));
+}
+
+function sameProduct(a, b) {
+  const ta = productTokens(a);
+  const tb = productTokens(b);
+  if (!ta.size || !tb.size) return false;
+  let shared = 0;
+  for (const t of ta) if (tb.has(t)) shared += 1;
+  return shared / (ta.size + tb.size - shared) >= 0.6;
+}
+
 // ---------- Google APIs ----------
 
 async function googlePost(url, body, service, key = settings.apiKey) {
@@ -257,6 +397,7 @@ Reply with only a JSON object inside a \`\`\`json code block, with exactly these
 {
   "product_name": "concise English product name",
   "brand": "brand or null",
+  "store_name": "shop or chain name if visible in the photo (e.g. HARD OFF, Bic Camera, Don Quijote), else null",
   "search_query": "best English query to type into Shopee or Carousell (brand + model)",
   "jp_price_yen": 12800,
   "jp_price_tax_included": true,
@@ -574,33 +715,66 @@ async function startScan(file) {
     taxIncluded: true,
     taxFree: settings.taxFree,
     secondHand: settings.secondHand,
+    place: null,
     rate: rate?.value || null,
-    status: { vision: 'active', translate: 'pending', search: 'pending' },
+    status: { vision: 'pending', translate: 'pending', search: 'pending' },
     errors: [],
   };
   current = entry;
   currentImageB64 = full.split(',')[1];
+  imageDb.put(entry.id, currentImageB64);
   running.set(entry.id, entry);
   saveEntry(entry);
   location.hash = `#/scan/${entry.id}`;
 
-  const update = () => {
-    saveEntry(entry);
-    if (location.hash === `#/scan/${entry.id}`) renderResult(entry);
-  };
+  // Location is only taken at the moment of scanning; a later rescan keeps the original store.
+  if (settings.saveLocation) locate(entry, () => refresh(entry));
+  await runScan(entry, currentImageB64);
+}
 
-  try {
-    Object.assign(entry, await readImage(currentImageB64));
-    entry.status.vision = 'done';
-  } catch (e) {
-    entry.status.vision = 'failed';
-    entry.errors.push(e.message);
+// Re-run a saved scan from its stored photo: redoes any failed step and refreshes the prices.
+async function rescan(id) {
+  if (running.has(id)) return;
+  const entry = findEntry(id);
+  if (!entry) return;
+  if (!settings.apiKey) {
+    openSettings();
+    return;
+  }
+  const image = (current?.id === id && currentImageB64) || (await imageDb.get(id)) || entry.thumb.split(',')[1];
+  await runScan(entry, image);
+}
+
+function refresh(entry) {
+  saveEntry(entry);
+  const hash = location.hash || '#/';
+  if (hash === `#/scan/${entry.id}`) renderResult(entry);
+  else if (hash.startsWith('#/history')) renderHistory();
+  else if (!hash.startsWith('#/scan/')) renderHome();
+}
+
+async function runScan(entry, imageB64) {
+  running.set(entry.id, entry);
+  entry.errors = [];
+  const update = () => refresh(entry);
+
+  if (entry.status.vision !== 'done') {
+    entry.status.vision = 'active';
+    update();
+    try {
+      Object.assign(entry, await readImage(imageB64));
+      entry.status.vision = 'done';
+    } catch (e) {
+      entry.status.vision = 'failed';
+      entry.errors.push(e.message);
+    }
   }
   if (!entry.yen) entry.yen = parseYen(entry.ocrText);
-  entry.status.translate = entry.ocrText ? 'active' : 'skipped';
+  if (!entry.ocrText) entry.status.translate = 'skipped';
+  else if (entry.status.translate !== 'done') entry.status.translate = 'active';
   update();
 
-  const translating = entry.ocrText
+  const translating = entry.status.translate === 'active'
     ? translate(entry.ocrText)
       .then((t) => {
         Object.assign(entry, t);
@@ -613,7 +787,7 @@ async function startScan(file) {
       .finally(update)
     : Promise.resolve();
 
-  await Promise.all([translating, searchPrices(entry, currentImageB64, update)]);
+  await Promise.all([translating, searchPrices(entry, imageB64, update)]);
   if (!entry.rate && rate) entry.rate = rate.value;
   running.delete(entry.id);
   update();
@@ -639,20 +813,6 @@ async function searchPrices(entry, imageB64, update) {
   update();
 }
 
-async function retrySearch() {
-  const entry = current;
-  if (!entry || running.has(entry.id)) return;
-  running.set(entry.id, entry);
-  const image = currentImageB64 || entry.thumb.split(',')[1];
-  const update = () => {
-    saveEntry(entry);
-    if (location.hash === `#/scan/${entry.id}`) renderResult(entry);
-  };
-  await searchPrices(entry, image, update);
-  running.delete(entry.id);
-  update();
-}
-
 // ---------- rendering ----------
 
 const views = ['homeView', 'resultView', 'historyView'];
@@ -662,11 +822,17 @@ function show(viewId) {
   window.scrollTo(0, 0);
 }
 
+function scanFailed(entry) {
+  return !running.has(entry.id) && Object.values(entry.status).some((st) => st === 'failed' || st === 'active');
+}
+
 function historyItem(entry) {
   const jp = japanPrice(entry).rm;
   const v = verdictFor(entry);
-  const tagCls = { buy: 'tag-buy', maybe: 'tag-maybe', skip: 'tag-skip' }[v?.cls] || '';
-  const tagText = { buy: 'Buy', maybe: 'Maybe', skip: 'Skip' }[v?.cls] || (running.has(entry.id) ? '…' : '–');
+  const isRunning = running.has(entry.id);
+  const failed = scanFailed(entry);
+  const tagCls = failed ? 'tag-skip' : { buy: 'tag-buy', maybe: 'tag-maybe', skip: 'tag-skip' }[v?.cls] || '';
+  const tagText = failed ? 'Failed' : { buy: 'Buy', maybe: 'Maybe', skip: 'Skip' }[v?.cls] || (isRunning ? '…' : '–');
   const serious = seriousIssues(entry).length;
   const meta = [
     entry.secondHand ? 'Used' : null,
@@ -675,22 +841,33 @@ function historyItem(entry) {
     serious ? `${serious} issue${serious > 1 ? 's' : ''}` : null,
     dateFmt.format(entry.createdAt),
   ].filter(Boolean).join(' · ');
-  return el('li', {},
+  const dist = distanceFromHere(entry);
+  const where = [storeName(entry) || entry.place?.area, dist !== null ? fmtAway(dist) : null].filter(Boolean).join(' · ');
+  return el('li', { class: 'history-row' },
     el('button', { class: 'history-item', type: 'button', onclick: () => { location.hash = `#/scan/${entry.id}`; } },
       el('img', { src: entry.thumb, alt: '' }),
       el('div', { class: 'history-body' },
         el('p', { class: 'history-name' }, entry.ai?.product_name || entry.webGuess || 'Unidentified item'),
         el('p', { class: 'history-meta' }, meta),
+        where ? el('p', { class: 'history-where' }, where) : null,
       ),
       el('span', { class: `tag ${tagCls}` }, tagText),
     ),
+    el('button', {
+      class: `rescan-btn${isRunning ? ' spinning' : ''}${failed ? ' attention' : ''}`,
+      type: 'button',
+      'aria-label': isRunning ? 'Rescanning' : 'Rescan',
+      title: 'Rescan',
+      disabled: isRunning,
+      onclick: () => rescan(entry.id),
+    }, icon('rescan')),
   );
 }
 
 function renderHome() {
   $('#keyNotice').hidden = Boolean(settings.apiKey);
   renderMode();
-  const list = loadHistory().slice(0, 3);
+  const list = historyEntries().slice(0, 3);
   $('#recentWrap').hidden = list.length === 0;
   $('#recentList').replaceChildren(...list.map(historyItem));
   renderRate();
@@ -706,8 +883,17 @@ function renderMode() {
     : 'Compares against new prices in Malaysia.';
 }
 
+let historySort = 'recent';
+
 function renderHistory() {
-  const list = loadHistory();
+  let list = historyEntries();
+  if (historySort === 'nearest' && herePos) {
+    const d = (e) => distanceFromHere(e) ?? Infinity;
+    list = list.sort((a, b) => d(a) - d(b));
+  }
+  for (const b of document.querySelectorAll('#historySort [data-sort]')) {
+    b.setAttribute('aria-checked', String(b.dataset.sort === historySort));
+  }
   $('#historyEmpty').hidden = list.length > 0;
   $('#historyList').replaceChildren(...list.map(historyItem));
 }
@@ -756,7 +942,7 @@ function renderCondition(entry) {
   const c = conditionFor(entry);
   const panel = $('#conditionPanel');
   const show = c && (c.issues.length || c.grade || c.missing.length || entry.secondHand);
-  panel.hidden = !show || entry.status.vision === 'active';
+  panel.hidden = !show || !['done', 'failed'].includes(entry.status.vision);
   if (panel.hidden) return;
 
   $('#conditionGrade').hidden = !c.grade;
@@ -792,6 +978,73 @@ function renderCondition(entry) {
   }
   if (c.source === 'local') note = `${note} Quick keyword check; the full read arrives with the price search.`.trim();
   $('#conditionNote').textContent = note;
+}
+
+let herePosRequested = false;
+
+function renderPlace(entry) {
+  const p = entry.place;
+  const input = $('#storeInput');
+  if (document.activeElement !== input) input.value = storeName(entry) || '';
+
+  const dist = distanceFromHere(entry);
+  let area;
+  if (p?.lat) {
+    area = [p.area, p.accuracy > 150 ? `±${p.accuracy} m` : null, dist !== null && dist > 0.05 ? `${fmtDistance(dist)} from you` : null]
+      .filter(Boolean).join(' · ') || 'Location saved';
+  } else if (p?.unavailable) {
+    area = 'Location not saved (permission off or no signal).';
+  } else if (running.has(entry.id) && settings.saveLocation) {
+    area = 'Getting location…';
+  } else {
+    area = 'No location saved for this scan.';
+  }
+  $('#placeArea').textContent = area;
+  $('#directionsLink').hidden = !p?.lat;
+  if (p?.lat) $('#directionsLink').href = `https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}`;
+  $('#locateBtn').textContent = p?.lat ? 'Move pin to here' : 'Use current location';
+
+  // Same product scanned at other stores, cheapest first.
+  const others = entry.ai ? historyEntries().filter((e) => e.id !== entry.id && e.ai && sameProduct(entry, e)) : [];
+  $('#comparePlaces').hidden = others.length === 0;
+  if (!others.length) return;
+  if (!herePos && !herePosRequested && settings.saveLocation) {
+    herePosRequested = true;
+    getPosition({ maxAge: 60000 }).then((pos) => {
+      if (!pos) return;
+      herePos = pos;
+      if (current) renderPlace(current);
+    });
+  }
+  const rows = [entry, ...others]
+    .map((e) => ({ e, price: japanPrice(e).rm }))
+    .sort((a, b) => (a.price ?? Infinity) - (b.price ?? Infinity));
+  const cheapest = rows[0].price;
+  $('#compareList').replaceChildren(...rows.map(({ e, price }) => {
+    const d = distanceFromHere(e);
+    const isThis = e.id === entry.id;
+    return el('li', {},
+      el('button', {
+        class: `compare-row${isThis ? ' is-this' : ''}`,
+        type: 'button',
+        disabled: isThis,
+        onclick: () => { location.hash = `#/scan/${e.id}`; },
+      },
+        el('div', { class: 'compare-body' },
+          el('span', { class: 'compare-store' }, storeName(e) || e.place?.area || 'Unknown store'),
+          el('span', { class: 'compare-meta' }, [
+            isThis ? 'This scan' : dateFmt.format(e.createdAt),
+            e.secondHand ? 'Used' : null,
+            d !== null ? (d < 0.05 ? 'Here' : fmtDistance(d)) : null,
+          ].filter(Boolean).join(' · ')),
+        ),
+        el('div', { class: 'compare-price' },
+          el('span', {}, rm(price)),
+          price && price === cheapest && rows.length > 1 ? el('span', { class: 'tag tag-buy' }, 'Cheapest') : null,
+        ),
+      ),
+    );
+  }));
 }
 
 function renderListings(entry) {
@@ -832,11 +1085,12 @@ function renderResult(entry) {
   $('#resError').hidden = entry.errors.length === 0;
   $('#resError').textContent = entry.errors.join('\n');
 
-  const visionDone = entry.status.vision !== 'active';
+  const visionDone = entry.status.vision === 'done' || entry.status.vision === 'failed';
   $('#prices').hidden = !visionDone;
   $('#toggles').hidden = !visionDone;
   renderPrices(entry);
   renderCondition(entry);
+  renderPlace(entry);
 
   const q = searchQuery(entry);
   $('#searchLinks').hidden = !q;
@@ -856,7 +1110,9 @@ function renderResult(entry) {
   ));
 
   const isRunning = running.has(entry.id);
-  $('#retryBtn').hidden = isRunning || entry.status.search === 'done';
+  $('#rescanBtn').disabled = isRunning;
+  $('#rescanBtn').classList.toggle('spinning', isRunning);
+  $('#rescanBtn').classList.toggle('attention', scanFailed(entry));
   $('#deleteBtn').hidden = isRunning;
 }
 
@@ -890,6 +1146,7 @@ function openSettings() {
   $('#geminiKeyInput').value = store.get('geminiKey', '');
   $('#modelInput').value = store.get('model', '') || DEFAULT_MODEL;
   $('#defaultTaxFree').checked = settings.taxFree;
+  $('#saveLocationToggle').checked = settings.saveLocation;
   $('#settingsDialog').showModal();
 }
 
@@ -899,12 +1156,14 @@ $('#settingsForm').addEventListener('submit', () => {
   const model = $('#modelInput').value.trim();
   store.set('model', model && model !== DEFAULT_MODEL ? model : '');
   store.set('taxFree', $('#defaultTaxFree').checked);
+  store.set('saveLocation', $('#saveLocationToggle').checked);
   route();
 });
 
 $('#clearHistoryBtn').addEventListener('click', () => {
   if (!confirm('Delete all saved scans?')) return;
   store.set('history', []);
+  imageDb.clear();
   $('#settingsDialog').close();
   location.hash = '#/';
   route();
@@ -949,7 +1208,35 @@ for (const b of document.querySelectorAll('#modeSwitch [data-mode]')) {
   });
 }
 
-$('#retryBtn').addEventListener('click', retrySearch);
+$('#rescanBtn').addEventListener('click', () => current && rescan(current.id));
+
+$('#storeInput').addEventListener('input', (e) => {
+  if (!current) return;
+  current.place = { ...(current.place || {}), name: e.target.value.trim() || null };
+  saveEntry(current);
+});
+$('#storeInput').addEventListener('change', () => current && renderPlace(current));
+
+$('#locateBtn').addEventListener('click', async () => {
+  const entry = current;
+  if (!entry) return;
+  $('#placeArea').textContent = 'Getting location…';
+  await locate(entry, () => refresh(entry));
+});
+
+for (const b of document.querySelectorAll('#historySort [data-sort]')) {
+  b.addEventListener('click', async () => {
+    historySort = b.dataset.sort;
+    if (historySort === 'nearest' && !herePos) {
+      $('#historyHint').hidden = false;
+      $('#historyHint').textContent = 'Getting your location…';
+      herePos = await getPosition({ maxAge: 60000 });
+      $('#historyHint').textContent = herePos ? '' : "Couldn't get your location. Check location permission for this site.";
+      $('#historyHint').hidden = Boolean(herePos);
+    }
+    renderHistory();
+  });
+}
 $('#deleteBtn').addEventListener('click', () => {
   if (!current || !confirm('Delete this scan?')) return;
   deleteEntry(current.id);

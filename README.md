@@ -50,6 +50,20 @@ Repo **Settings → Pages → Build and deployment → Deploy from a branch → 
 - **Claim tourist tax refund:** knocks the 10% consumption tax off for purchases of ¥5,000 or more. Set it as the default in Settings.
 - **Shopee MY / Carousell MY** buttons open a live search for the product, for when you want to eyeball listings yourself.
 
+### Rescan
+
+Every scan in **Recent scans** and **History** has a ↻ button beside it, and the same button sits at the top of each result. It reruns whatever failed (red outline means something did) and refreshes the Malaysian prices, using the full-size photo saved on your phone.
+
+### Stores and location
+
+Each scan saves where you were (allow location when asked; turn it off in Settings). The **Where** card on a result shows:
+
+- **Store name:** the shop name Gemini reads off the tag, or the name from OpenStreetMap. Tap to type your own.
+- **Directions:** opens Google Maps back to that spot. **Move pin to here** fixes a bad GPS reading.
+- **Same item at other stores:** every scan of the same product, cheapest first, with distance from you. Tap one to open it.
+
+History has a **Nearest** sort for when you're deciding which shop to go back to.
+
 ### Second-hand shops
 
 Switch the home screen to **Second-hand shop** before scanning at Hard Off, 2nd Street, Book Off, Sofmap and the like. Each scan then:

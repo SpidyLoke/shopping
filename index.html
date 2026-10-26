@@ -81,6 +81,9 @@
           <h1 id="resName">Reading…</h1>
           <p class="muted small" id="resTime"></p>
         </div>
+        <button class="rescan-btn" id="rescanBtn" type="button" aria-label="Rescan" title="Rescan">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5"/></svg>
+        </button>
       </div>
 
       <ol class="steps" id="steps">
@@ -128,6 +131,20 @@
         <p class="muted small" id="conditionNote"></p>
       </details>
 
+      <details class="panel place" id="placePanel" open>
+        <summary>Where</summary>
+        <input class="store-input" id="storeInput" type="text" autocomplete="off" placeholder="Store name (e.g. Bic Camera Ikebukuro)" aria-label="Store name">
+        <p class="muted small" id="placeArea"></p>
+        <div class="place-actions">
+          <a class="btn btn-small" id="directionsLink" target="_blank" rel="noopener" hidden>Directions</a>
+          <button class="btn btn-small btn-ghost" type="button" id="locateBtn">Use current location</button>
+        </div>
+        <div id="comparePlaces" hidden>
+          <h3 class="mini-head">Same item at other stores</h3>
+          <ul class="compare-list" id="compareList"></ul>
+        </div>
+      </details>
+
       <div class="toggles" id="toggles" hidden>
         <label class="switch">
           <input type="checkbox" id="secondHandToggle">
@@ -170,7 +187,6 @@
 
       <div class="result-actions">
         <label class="btn btn-primary" for="cameraInput">Scan another</label>
-        <button class="btn btn-ghost" type="button" id="retryBtn" hidden>Retry price search</button>
         <button class="btn btn-ghost btn-danger" type="button" id="deleteBtn" hidden>Delete scan</button>
       </div>
     </section>
@@ -180,6 +196,11 @@
       <div class="section-head">
         <h1>Scan history</h1>
       </div>
+      <div class="segmented" id="historySort" role="radiogroup" aria-label="Sort scans">
+        <button type="button" role="radio" data-sort="recent" aria-checked="true">Recent</button>
+        <button type="button" role="radio" data-sort="nearest" aria-checked="false">Nearest</button>
+      </div>
+      <p class="muted small" id="historyHint" hidden></p>
       <p class="muted" id="historyEmpty">No scans yet.</p>
       <ul class="history-list" id="historyList"></ul>
     </section>
@@ -207,6 +228,10 @@
       <label class="switch">
         <input type="checkbox" id="defaultTaxFree">
         <span>Assume tourist tax refund by default</span>
+      </label>
+      <label class="switch">
+        <input type="checkbox" id="saveLocationToggle">
+        <span>Save store location with each scan</span>
       </label>
       <div class="dialog-actions">
         <button class="btn btn-ghost btn-danger" type="button" id="clearHistoryBtn">Clear history</button>
