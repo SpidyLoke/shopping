@@ -146,6 +146,18 @@
           <p class="price-rm" id="jpUsed">–</p>
           <p class="price-sub" id="jpUsedRange"></p>
         </div>
+        <div class="price-card price-card-wide">
+          <div>
+            <p class="price-head">CeX Malaysia sells</p>
+            <p class="price-rm" id="cexSell">–</p>
+            <p class="price-sub" id="cexSellNote"></p>
+          </div>
+          <div>
+            <p class="price-head">CeX buys at</p>
+            <p class="price-rm" id="cexCash">–</p>
+            <p class="price-sub" id="cexVoucher"></p>
+          </div>
+        </div>
       </div>
 
       <details class="panel condition" id="compatPanel" hidden open>
@@ -196,6 +208,7 @@
       <div class="search-links" id="searchLinks" hidden>
         <a class="btn btn-shopee" id="shopeeLink" target="_blank" rel="noopener">Shopee MY</a>
         <a class="btn btn-carousell" id="carousellLink" target="_blank" rel="noopener">Carousell MY</a>
+        <a class="btn btn-wide" id="cexLink" target="_blank" rel="noopener">CeX Malaysia</a>
         <a class="btn" id="mercariLink" target="_blank" rel="noopener">Mercari JP</a>
         <a class="btn" id="yahooLink" target="_blank" rel="noopener">Yahoo Auctions</a>
       </div>
@@ -326,6 +339,11 @@
       </div>
     </form>
   </dialog>
+
+  <div class="update-bar" id="undoToast" role="status" hidden>
+    <span id="undoText">Deleted</span>
+    <button class="btn btn-small btn-primary" type="button" id="undoBtn">Undo</button>
+  </div>
 
   <div class="update-bar" id="updateBar" role="status" hidden>
     <span>New version of the app is ready.</span>

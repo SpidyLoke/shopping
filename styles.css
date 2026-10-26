@@ -216,7 +216,28 @@ h2 { font-size: 1.05rem; margin: 0; }
 
 /* History */
 .history-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-.history-row { display: flex; align-items: stretch; gap: 8px; }
+.history-row { display: flex; align-items: stretch; gap: 8px; touch-action: pan-y; transition: transform 0.2s ease; position: relative; background: var(--bg); }
+
+/* Swipe to delete */
+.swipe { position: relative; border-radius: var(--radius); }
+.swipe-bg {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 22px;
+  border-radius: var(--radius);
+  background: var(--bad-bg);
+  color: var(--bad);
+  font-weight: 700;
+  opacity: 0;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.swipe.swiping .swipe-bg, .swipe.armed .swipe-bg { opacity: 1; }
+.swipe.armed .swipe-bg { background: var(--bad); color: #fff; }
+.swipe.swiping .history-row { transition: none; }
+@media (prefers-reduced-motion: reduce) { .history-row { transition: none; } }
 .history-item {
   flex: 1;
   min-width: 0;
@@ -381,6 +402,8 @@ h2 { font-size: 1.05rem; margin: 0; }
 .verdict.skip .verdict-label { color: var(--bad); }
 
 .prices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.price-card-wide { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.search-links .btn-wide { grid-column: 1 / -1; }
 .price-card {
   padding: 12px;
   border-radius: var(--radius);

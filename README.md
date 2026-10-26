@@ -50,6 +50,14 @@ Repo **Settings → Pages → Build and deployment → Deploy from a branch → 
 - **Claim tourist tax refund:** knocks the 10% consumption tax off for purchases of ¥5,000 or more. Set it as the default in Settings.
 - **Shopee MY / Carousell MY** buttons open a live search for the product, for when you want to eyeball listings yourself.
 
+### CeX Malaysia
+
+Gemini also checks [CeX Malaysia](https://my.webuy.com) for the same item. The **CeX Malaysia sells** card shows its used price (and grade), and **CeX buys at** shows its trade-in offer in cash and voucher, which is roughly what you could resell it for at home. The verdict mentions CeX when it's cheaper than the Japan price, and the CeX Malaysia button opens the product or a search.
+
+### Swipe to delete
+
+Swipe any scan left in Recent, Favourites or History to delete it. An **Undo** bar stays up for 5 seconds; the saved photo is only removed after that.
+
 ### Malaysia compatibility
 
 Every scan gets a **Works in Malaysia** card when it applies: 240V or 100V-only (Japan is 100V, Malaysia 240V with three-pin plugs), region locks, Japanese-only menus, Japan-only warranty, and oddities like forced camera shutter sounds. A real problem (e.g. a 100V rice cooker) turns "Buy it here" into **Cheap, but check it works in Malaysia**.

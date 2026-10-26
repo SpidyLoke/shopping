@@ -3,7 +3,7 @@
 // lives in localStorage on the user's device only.
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.10.26-7';
+const APP_VERSION = '2026.10.26-8';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -94,8 +94,15 @@ function saveEntry(entry) {
 }
 
 function deleteEntry(id) {
+  const entry = findEntry(id);
   store.set('history', loadHistory().filter((e) => e.id !== id));
-  imageDb.del(id);
+  if (entry) dropImageIfUnused(entry);
+}
+
+// Shelf items share the shelf's photo, so only delete a photo nothing else still points at.
+function dropImageIfUnused(entry) {
+  const imgId = entry.imageId || entry.id;
+  if (!loadHistory().some((e) => e.id === imgId || e.imageId === imgId)) imageDb.del(imgId);
 }
 
 // Stored copies, swapped for the live object of any scan still in flight.
@@ -403,6 +410,7 @@ Tasks:
    - New: Shopee Malaysia (shopee.com.my). If Shopee has none, use Lazada Malaysia or official Malaysian retailers.
    - Second-hand: Carousell Malaysia (carousell.com.my), plus used listings on Shopee Malaysia.
    Only use Malaysian listings priced in RM. Exclude accessories, cases, spare parts and different variants. Never invent listings, prices or URLs; if you cannot find any, use null or an empty list.
+   Also check CeX Malaysia (my.webuy.com), which sells graded used stock: its selling price in RM for this item, and what it pays to buy one in (cash and voucher), if listed.
    Also search Japan's second-hand market for the same item in comparable condition: Mercari Japan (jp.mercari.com) and Yahoo! Auctions Japan (auctions.yahoo.co.jp), prices in yen.
 4. Read any condition information on the tag or label: the shop's condition grade or rank and what it means on that shop's scale, and every issue, defect or caveat mentioned (e.g. ジャンク, 動作未確認, 通電のみ, 欠品, キズ, 箱なし, 返品不可, 保証なし). Translate each into plain English and rate it: "high" = may not work, sold as-is, no returns or no warranty; "medium" = missing parts, visible damage or heavy wear; "low" = minor cosmetic. List stated positives (e.g. 動作確認済, 美品, 付属品完備) with severity "good". Ignore marketing claims on new-product packaging (e.g. 傷つきにくい means scratch-resistant, not scratched).
 5. Check whether it will work properly in Malaysia: 240V 50Hz mains and Type G three-pin plugs (Japan is 100V with Type A two-pin plugs). Cover only what applies to this product:
@@ -426,6 +434,7 @@ Reply with only a JSON object inside a \`\`\`json code block, with exactly these
   "my_new": { "low": 0, "high": 0, "typical": 0 },
   "my_used": { "low": 0, "high": 0, "typical": 0 },
   "jp_used_yen": { "low": 0, "high": 0, "typical": 0 },
+  "cex_my": { "sell_rm": 0, "buy_cash_rm": 0, "buy_voucher_rm": 0, "grade": "CeX grade if shown (A, B, C) or null", "url": "CeX product URL or null" },
   "listings": [
     { "platform": "Shopee | Carousell | Lazada | Mercari JP | Yahoo Auctions | Other", "condition": "new | used", "title": "listing title", "price_rm": 0, "price_yen": 0, "url": "listing URL or null" }
   ],
@@ -665,6 +674,11 @@ function jpUsedYen(entry) {
   return rangeValue(entry.ai?.jp_used_yen);
 }
 
+function cexFor(entry) {
+  const c = entry.ai?.cex_my || {};
+  return { sell: toNum(c.sell_rm), cash: toNum(c.buy_cash_rm), voucher: toNum(c.buy_voucher_rm), grade: c.grade || null };
+}
+
 function verdictFor(entry) {
   const v = baseVerdict(entry);
   if (!v || v.cls === 'none') return v;
@@ -678,6 +692,9 @@ function verdictFor(entry) {
   if (resale && fx(entry) && jp && resale * fx(entry) < jp * 0.85) {
     v.detail += ` Mercari/Yahoo Japan has it second-hand for about ${yen(resale)} (${rm(resale * fx(entry))}).`;
   }
+  const cex = cexFor(entry);
+  if (cex.sell && jp && cex.sell < jp) v.detail += ` CeX Malaysia sells it used for ${rm(cex.sell)}.`;
+  if (cex.cash) v.detail += ` CeX would buy it back for ${rm(cex.cash)} cash.`;
   return v;
 }
 
@@ -1117,7 +1134,7 @@ function shelfHistoryItem(shelf) {
   const meta = [`${shelf.items.length} item${shelf.items.length === 1 ? '' : 's'}`, checked ? `${checked} checked` : null, dateFmt.format(shelf.createdAt)]
     .filter(Boolean).join(' · ');
   const where = storeName(shelf) || shelf.place?.area;
-  return el('li', { class: 'history-row' },
+  return swipeRow(shelf, el('div', { class: 'history-row' },
     el('button', { class: 'history-item', type: 'button', onclick: () => { location.hash = `#/shelf/${shelf.id}`; } },
       el('img', { src: shelf.thumb, alt: '' }),
       el('div', { class: 'history-body' },
@@ -1127,7 +1144,7 @@ function shelfHistoryItem(shelf) {
       el('span', { class: `tag ${failed ? 'tag-skip' : ''}` }, failed ? 'Failed' : isRunning ? '…' : 'Shelf'),
     ),
     rowActions(shelf, running.has(shelf.id), failed),
-  );
+  ));
 }
 
 function renderShelf(shelf) {
@@ -1252,7 +1269,7 @@ function historyItem(entry, opts = {}) {
   const where = [storeName(entry) || entry.place?.area, dist !== null ? fmtAway(dist) : null].filter(Boolean).join(' · ');
   const selecting = compareMode && location.hash.startsWith('#/history');
   const selected = selecting && compareSel.includes(entry.id);
-  return el('li', { class: 'history-row' },
+  return swipeRow(entry, el('div', { class: 'history-row' },
     el('button', {
       class: `history-item${selected ? ' selected' : ''}`,
       type: 'button',
@@ -1271,7 +1288,102 @@ function historyItem(entry, opts = {}) {
       el('span', { class: `tag ${tagCls}` }, tagText),
     ),
     rowActions(entry, isRunning, failed),
-  );
+  ));
+}
+
+// ---------- swipe to delete ----------
+
+function swipeRow(entry, row) {
+  const li = el('li', { class: 'swipe' }, el('div', { class: 'swipe-bg', 'aria-hidden': 'true' }, 'Delete'), row);
+  attachSwipe(li, row, entry.id);
+  return li;
+}
+
+// Left swipe past ~a third of the row deletes (with Undo). Vertical drags are left to the page scroll.
+function attachSwipe(li, row, id) {
+  let startX = 0;
+  let startY = 0;
+  let dx = 0;
+  let state = 'idle';
+  let suppressClickUntil = 0;
+  const threshold = () => Math.max(90, li.offsetWidth * 0.35);
+  const reset = () => {
+    state = 'idle';
+    row.style.transform = '';
+    li.classList.remove('swiping', 'armed');
+  };
+
+  row.addEventListener('pointerdown', (e) => {
+    if ((e.pointerType === 'mouse' && e.button !== 0) || compareMode || running.has(id)) return;
+    startX = e.clientX;
+    startY = e.clientY;
+    dx = 0;
+    state = 'pending';
+  });
+  row.addEventListener('pointermove', (e) => {
+    if (state === 'idle') return;
+    const mx = e.clientX - startX;
+    const my = e.clientY - startY;
+    if (state === 'pending') {
+      if (Math.abs(my) > 10 && Math.abs(my) >= Math.abs(mx)) {
+        state = 'idle';
+        return;
+      }
+      if (mx > -10 || Math.abs(mx) < Math.abs(my)) return;
+      state = 'swiping';
+      row.setPointerCapture?.(e.pointerId);
+      li.classList.add('swiping');
+    }
+    dx = Math.min(0, mx);
+    row.style.transform = `translateX(${dx}px)`;
+    li.classList.toggle('armed', -dx > threshold());
+  });
+  row.addEventListener('pointerup', () => {
+    if (state !== 'swiping') {
+      state = 'idle';
+      return;
+    }
+    suppressClickUntil = Date.now() + 400;
+    li.classList.remove('swiping');
+    state = 'idle';
+    if (-dx > threshold()) {
+      row.style.transform = `translateX(-${li.offsetWidth + 20}px)`;
+      setTimeout(() => removeWithUndo(id), 180);
+    } else {
+      reset();
+    }
+  });
+  row.addEventListener('pointercancel', reset);
+  // A swipe ends with a click on whatever was under the finger; don't let it open the scan.
+  row.addEventListener('click', (e) => {
+    if (Date.now() < suppressClickUntil) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+  }, true);
+}
+
+let pendingDelete = null;
+
+function removeWithUndo(id) {
+  const entry = findEntry(id);
+  if (!entry || running.has(id)) return;
+  finishPendingDelete();
+  store.set('history', loadHistory().filter((e) => e.id !== id));
+  pendingDelete = { entry, timer: setTimeout(finishPendingDelete, 5000) };
+  const name = entry.kind === 'shelf' ? 'shelf scan' : entry.ai?.product_name || 'scan';
+  $('#undoText').textContent = `Deleted ${name.length > 32 ? `${name.slice(0, 30)}…` : name}`;
+  $('#undoToast').hidden = false;
+  route(true);
+}
+
+// The photo is only removed once Undo is no longer possible.
+function finishPendingDelete() {
+  if (!pendingDelete) return;
+  clearTimeout(pendingDelete.timer);
+  dropImageIfUnused(pendingDelete.entry);
+  pendingDelete = null;
+  $('#undoToast').hidden = true;
 }
 
 function rowActions(entry, isRunning, failed) {
@@ -1393,6 +1505,13 @@ function renderPrices(entry) {
   $('#jpUsedRange').textContent = resale && fx(entry)
     ? `≈ ${rm(resale * fx(entry))}${lo && hi && lo !== hi ? ` · ${yen(lo)} to ${yen(hi)}` : ''}`
     : entry.ai ? 'None found' : '';
+
+  const cex = cexFor(entry);
+  const pending = !entry.ai && entry.status.search !== 'failed';
+  $('#cexSell').textContent = cex.sell ? rm(cex.sell) : pending ? '…' : '–';
+  $('#cexSellNote').textContent = cex.sell ? `Used${cex.grade ? `, grade ${cex.grade}` : ''}` : entry.ai ? 'Not listed' : '';
+  $('#cexCash').textContent = cex.cash ? `${rm(cex.cash)} cash` : pending ? '…' : '–';
+  $('#cexVoucher').textContent = cex.voucher ? `${rm(cex.voucher)} voucher` : '';
 
   const v = verdictFor(entry);
   $('#verdict').hidden = !v;
@@ -1599,6 +1718,7 @@ function renderResult(entry) {
   $('#carousellLink').href = `https://www.carousell.com.my/search/${encodeURIComponent(q)}`;
   const qJa = entry.ai?.search_query_ja || q;
   $('#mercariLink').href = `https://jp.mercari.com/search?keyword=${encodeURIComponent(qJa)}`;
+  $('#cexLink').href = safeUrl(entry.ai?.cex_my?.url)?.includes('webuy.com') ? entry.ai.cex_my.url : `https://my.webuy.com/search?stext=${encodeURIComponent(q)}`;
   $('#yahooLink').href = `https://auctions.yahoo.co.jp/search/search?p=${encodeURIComponent(qJa)}`;
 
   renderListings(entry);
@@ -1736,6 +1856,8 @@ function renderCompare(ids) {
     ['MY new', (e) => rm(rangeValue(e.ai?.my_new)), null],
     ['MY second-hand', (e) => rm(rangeValue(e.ai?.my_used)), null],
     ['JP second-hand', (e) => (jpUsedYen(e) ? [yen(jpUsedYen(e)), el('small', {}, rm(jpUsedYen(e) * (fx(e) || 0)))] : '–'), (e) => jpUsedYen(e)],
+    ['CeX Malaysia sells', (e) => (cexFor(e).sell ? rm(cexFor(e).sell) : '–'), (e) => cexFor(e).sell],
+    ['CeX buys at', (e) => (cexFor(e).cash ? `${rm(cexFor(e).cash)} cash` : '–'), (e) => (cexFor(e).cash ? -cexFor(e).cash : null)],
     ['You save vs MY', (e) => {
       const s = saving(e);
       return s === null ? '–' : s >= 0 ? rm(s) : `${rm(-s)} more`;
@@ -1994,6 +2116,15 @@ async function checkForUpdate() {
     // offline: try again next time
   }
 }
+
+$('#undoBtn').addEventListener('click', () => {
+  if (!pendingDelete) return;
+  clearTimeout(pendingDelete.timer);
+  saveEntry(pendingDelete.entry);
+  pendingDelete = null;
+  $('#undoToast').hidden = true;
+  route(true);
+});
 
 $('#updateBtn').addEventListener('click', () => {
   if (running.size && !confirm('A scan is still running. Reload anyway?')) return;
