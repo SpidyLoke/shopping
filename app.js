@@ -3,7 +3,7 @@
 // lives in localStorage on the user's device only.
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.10.27-2';
+const APP_VERSION = '2026.10.27-3';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -45,6 +45,8 @@ const settings = {
   get autoInfo() { return store.get('autoInfo', false); },
   get quick() { return store.get('quick', false); },
   get buzz() { return store.get('buzz', true); },
+  get serverUrl() { return store.get('serverUrl', ''); },
+  get ntfyTopic() { return store.get('ntfyTopic', ''); },
 };
 
 // Full-size photos live in IndexedDB (localStorage is too small) so old scans can be re-read properly.
@@ -1003,8 +1005,13 @@ function refresh(entry) {
 }
 
 async function runScan(entry, imageB64, { quiet = false } = {}) {
+  if (settings.serverUrl) {
+    await runScanOnServer(entry, imageB64, { quiet });
+    return;
+  }
   running.set(entry.id, entry);
   entry.errors = [];
+  const startedAt = Date.now();
   const update = () => refresh(entry);
 
   if (entry.status.vision !== 'done') {
@@ -1038,6 +1045,8 @@ async function runScan(entry, imageB64, { quiet = false } = {}) {
 
   await Promise.all([translating, searchPrices(entry, imageB64, update)]);
   if (!entry.rate && rate) entry.rate = rate.value;
+  // Left the app mid-scan and the connection was cut: pick it up again when the app is back.
+  if (lastHiddenAt > startedAt && entry.errors.some((m) => /network error|no answer after/.test(m))) entry.resume = true;
   running.delete(entry.id);
   update();
   if (!quiet) notifyDone();
@@ -1112,18 +1121,7 @@ async function searchPrices(entry, imageB64, update) {
       override: entry.override,
       quick: entry.quick,
     });
-    entry.ai = ai;
-    entry.sources = sources;
-    // A graded or 中古 tag means a used item even if the app was in New mode; compare it like for like.
-    if (ai.condition?.is_used === true && !entry.secondHand && !entry.secondHandEdited) {
-      entry.secondHand = true;
-      entry.autoUsed = true;
-    }
-    if (!entry.yenEdited) {
-      entry.yen = toNum(ai.jp_price_yen) || entry.yen || parseYen(entry.ocrText);
-      if (typeof ai.jp_price_tax_included === 'boolean') entry.taxIncluded = ai.jp_price_tax_included;
-    }
-    entry.status.search = 'done';
+    applyAi(entry, ai, sources);
   } catch (e) {
     entry.status.search = 'failed';
     entry.errors.push(e.message);
@@ -1131,14 +1129,231 @@ async function searchPrices(entry, imageB64, update) {
   update();
 
   if (entry.ai && settings.autoInfo && !entry.info) loadInfo(entry.id);
+  await lookupCex(entry, update);
+}
 
+function applyAi(entry, ai, sources) {
+  entry.ai = ai;
+  entry.sources = sources;
+  // A graded or 中古 tag means a used item even if the app was in New mode; compare it like for like.
+  if (ai.condition?.is_used === true && !entry.secondHand && !entry.secondHandEdited) {
+    entry.secondHand = true;
+    entry.autoUsed = true;
+  }
+  if (!entry.yenEdited) {
+    entry.yen = toNum(ai.jp_price_yen) || entry.yen || parseYen(entry.ocrText);
+    if (typeof ai.jp_price_tax_included === 'boolean') entry.taxIncluded = ai.jp_price_tax_included;
+  }
+  entry.status.search = 'done';
+}
+
+async function lookupCex(entry, update) {
   const query = entry.ai?.search_query || entry.ai?.product_name;
-  if (query) {
-    entry.cexPending = true;
-    update();
-    entry.cex = { ...(await cexLookup(query)), checkedAt: Date.now() };
-    entry.cexPending = false;
-    update();
+  if (!query) return;
+  entry.cexPending = true;
+  update();
+  entry.cex = { ...(await cexLookup(query)), checkedAt: Date.now() };
+  entry.cexPending = false;
+  update();
+}
+
+// ---------- background scanning (optional Apps Script server) ----------
+// Phones suspend a web app's network calls as soon as you leave it. With a scan server set up,
+// the scan runs there instead; the app collects the result whenever it's next open, and the
+// server pings the phone through ntfy.
+
+const pendingPolls = new Set();
+let pollTimer = null;
+
+function serverSecret() {
+  let secret = store.get('serverSecret', '');
+  if (!secret) {
+    secret = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
+    store.set('serverSecret', secret);
+  }
+  return secret;
+}
+
+async function serverCall(body, timeoutMs = 30000) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    // No custom headers: a plain text POST skips the CORS preflight that Apps Script can't answer.
+    const res = await fetch(settings.serverUrl, { method: 'POST', body: JSON.stringify({ ...body, secret: serverSecret() }), signal: ctrl.signal });
+    const data = await res.json();
+    if (data.error) throw new Error(`Scan server: ${data.error}`);
+    return data;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function serverJobRequest(entry, imageB64) {
+  const visionDone = entry.status.vision === 'done';
+  return {
+    action: 'scan',
+    jobId: entry.serverJob.id,
+    image: imageB64,
+    keys: { cloud: settings.apiKey, gemini: settings.geminiKey },
+    model: settings.model,
+    referer: `${location.origin}${location.pathname}`,
+    vision: !visionDone,
+    ocrText: visionDone ? entry.ocrText || entry.contextText || '' : '',
+    webGuess: visionDone ? entry.webGuess || '' : '',
+    translate: !['done', 'skipped'].includes(entry.status.translate),
+    // The server swaps in the OCR text and Vision's guess once it has them.
+    prompt: buildPrompt({
+      ocrText: visionDone ? entry.ocrText || entry.contextText : '{{OCR}}',
+      webGuess: visionDone ? entry.webGuess : '{{WEBGUESS}}',
+      secondHand: entry.secondHand,
+      focus: entry.focus,
+      override: entry.override,
+      quick: entry.quick,
+    }),
+    cex: { index: CEX_INDEX },
+    notify: settings.ntfyTopic ? { topic: settings.ntfyTopic } : null,
+  };
+}
+
+async function runScanOnServer(entry, imageB64, { quiet = false } = {}) {
+  running.set(entry.id, entry);
+  entry.errors = [];
+  entry.serverJob = { id: uid(), sentAt: Date.now(), done: false };
+  if (entry.status.vision !== 'done') entry.status.vision = 'active';
+  if (!['done', 'skipped'].includes(entry.status.translate)) entry.status.translate = 'active';
+  entry.status.search = 'active';
+  refresh(entry);
+  let out = null;
+  try {
+    out = await serverCall(serverJobRequest(entry, imageB64), 330000);
+  } catch {
+    // The app was closed or lost signal mid-request. The server carries on; collect it later.
+  }
+  if (out?.status === 'done') await applyServerResult(entry, out, { quiet });
+  else pollServerJobs();
+}
+
+async function applyServerResult(entry, out, { quiet = false } = {}) {
+  if (entry.serverJob?.done) return; // already collected (the request and a poll can both come back)
+  if (out.vision) {
+    Object.assign(entry, out.vision);
+    entry.status.vision = 'done';
+  } else if (out.visionError) {
+    entry.status.vision = 'failed';
+    entry.errors.push(out.visionError);
+  }
+  if (!entry.yen) entry.yen = parseYen(entry.ocrText);
+  if (out.translate) {
+    Object.assign(entry, out.translate);
+    entry.status.translate = 'done';
+  } else if (out.translateError) {
+    entry.status.translate = 'failed';
+    entry.errors.push(out.translateError);
+  } else if (entry.status.translate === 'active') {
+    entry.status.translate = 'skipped';
+  }
+  if (out.gemini) {
+    try {
+      const sources = (out.gemini.chunks || []).filter((c) => safeUrl(c.uri)).map((c) => ({ title: c.title, url: c.uri }));
+      applyAi(entry, parseJson(out.gemini.text), sources);
+    } catch (e) {
+      entry.status.search = 'failed';
+      entry.errors.push(e.message);
+    }
+  } else {
+    entry.status.search = 'failed';
+    entry.errors.push(out.geminiError || 'Gemini: no result came back from the scan server.');
+  }
+  if (out.cex?.hits) entry.cex = { ...pickCex(out.cex.query, out.cex.hits), checkedAt: Date.now() };
+  entry.serverJob = { ...entry.serverJob, done: true };
+  if (!entry.rate && rate) entry.rate = rate.value;
+  running.delete(entry.id);
+  const update = () => refresh(entry);
+  update();
+  if (!quiet) notifyDone();
+  if (entry.ai && settings.autoInfo && !entry.info) loadInfo(entry.id);
+  // Google's servers sit outside Malaysia and CeX may refuse them, so try from the phone as well.
+  if (entry.ai && !entry.cex?.found) await lookupCex(entry, update);
+}
+
+function giveUpServerJob(entry, message) {
+  for (const k of Object.keys(entry.status)) if (entry.status[k] === 'active') entry.status[k] = 'failed';
+  entry.errors.push(message);
+  entry.serverJob = { ...entry.serverJob, done: true };
+  running.delete(entry.id);
+  refresh(entry);
+}
+
+function pendingServerEntries() {
+  return historyEntries().filter((e) => e.serverJob && !e.serverJob.done);
+}
+
+async function checkServerJob(entry) {
+  if (pendingPolls.has(entry.id)) return;
+  pendingPolls.add(entry.id);
+  try {
+    const out = await serverCall({ action: 'result', jobId: entry.serverJob.id }, 15000);
+    const age = Date.now() - entry.serverJob.sentAt;
+    if (out.status === 'done') {
+      await applyServerResult(entry, out);
+    } else if (out.status === 'unknown' && age > 20000) {
+      // The upload never arrived (the app closed while sending). Send it once more.
+      if (!entry.serverJob.resent) {
+        const image = (await imageDb.get(entry.imageId || entry.id)) || entry.thumb.split(',')[1];
+        entry.serverJob = { ...entry.serverJob, resent: true, sentAt: Date.now() };
+        saveEntry(entry);
+        serverCall(serverJobRequest(entry, image), 330000)
+          .then((res) => (res?.status === 'done' && !findEntry(entry.id)?.serverJob?.done ? applyServerResult(entry, res) : null))
+          .catch(() => {});
+      } else {
+        giveUpServerJob(entry, "Scan server: this scan never arrived. Tap ↻ to try again.");
+      }
+    } else if (out.status === 'running' && age > 8 * 60 * 1000) {
+      giveUpServerJob(entry, 'Scan server: the scan took too long. Tap ↻ to try again.');
+    }
+  } catch {
+    // offline or the server is busy: try again on the next tick
+  } finally {
+    pendingPolls.delete(entry.id);
+  }
+}
+
+function pollServerJobs() {
+  if (pollTimer || !settings.serverUrl) return;
+  const tick = () => {
+    if (document.visibilityState !== 'visible') return;
+    const pending = pendingServerEntries();
+    if (!pending.length) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+      return;
+    }
+    for (const e of pending) {
+      const entry = running.get(e.id) || e;
+      running.set(entry.id, entry);
+      checkServerJob(entry);
+    }
+  };
+  pollTimer = setInterval(tick, 4000);
+  tick();
+}
+
+let lastHiddenAt = 0;
+
+// Run on launch and whenever the app comes back on screen.
+function resumeWork() {
+  if (pendingServerEntries().length) {
+    for (const e of pendingServerEntries()) if (!running.has(e.id)) running.set(e.id, e);
+    pollServerJobs();
+    route(true);
+  }
+  // Without a server, a scan cut off by leaving the app (or the app being closed) restarts by itself.
+  const cutOff = historyEntries().filter((e) => !running.has(e.id) && e.kind !== 'shelf'
+    && (e.resume || (Object.values(e.status).includes('active') && !(e.serverJob && !e.serverJob.done) && Date.now() - e.createdAt < 60 * 60 * 1000)));
+  for (const e of cutOff) {
+    e.resume = false;
+    saveEntry(e);
+    rescan(e.id);
   }
 }
 
@@ -2339,6 +2554,7 @@ function renderResult(entry) {
   $('#resPhoto').src = entry.thumb;
   if (document.activeElement !== $('#notesInput')) $('#notesInput').value = entry.notes || '';
   $('#quickBanner').hidden = !(entry.quick && entry.ai && !running.has(entry.id));
+  $('#serverHint').hidden = !(entry.serverJob && !entry.serverJob.done);
   renderAsk(entry);
   $('#resName').textContent = entry.ai?.product_name || entry.webGuess || (running.has(entry.id) ? 'Reading…' : 'Unidentified item');
   $('#resBrand').textContent = entry.ai?.brand || '';
@@ -2627,6 +2843,9 @@ function openSettings() {
   $('#saveLocationToggle').checked = settings.saveLocation;
   $('#autoInfoToggle').checked = settings.autoInfo;
   $('#buzzToggle').checked = settings.buzz;
+  $('#serverUrlInput').value = settings.serverUrl;
+  $('#ntfyInput').value = settings.ntfyTopic;
+  $('#serverTestResult').textContent = '';
   $('#settingsDialog').showModal();
 }
 
@@ -2639,6 +2858,7 @@ $('#settingsForm').addEventListener('submit', () => {
   store.set('saveLocation', $('#saveLocationToggle').checked);
   store.set('autoInfo', $('#autoInfoToggle').checked);
   store.set('buzz', $('#buzzToggle').checked);
+  saveServerSettings();
   route();
 });
 
@@ -2869,6 +3089,47 @@ $('#updateBtn').addEventListener('click', () => {
   location.reload();
 });
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible') checkForUpdate();
+  if (document.visibilityState === 'visible') {
+    checkForUpdate();
+    resumeWork();
+  } else {
+    lastHiddenAt = Date.now();
+  }
+});
+
+function saveServerSettings() {
+  store.set('serverUrl', $('#serverUrlInput').value.trim());
+  store.set('ntfyTopic', $('#ntfyInput').value.trim());
+}
+
+$('#ntfyNew').addEventListener('click', () => {
+  const random = Array.from(crypto.getRandomValues(new Uint8Array(6)), (b) => b.toString(36).padStart(2, '0')).join('');
+  $('#ntfyInput').value = `kaimono-${random}`;
+});
+$('#ntfyCopy').addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText($('#ntfyInput').value);
+    $('#serverTestResult').textContent = 'Topic copied.';
+  } catch {
+    $('#ntfyInput').select();
+  }
+});
+$('#serverTest').addEventListener('click', async () => {
+  saveServerSettings();
+  const out = $('#serverTestResult');
+  if (!settings.serverUrl) {
+    out.textContent = 'Paste your scan server URL first.';
+    return;
+  }
+  out.textContent = 'Testing…';
+  try {
+    await serverCall({ action: 'ping', notify: settings.ntfyTopic ? { topic: settings.ntfyTopic } : null }, 30000);
+    out.textContent = settings.ntfyTopic
+      ? 'Server OK. A test notification is on its way to the ntfy app.'
+      : 'Server OK. Add an ntfy topic to get notifications.';
+  } catch (e) {
+    out.textContent = e.message.startsWith('Scan server') ? e.message : "Couldn't reach the server. Check the URL and that it's deployed with access for Anyone.";
+  }
 });
 checkForUpdate();
+resumeWork();

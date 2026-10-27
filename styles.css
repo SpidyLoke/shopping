@@ -992,3 +992,16 @@ main { padding-bottom: calc(100px + env(safe-area-inset-bottom)); }
 .select-bar .btn { min-height: 40px; padding: 0 12px; }
 .section-head .link + .link { margin-left: 12px; }
 #favWrap .section-head h2 { margin-right: auto; }
+
+/* Background scanning */
+dialog#settingsDialog { max-height: calc(100dvh - 32px); overflow-y: auto; }
+.field-group { display: flex; flex-direction: column; gap: 10px; margin: 0; padding: 12px; border: 1px solid var(--line); border-radius: 12px; }
+.field-group legend { padding: 0 6px; font-weight: 700; }
+.field-group p { margin: 0; }
+.inline-row { display: flex; gap: 6px; }
+.inline-row input { flex: 1; min-width: 0; min-height: 44px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); }
+.server-hint { margin: 0; padding: 10px 12px; border-radius: var(--radius); background: var(--good-bg); font-size: 0.9rem; }
+.field-group { min-inline-size: 0; }
+dialog#settingsDialog form { overflow-x: hidden; }
+.chip-row { flex-wrap: wrap; }
+.chip { white-space: nowrap; padding: 0 12px; }

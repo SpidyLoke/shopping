@@ -143,6 +143,8 @@
         <li data-step="search">Searching Shopee &amp; Carousell MY</li>
       </ol>
 
+      <p class="server-hint" id="serverHint" hidden>Running on your scan server. You can close the app; you'll get a notification when it's done.</p>
+
       <p class="error" id="resError" role="alert" hidden></p>
 
       <div class="verdict" id="verdict" hidden>
@@ -411,6 +413,25 @@
         <input type="checkbox" id="buzzToggle">
         <span>Buzz and chime when a scan finishes (iPhone: chime, plus a haptic tap on iOS 18+)</span>
       </label>
+      <fieldset class="field-group">
+        <legend>Background scanning</legend>
+        <p class="muted small">Lets a scan finish after you close the app and sends a notification when it's done. Needs your own free Google Apps Script server; the setup steps are in the README.</p>
+        <label class="field">
+          <span>Scan server URL</span>
+          <input id="serverUrlInput" type="url" autocomplete="off" spellcheck="false" placeholder="https://script.google.com/macros/s/…/exec">
+        </label>
+        <label class="field">
+          <span>ntfy topic for notifications</span>
+          <span class="inline-row">
+            <input id="ntfyInput" type="text" autocomplete="off" spellcheck="false" placeholder="kaimono-…">
+            <button class="btn btn-small" type="button" id="ntfyNew">New</button>
+            <button class="btn btn-small" type="button" id="ntfyCopy">Copy</button>
+          </span>
+          <small>Install the free ntfy app and subscribe to this exact topic. Anyone who knows the name can see your notifications, so keep the random one.</small>
+        </label>
+        <button class="btn btn-small" type="button" id="serverTest">Test server and notification</button>
+        <p class="small" id="serverTestResult" role="status"></p>
+      </fieldset>
       <div class="dialog-actions">
         <button class="btn btn-ghost btn-danger" type="button" id="clearHistoryBtn">Clear history</button>
         <button class="btn btn-primary" value="save" id="saveSettingsBtn">Save</button>

@@ -32,6 +32,27 @@ In [Google Cloud Console](https://console.cloud.google.com/):
 
 Free tiers at time of writing: Vision gives 1,000 units a month per feature (each scan uses two: text and web detection), Translation gives 500,000 characters a month. Gemini grounded search is billed per search on the paid tier; check [Gemini API pricing](https://ai.google.dev/gemini-api/docs/pricing) for current rates.
 
+### Background scanning (optional, recommended on iPhone)
+
+Phones cut a web app's connections a few seconds after you switch away or close it, so a scan in progress fails. A free Google Apps Script "scan server" fixes that: the app hands each scan to it, it finishes the work on Google's side, and the app picks up the result next time it's open. It can also send you a phone notification through the free **ntfy** app.
+
+1. Go to [script.google.com](https://script.google.com) (same Google account) → **New project**. Rename it "Kaimono server".
+2. Delete the sample code in `Code.gs` and paste in everything from [`server/Code.gs`](https://raw.githubusercontent.com/SpidyLoke/shopping/main/server/Code.gs). Save.
+3. **Deploy → New deployment →** ⚙ **Web app**. Execute as **Me**, Who has access **Anyone**. **Deploy**.
+4. Authorise it. Google will warn the app isn't verified (it's your own script): **Advanced → Go to Kaimono server → Allow**. It needs permission to make web requests (Google APIs, CeX, ntfy).
+5. Copy the **Web app URL** (ends in `/exec`).
+6. In the app: **Settings → Background scanning**, paste the URL. Tap **New** to make a private ntfy topic, then **Copy**.
+7. Install **ntfy** ([App Store](https://apps.apple.com/app/ntfy/id1625396347) / Play Store), tap **+**, paste the topic, **Subscribe**, and allow notifications.
+8. Back in the app, tap **Test server and notification**, then **Save**.
+
+Notes:
+- The server uses the API keys already in the app; they're sent with each scan and never stored there. The first request from your app locks the server to it.
+- Results are kept for 6 hours. While a scan is on the server the result page says so; you can close the app.
+- If you update `Code.gs` later: **Deploy → Manage deployments → ✎ → Version: New version**. The URL stays the same.
+- If scans fail with "Requests from referer … are blocked", Apps Script didn't pass your site as the referrer. Make a second pair of keys with **API restrictions only** (no website restriction) and use those in the app.
+
+Without a server, a scan cut off by leaving the app restarts by itself when you come back to the app.
+
 ### 2. Turn on GitHub Pages
 
 Repo **Settings → Pages → Build and deployment → Deploy from a branch → `main` / `(root)`**. The site goes live at `https://spidyloke.github.io/shopping/`.
