@@ -3,7 +3,7 @@
 // lives in localStorage on the user's device only.
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.10.27-11';
+const APP_VERSION = '2026.10.27-12';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -138,7 +138,21 @@ function saveEntry(entry) {
   list = list.slice(0, HISTORY_LIMIT);
   // On quota errors, drop the oldest scans until it fits.
   while (!store.set('history', list) && list.length > 1) list.pop();
-  if (list.length < before) imageDb.prune(new Set(list.flatMap((e) => [e.id, e.imageId].filter(Boolean))));
+  if (list.length < before) imageDb.prune(new Set(list.flatMap((e) => [e.id, e.imageId, ...extraIds(e)].filter(Boolean))));
+}
+
+// Extra photos of the same item (other angles, the brand label, the price tag) sit beside the main one.
+function extraIds(entry) {
+  return (entry.extra || []).map((p) => p.id);
+}
+
+function photoIds(entry) {
+  return [entry.imageId || entry.id, ...extraIds(entry)];
+}
+
+async function scanImages(entry, mainB64) {
+  const extras = await Promise.all(extraIds(entry).map((id) => imageDb.get(id)));
+  return [mainB64, ...extras.filter(Boolean)];
 }
 
 function deleteEntry(id) {
@@ -151,6 +165,7 @@ function deleteEntry(id) {
 function dropImageIfUnused(entry) {
   const imgId = entry.imageId || entry.id;
   if (!loadHistory().some((e) => e.id === imgId || e.imageId === imgId)) imageDb.del(imgId);
+  for (const id of extraIds(entry)) imageDb.del(id);
 }
 
 // Stored copies, swapped for the live object of any scan still in flight.
@@ -428,19 +443,22 @@ async function googlePost(url, body, service, key = settings.apiKey, timeoutMs =
   return data;
 }
 
-async function readImage(b64) {
+// Reads every photo of the item in one request; the text and Google's guesses are pooled.
+async function readImage(images) {
+  const list = [].concat(images);
   const data = await googlePost('https://vision.googleapis.com/v1/images:annotate', {
-    requests: [{
-      image: { content: b64 },
+    requests: list.map((content) => ({
+      image: { content },
       features: [{ type: 'DOCUMENT_TEXT_DETECTION' }, { type: 'WEB_DETECTION', maxResults: 5 }],
       imageContext: { languageHints: ['ja', 'en'] },
-    }],
-  }, 'Vision');
-  const r = data.responses?.[0] || {};
-  if (r.error) throw new Error(`Vision: ${r.error.message}`);
+    })),
+  }, 'Vision', settings.apiKey, 45000);
+  const rs = data.responses || [];
+  const ok = rs.filter((r) => !r.error);
+  if (!ok.length) throw new Error(`Vision: ${rs[0]?.error?.message || 'no answer'}`);
   return {
-    ocrText: (r.fullTextAnnotation?.text || '').trim(),
-    webGuess: r.webDetection?.bestGuessLabels?.[0]?.label || '',
+    ocrText: ok.map((r) => (r.fullTextAnnotation?.text || '').trim()).filter(Boolean).join('\n\n'),
+    webGuess: [...new Set(ok.map((r) => r.webDetection?.bestGuessLabels?.[0]?.label).filter(Boolean))].join('; '),
   };
 }
 
@@ -454,17 +472,24 @@ async function translate(text) {
   return { translation: t.translatedText || '', sourceLang: t.detectedSourceLanguage || '' };
 }
 
-function buildPrompt({ ocrText, webGuess, secondHand, focus, override, quick }) {
+const CLOTHES_RULES = `CLOTHES: this is clothing, shoes, a bag or another fashion item. Identify it from the whole piece as much as from any text: logos, label and tag wording, product or style numbers (Uniqlo, GU and Muji print one on the tag), collaboration names, distinctive design or print, hardware such as zips and buttons, and fabric. Read the size from the size label or tag and give the rough Malaysian/UK equivalent (Japanese sizes often run a size smaller). Read the main material from the care label if shown.
+For Malaysian prices check the brand's own Malaysian online store if it has one (e.g. uniqlo.com/my), Zalora Malaysia (zalora.com.my), and official brand stores on Shopee and Lazada Malaysia for new; Carousell Malaysia for used. CeX does not sell clothes: return null for cex_my. For second-hand pieces list visible wear (stains, pilling, fading, holes, worn soles) as condition issues, and add a medium-severity issue if anything suggests it may not be genuine. In my_compat give one "Size" entry with the size conversion (status "warn" if it may fit small) instead of voltage or region checks.
+Add a "clothing" key to the JSON: { "size_on_tag": "size as printed or null", "size_my": "rough Malaysian/UK size or null", "material": "main fabric or null", "product_code": "product or style number or null", "colour": "colour in English or null" }.
+`;
+
+function buildPrompt({ ocrText, webGuess, secondHand, focus, override, quick, photos = 1, clothes = false }) {
   return `You are helping a Malaysian shopper standing in a shop in Japan decide whether to buy an item here or back home in Malaysia.
 
-The attached photo shows a product, box, price tag or shelf label in a Japanese shop.
-OCR text from the photo:
+${photos > 1
+    ? `The ${photos} attached photos all show the same item (for example the whole item, a brand or size label, and the price tag). Use them together.`
+    : 'The attached photo shows a product, box, price tag or shelf label in a Japanese shop.'}
+OCR text from the photo${photos > 1 ? 's' : ''}:
 """
 ${ocrText || '(none detected)'}
 """
 Google's visual best guess for the photo: "${webGuess || 'none'}"
 ${focus ? `\nThe photo shows a whole shelf with several products. Evaluate ONLY this one: "${focus.name}"${focus.yen ? `, priced ${yen(focus.yen)}` : ''}. Ignore every other product in the photo.\n` : ''}${override ? `\nThe shopper has checked the box and confirmed the exact product is: "${override}". Treat that as certain and price that exact model.\n` : ''}${secondHand ? '\nThe shopper is in a second-hand shop (e.g. Hard Off, 2nd Street, Book Off, Sofmap used), so this is a used item. When searching Malaysia, prioritise second-hand listings in similar condition.\n' : ''}
-${quick ? 'QUICK MODE: keep this fast. Only search Shopee and Carousell Malaysia. Skip CeX, Mercari, Yahoo Auctions and the Malaysia compatibility check, and return null or empty lists for cex_my, jp_used_yen and my_compat.\n' : ''}
+${quick ? 'QUICK MODE: keep this fast. Only search Shopee and Carousell Malaysia. Skip CeX, Mercari, Yahoo Auctions and the Malaysia compatibility check, and return null or empty lists for cex_my, jp_used_yen and my_compat.\n' : ''}${clothes ? CLOTHES_RULES : ''}
 Tasks:
 1. Identify the exact product: brand, model, size or capacity, and above all the exact variant. Words like Reloaded, Pro, Lite, OLED, Slim, Edge, V2, Mk II, 2nd Gen, Digital Edition or a special edition usually mean a different product at a different price (e.g. "Victrix Pro BFG" and "Victrix Pro BFG Reloaded" are different controllers). Read these words from the box, tag or the product itself and say where you saw them. If the photo doesn't show enough to tell lookalike variants apart, say so and list them with how to tell them apart.
 2. Read the Japanese shop price in yen from the photo or OCR text. If both tax-inclusive (税込) and tax-exclusive (税抜) prices are shown, use the tax-inclusive one. Say whether the number you picked includes Japan's 10% consumption tax. Use null if no price is visible.
@@ -536,14 +561,15 @@ function parseJson(text) {
   return JSON.parse(body.slice(start, end + 1));
 }
 
-async function askGemini({ imageB64, ocrText, webGuess, secondHand, focus, override, quick }) {
-  const { json, sources } = await callGemini(imageB64, buildPrompt({ ocrText, webGuess, secondHand, focus, override, quick }));
+async function askGemini({ images, ...opts }) {
+  const { json, sources } = await callGemini(images, buildPrompt({ ...opts, photos: images.length }));
   return { ai: json, sources };
 }
 
-async function callGemini(imageB64, prompt, { search = true, raw = false } = {}) {
+// `images`: one base64 JPEG or a list of them (several photos of the same item).
+async function callGemini(images, prompt, { search = true, raw = false } = {}) {
   const parts = [];
-  if (imageB64) parts.push({ inline_data: { mime_type: 'image/jpeg', data: imageB64 } });
+  for (const data of [].concat(images || [])) parts.push({ inline_data: { mime_type: 'image/jpeg', data } });
   parts.push({ text: prompt });
   const body = { contents: [{ role: 'user', parts }] };
   if (search) body.tools = [{ google_search: {} }];
@@ -934,33 +960,55 @@ let current = null;
 let currentImageB64 = null;
 const running = new Map(); // id → entry for scans still in flight
 
-async function startScan(file) {
-  if (!file) return;
+const MAX_PHOTOS = 5;
+
+// Small enough to upload in a second or two, sharp enough for tag text.
+async function preparePhoto(file, thumbSide = 320) {
+  const src = await decodeImage(file);
+  try {
+    return { b64: toJpeg(src, 1400, 0.8).split(',')[1], thumb: toJpeg(src, thumbSide, 0.7) };
+  } finally {
+    src.close?.();
+  }
+}
+
+async function preparePhotos(files) {
+  const out = [];
+  for (const [i, file] of files.slice(0, MAX_PHOTOS).entries()) {
+    try {
+      out.push(await preparePhoto(file, i === 0 ? 320 : 200));
+    } catch {
+      // skip a photo that won't decode
+    }
+  }
+  if (!out.length) alert('Could not open that image. Try another photo.');
+  return out;
+}
+
+async function startScan(files) {
+  files = [].concat(files || []).filter(Boolean);
+  if (!files.length) return;
   if (!settings.apiKey) {
     openSettings();
     return;
   }
   if (settings.scanKind === 'shelf') {
-    await startShelf(file);
+    await startShelf(files[0]);
     return;
   }
+  const photos = await preparePhotos(files);
+  if (photos.length) await startScanPhotos(photos);
+}
 
-  let full;
-  let thumb;
-  try {
-    const src = await decodeImage(file);
-    full = toJpeg(src, 1400, 0.8); // small enough to upload in a second or two, sharp enough for tag text
-    thumb = toJpeg(src, 320, 0.7);
-    src.close?.();
-  } catch {
-    alert('Could not open that image. Try another photo.');
-    return;
-  }
-
+async function startScanPhotos(photos) {
+  const [main, ...rest] = photos;
+  const id = uid();
   const entry = {
-    id: uid(),
+    id,
     createdAt: Date.now(),
-    thumb,
+    kind: settings.scanKind === 'clothes' ? 'clothes' : undefined,
+    thumb: main.thumb,
+    extra: rest.map((p, i) => ({ id: `${id}-p${i + 2}`, thumb: p.thumb })),
     ocrText: '',
     webGuess: '',
     translation: '',
@@ -979,8 +1027,9 @@ async function startScan(file) {
     errors: [],
   };
   current = entry;
-  currentImageB64 = full.split(',')[1];
+  currentImageB64 = main.b64;
   imageDb.put(entry.id, currentImageB64);
+  await Promise.all(rest.map((p, i) => imageDb.put(entry.extra[i].id, p.b64)));
   running.set(entry.id, entry);
   saveEntry(entry);
   location.hash = `#/scan/${entry.id}`;
@@ -1003,6 +1052,35 @@ async function rescan(id, { quiet = false } = {}) {
   await runScan(entry, image, { quiet });
 }
 
+// More photos of a scanned item (the label, another angle): read everything again with them included.
+async function addPhotos(id, files) {
+  const entry = findEntry(id);
+  if (!entry || running.has(id)) return;
+  const room = MAX_PHOTOS - photoIds(entry).length;
+  if (room <= 0) {
+    alert(`Up to ${MAX_PHOTOS} photos per scan.`);
+    return;
+  }
+  const photos = [];
+  for (const file of files.slice(0, room)) {
+    try {
+      photos.push(await preparePhoto(file, 200));
+    } catch {
+      // skip a photo that won't decode
+    }
+  }
+  if (!photos.length) return;
+  const stamp = Date.now().toString(36);
+  const added = photos.map((p, i) => ({ id: `${id}-${stamp}${i}`, thumb: p.thumb }));
+  await Promise.all(photos.map((p, i) => imageDb.put(added[i].id, p.b64)));
+  entry.extra = [...(entry.extra || []), ...added];
+  Object.assign(entry, { ocrText: '', webGuess: '', translation: '', sourceLang: '', info: null, cex: null });
+  entry.status = { vision: 'pending', translate: 'pending', search: 'pending' };
+  if (!entry.yenEdited) entry.yen = null;
+  saveEntry(entry);
+  await rescan(id);
+}
+
 function refresh(entry) {
   saveEntry(entry);
   const hash = location.hash || '#/';
@@ -1011,11 +1089,12 @@ function refresh(entry) {
 }
 
 async function runScan(entry, imageB64, { quiet = false } = {}) {
+  running.set(entry.id, entry);
+  const images = await scanImages(entry, imageB64);
   if (settings.serverUrl) {
-    await runScanOnServer(entry, imageB64, { quiet });
+    await runScanOnServer(entry, images, { quiet });
     return;
   }
-  running.set(entry.id, entry);
   entry.errors = [];
   const startedAt = Date.now();
   const update = () => refresh(entry);
@@ -1024,7 +1103,7 @@ async function runScan(entry, imageB64, { quiet = false } = {}) {
     entry.status.vision = 'active';
     update();
     try {
-      Object.assign(entry, await readImage(imageB64));
+      Object.assign(entry, await readImage(images));
       entry.status.vision = 'done';
     } catch (e) {
       entry.status.vision = 'failed';
@@ -1049,7 +1128,7 @@ async function runScan(entry, imageB64, { quiet = false } = {}) {
       .finally(update)
     : Promise.resolve();
 
-  await Promise.all([translating, searchPrices(entry, imageB64, update)]);
+  await Promise.all([translating, searchPrices(entry, images, update)]);
   if (!entry.rate && rate) entry.rate = rate.value;
   // Left the app mid-scan and the connection was cut: pick it up again when the app is back.
   if (lastHiddenAt > startedAt && entry.errors.some((m) => /network error|no answer after/.test(m))) entry.resume = true;
@@ -1113,19 +1192,20 @@ function notifyDone() {
   chime();
 }
 
-async function searchPrices(entry, imageB64, update) {
+async function searchPrices(entry, images, update) {
   entry.status.search = 'active';
   entry.errors = entry.errors.filter((m) => !m.startsWith('Gemini'));
   update();
   try {
     const { ai, sources } = await askGemini({
-      imageB64,
+      images,
       ocrText: entry.ocrText || entry.contextText,
       webGuess: entry.webGuess,
       secondHand: entry.secondHand,
       focus: entry.focus,
       override: entry.override,
       quick: entry.quick,
+      clothes: entry.kind === 'clothes',
     });
     applyAi(entry, ai, sources);
   } catch (e) {
@@ -1135,7 +1215,7 @@ async function searchPrices(entry, imageB64, update) {
   update();
 
   if (entry.ai && settings.autoInfo && !entry.info) loadInfo(entry.id);
-  await lookupCex(entry, update);
+  if (entry.kind !== 'clothes') await lookupCex(entry, update); // CeX doesn't sell clothes
 }
 
 function applyAi(entry, ai, sources) {
@@ -1224,12 +1304,15 @@ function describeNtfy(r) {
   return `failed (${r.code || 'error'}): ${r.body || ''}`.trim();
 }
 
-function serverJobRequest(entry, imageB64) {
+function serverJobRequest(entry, images) {
   const visionDone = entry.status.vision === 'done';
+  images = [].concat(images);
+  const clothes = entry.kind === 'clothes';
   return {
     action: 'scan',
     jobId: entry.serverJob.id,
-    image: imageB64,
+    image: images[0],
+    moreImages: images.slice(1), // extra photos of the same item (scan server v6+)
     keys: { cloud: settings.apiKey, gemini: settings.geminiKey },
     model: settings.model,
     referer: `${location.origin}${location.pathname}`,
@@ -1245,13 +1328,15 @@ function serverJobRequest(entry, imageB64) {
       focus: entry.focus,
       override: entry.override,
       quick: entry.quick,
+      photos: images.length,
+      clothes,
     }),
-    cex: { index: CEX_INDEX },
+    cex: clothes ? null : { index: CEX_INDEX },
     notify: notifyTarget(),
   };
 }
 
-async function runScanOnServer(entry, imageB64, { quiet = false } = {}) {
+async function runScanOnServer(entry, images, { quiet = false } = {}) {
   running.set(entry.id, entry);
   entry.errors = [];
   entry.serverJob = { id: uid(), sentAt: Date.now(), done: false };
@@ -1263,7 +1348,7 @@ async function runScanOnServer(entry, imageB64, { quiet = false } = {}) {
   const stopAck = watchForReceipt(entry, jobId);
   let out = null;
   try {
-    out = await serverCall(serverJobRequest(entry, imageB64), 330000);
+    out = await serverCall(serverJobRequest(entry, images), 330000);
   } catch {
     // The app was closed or lost signal mid-request. If the upload got through, the server carries
     // on; if not, the scan is re-sent when the app is back.
@@ -1339,7 +1424,7 @@ async function applyServerResult(entry, out, { quiet = false } = {}) {
   if (!quiet) notifyDone();
   if (entry.ai && settings.autoInfo && !entry.info) loadInfo(entry.id);
   // Google's servers sit outside Malaysia and CeX may refuse them, so try from the phone as well.
-  if (entry.ai && !entry.cex?.found) await lookupCex(entry, update);
+  if (entry.ai && !entry.cex?.found && entry.kind !== 'clothes') await lookupCex(entry, update);
 }
 
 const clock = (t) => new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(t);
@@ -1378,7 +1463,7 @@ async function checkServerJob(entry) {
       // The upload never arrived (the app closed or lost signal while sending). Send it again.
       const resends = entry.serverJob.resends || 0;
       if (resends < 3) {
-        const image = (await imageDb.get(entry.imageId || entry.id)) || entry.thumb.split(',')[1];
+        const image = await scanImages(entry, (await imageDb.get(entry.imageId || entry.id)) || entry.thumb.split(',')[1]);
         const jobId = entry.serverJob.id;
         entry.serverJob = { ...entry.serverJob, resends: resends + 1, requestFailed: false, sentAt: Date.now() };
         saveEntry(entry);
@@ -1805,19 +1890,13 @@ function historyItem(entry, opts = {}) {
   const failed = scanFailed(entry);
   const tagCls = failed ? 'tag-skip' : { buy: 'tag-buy', maybe: 'tag-maybe', skip: 'tag-skip' }[v?.cls] || '';
   const tagText = failed ? 'Failed' : { buy: 'Buy', maybe: 'Maybe', skip: 'Skip' }[v?.cls] || (isRunning ? '…' : '–');
-  const serious = seriousIssues(entry).length;
+  // One line under the name: price, then where and when (distance instead of date when sorting by Near).
+  const dist = distanceFromHere(entry);
   const meta = [
     jp ? rm(jp) : null,
-    toNum(entry.yen) ? yen(entry.yen) : null,
-    entry.secondHand ? 'Used' : null,
-    serious ? `${serious} issue${serious > 1 ? 's' : ''}` : null,
-  ].filter(Boolean).join(' · ');
-  const dist = distanceFromHere(entry);
-  const where = [
     entry.bought ? 'Bought' : null,
     storeName(entry) || entry.place?.area,
-    dist !== null ? fmtAway(dist) : null,
-    shortDate.format(entry.createdAt),
+    historySort === 'nearest' && dist !== null ? fmtAway(dist) : shortDate.format(entry.createdAt),
   ].filter(Boolean).join(' · ');
   const selecting = selectMode && location.hash.startsWith('#/history');
   const selected = selecting && selection.includes(entry.id);
@@ -1831,8 +1910,7 @@ function historyItem(entry, opts = {}) {
       el('img', { src: entry.thumb, alt: '' }),
       el('div', { class: 'history-body' },
         el('p', { class: 'history-name' }, entry.ai?.product_name || entry.webGuess || 'Unidentified item'),
-        meta ? el('p', { class: 'history-meta' }, meta) : null,
-        el('p', { class: 'history-where' }, where),
+        el('p', { class: 'history-meta' }, meta),
         Number.isFinite(opts.saved)
           ? el('p', { class: `history-saved${opts.saved < 0 ? ' neg' : ''}` }, opts.saved >= 0 ? `Saved ${rm(opts.saved)}` : `${rm(-opts.saved)} more than MY`)
           : null,
@@ -1979,20 +2057,22 @@ function renderHome() {
   renderRate();
 }
 
+const CAPTURE_TEXT = {
+  item: ['Take a photo', 'Tag, box or label'],
+  clothes: ['Photograph the piece', 'Then add its labels'],
+  shelf: ['Photograph the shelf', 'Every price at once'],
+};
+
 function renderMode() {
   const used = settings.secondHand;
-  const shelf = settings.scanKind === 'shelf';
+  const kind = CAPTURE_TEXT[settings.scanKind] ? settings.scanKind : 'item';
   for (const b of document.querySelectorAll('#modeSwitch [data-mode]')) {
     b.setAttribute('aria-checked', String((b.dataset.mode === 'used') === used));
   }
   for (const b of document.querySelectorAll('#kindSwitch [data-kind]')) {
-    b.setAttribute('aria-checked', String((b.dataset.kind === 'shelf') === shelf));
+    b.setAttribute('aria-checked', String(b.dataset.kind === kind));
   }
-  $('#captureLabel').textContent = shelf ? 'Photograph the shelf' : 'Take a photo';
-  $('#modeHint').textContent = [
-    shelf ? 'Lists every priced item in one photo; check them one by one or all at once.' : null,
-    used ? 'Compares against Malaysian second-hand prices and flags any issues on the tag.' : 'Compares against new prices in Malaysia.',
-  ].filter(Boolean).join(' ');
+  [$('#captureLabel').textContent, $('#captureSub').textContent] = CAPTURE_TEXT[kind];
 }
 
 let historySort = 'recent';
@@ -2098,7 +2178,7 @@ async function refreshFavourites() {
 }
 
 function renderRefreshButtons() {
-  for (const id of ['#refreshFavsHome', '#refreshFavsHistory']) {
+  for (const id of ['#refreshFavsHistory']) {
     const b = $(id);
     b.disabled = Boolean(refreshingFavs);
     b.textContent = refreshingFavs ? `Refreshing ${refreshingFavs.done}/${refreshingFavs.total}…` : '↻ Refresh prices';
@@ -2110,6 +2190,7 @@ function renderSteps(entry) {
   const states = Object.values(entry.status);
   const anyFailed = states.includes('failed') || (!isRunning && states.includes('active'));
   $('#steps').hidden = !isRunning && !anyFailed;
+  $('#steps [data-step="vision"]').textContent = entry.kind === 'clothes' || entry.extra?.length ? 'Reading the photos' : 'Reading the tag';
   for (const li of $('#steps').children) {
     let s = entry.status[li.dataset.step];
     if (s === 'active' && !isRunning) s = 'failed';
@@ -2117,6 +2198,8 @@ function renderSteps(entry) {
     li.hidden = s === 'skipped';
   }
 }
+
+let verdictOpen = null; // id of the scan whose verdict reasoning is expanded
 
 function renderPrices(entry) {
   const jp = japanPrice(entry);
@@ -2158,11 +2241,18 @@ function renderPrices(entry) {
   // Live results take CeX's best offer across grades, so it's a ceiling, not a quote.
   $('#cexCash').textContent = cex.cash ? `${cex.source === 'live' ? 'up to ' : ''}${rm(cex.cash)} cash` : pending ? '…' : '–';
   $('#cexVoucher').textContent = cex.voucher ? `${rm(cex.voucher)} voucher` : '';
+  // Fewer boxes: once the search is in, drop the ones that found nothing.
+  const settled = Boolean(entry.ai) || entry.status.search === 'failed';
+  const clothes = entry.kind === 'clothes';
+  $('#jpUsed').closest('.price-card').hidden = settled && !resale;
+  $('#cexSell').closest('.price-card').hidden = clothes || (settled && !cexBusy && !cex.sell);
+  $('#cexCash').closest('.price-card').hidden = clothes || (settled && !cexBusy && !cex.cash);
 
   const v = verdictFor(entry);
   $('#verdict').hidden = !v;
   if (v) {
-    $('#verdict').className = `verdict ${v.cls}`;
+    // The reasoning shows two lines; tap the verdict for the rest.
+    $('#verdict').className = `verdict ${v.cls}${verdictOpen === entry.id ? ' expanded' : ''}`;
     $('#verdictLabel').textContent = v.label;
     $('#verdictDetail').textContent = v.detail;
   }
@@ -2396,9 +2486,12 @@ function renderCompat(entry) {
   )));
   const bad = list.filter((c) => c.status === 'bad').length;
   const warn = list.filter((c) => c.status === 'warn').length;
-  $('#compatSummary').textContent = bad
-    ? `Malaysia: ${bad} problem${bad > 1 ? 's' : ''}`
-    : warn ? `Malaysia: ${warn} thing${warn > 1 ? 's' : ''} to check` : 'Works in Malaysia';
+  const size = entry.kind === 'clothes' && entry.ai?.clothing?.size_my;
+  $('#compatSummary').textContent = size
+    ? `Size: about MY ${size}${warn || bad ? ', may fit small' : ''}`
+    : bad
+      ? `Malaysia: ${bad} problem${bad > 1 ? 's' : ''}`
+      : warn ? `Malaysia: ${warn} thing${warn > 1 ? 's' : ''} to check` : 'Works in Malaysia';
   $('#compatPanel').classList.toggle('has-serious', bad > 0);
 }
 
@@ -2560,14 +2653,31 @@ function renderAsk(entry) {
 // ---------- photo viewer ----------
 
 const zoom = { scale: 1, x: 0, y: 0 };
+const viewer = { ids: [], thumbs: [], index: 0 };
 
-async function openPhoto(imageId, thumb) {
+// Opens the scan's photos; swipe sideways to move between them.
+function openPhotos(ids, thumbs, index = 0) {
+  Object.assign(viewer, { ids, thumbs });
+  if (!$('#photoViewer').open) $('#photoViewer').showModal();
+  showPhoto(index);
+}
+
+function openPhoto(imageId, thumb) {
+  openPhotos([imageId], [thumb]);
+}
+
+async function showPhoto(index) {
+  const n = viewer.ids.length;
+  viewer.index = (index + n) % n;
+  const { index: i } = viewer;
   const img = $('#viewerImg');
-  img.src = thumb;
+  img.src = viewer.thumbs[i];
   resetZoom();
-  $('#photoViewer').showModal();
-  const full = imageId ? await imageDb.get(imageId) : null;
-  if (full && $('#photoViewer').open) img.src = `data:image/jpeg;base64,${full}`;
+  $('#viewerCount').hidden = n < 2;
+  $('#viewerCount').textContent = `${i + 1} / ${n}`;
+  $('#viewerHint').textContent = n > 1 ? 'Swipe for the next photo · pinch to zoom' : 'Pinch or double-tap to zoom';
+  const full = viewer.ids[i] ? await imageDb.get(viewer.ids[i]) : null;
+  if (full && $('#photoViewer').open && viewer.index === i) img.src = `data:image/jpeg;base64,${full}`;
 }
 
 function applyZoom() {
@@ -2595,6 +2705,7 @@ function setupViewer() {
   let pinch = null;
   let pan = null;
   let lastTap = 0;
+  let swipe = null;
   const fromCentre = (x, y) => {
     const r = stage.getBoundingClientRect();
     return { x: x - r.left - r.width / 2, y: y - r.top - r.height / 2 };
@@ -2606,8 +2717,10 @@ function setupViewer() {
       const [a, b] = [...pts.values()];
       pinch = { dist: Math.hypot(a.x - b.x, a.y - b.y), centre: fromCentre((a.x + b.x) / 2, (a.y + b.y) / 2), from: { ...zoom } };
       pan = null;
+      swipe = null;
     } else if (pts.size === 1) {
       pan = { x: e.clientX - zoom.x, y: e.clientY - zoom.y };
+      swipe = zoom.scale === 1 ? { x: e.clientX, y: e.clientY } : null;
       const now = Date.now();
       if (now - lastTap < 300) {
         zoomTo(zoom.scale > 1 ? 1 : 2.5, fromCentre(e.clientX, e.clientY));
@@ -2635,6 +2748,11 @@ function setupViewer() {
   });
   const end = (e) => {
     pts.delete(e.pointerId);
+    if (swipe && pts.size === 0 && zoom.scale === 1 && viewer.ids.length > 1) {
+      const dx = e.clientX - swipe.x;
+      if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(e.clientY - swipe.y)) showPhoto(viewer.index + (dx < 0 ? 1 : -1));
+    }
+    if (pts.size > 0) swipe = null;
     if (pts.size < 2) pinch = null;
     if (pts.size === 1) {
       const [p] = [...pts.values()];
@@ -2647,9 +2765,21 @@ function setupViewer() {
   $('#viewerClose').addEventListener('click', () => $('#photoViewer').close());
 }
 
+// "Size M (≈ MY S) · Cotton" for clothes.
+function clothingLine(entry) {
+  const c = entry.ai?.clothing;
+  if (!c) return '';
+  const size = c.size_on_tag ? `Size ${c.size_on_tag}${c.size_my && c.size_my !== c.size_on_tag ? ` (≈ MY ${c.size_my})` : ''}` : null;
+  return [size, c.material, c.colour].filter(Boolean).join(' · ');
+}
+
 function renderResult(entry) {
   current = entry;
   $('#resPhoto').src = entry.thumb;
+  const extra = entry.extra?.length || 0;
+  $('#photoCount').hidden = !extra;
+  $('#photoCount').textContent = `+${extra}`;
+  $('#addPhotoBtn').classList.toggle('disabled', running.has(entry.id) || photoIds(entry).length >= MAX_PHOTOS);
   if (document.activeElement !== $('#notesInput')) $('#notesInput').value = entry.notes || '';
   $('#notesSummary').textContent = entry.notes ? `Notes · ${entry.notes.length > 28 ? `${entry.notes.slice(0, 26)}…` : entry.notes}` : 'Notes';
   $('#quickBanner').hidden = !(entry.quick && entry.ai && !running.has(entry.id));
@@ -2664,7 +2794,7 @@ function renderResult(entry) {
   renderAsk(entry);
   $('#resName').textContent = entry.ai?.product_name || entry.webGuess || (running.has(entry.id) ? 'Reading…' : 'Unidentified item');
   $('#resBrand').textContent = entry.ai?.brand || '';
-  $('#resTime').textContent = dateFmt.format(entry.createdAt);
+  $('#resTime').textContent = clothingLine(entry) || dateFmt.format(entry.createdAt);
 
   renderSteps(entry);
   $('#resError').hidden = entry.errors.length === 0;
@@ -2687,7 +2817,12 @@ function renderResult(entry) {
   $('#carousellLink').href = `https://www.carousell.com.my/search/${encodeURIComponent(q)}`;
   const qJa = entry.ai?.search_query_ja || q;
   $('#mercariLink').href = `https://jp.mercari.com/search?keyword=${encodeURIComponent(qJa)}`;
-  $('#cexLink').href = cexFor(entry).url || `https://my.webuy.com/search?stext=${encodeURIComponent(q)}`;
+  // Clothes: Zalora instead of CeX, which doesn't sell them.
+  const clothes = entry.kind === 'clothes';
+  $('#cexLink').textContent = clothes ? 'Zalora' : 'CeX';
+  $('#cexLink').href = clothes
+    ? `https://www.zalora.com.my/search?q=${encodeURIComponent(q)}`
+    : cexFor(entry).url || `https://my.webuy.com/search?stext=${encodeURIComponent(q)}`;
   $('#yahooLink').href = `https://auctions.yahoo.co.jp/search/search?p=${encodeURIComponent(qJa)}`;
 
   renderListings(entry);
@@ -2898,6 +3033,10 @@ function renderNav(hash) {
 function route(keepScroll = false) {
   const hash = location.hash || '#/';
   renderNav(hash);
+  trackNav(hash);
+  const home = hash === '#/' || hash === '#';
+  $('#backBtn').hidden = home;
+  $('#homeBtn').hidden = !home;
   $('#tripLine').textContent = `Trip: ${currentTrip().name}`;
   if (!hash.startsWith('#/history') && selectMode) {
     selectMode = false;
@@ -2955,6 +3094,12 @@ function openSettings() {
   $('#tgTokenInput').value = settings.telegram?.token || '';
   renderTelegramStatus();
   $('#serverTestResult').textContent = '';
+  // Finished setup folds away; only what still needs doing starts open.
+  const hasKey = Boolean(settings.apiKey);
+  $('#keysStatus').textContent = hasKey ? 'Set' : 'Needed';
+  $('#keysGroup').open = !hasKey;
+  $('#serverStatus').textContent = settings.serverUrl ? (settings.telegram?.chatId ? 'On · Telegram' : 'On') : 'Off';
+  $('#serverGroup').open = false;
   $('#settingsDialog').showModal();
 }
 
@@ -3017,7 +3162,6 @@ $('#historyTrip').addEventListener('change', (e) => {
   historyTrip = e.target.value;
   renderHistory();
 });
-$('#refreshFavsHome').addEventListener('click', refreshFavourites);
 $('#refreshFavsHistory').addEventListener('click', refreshFavourites);
 $('#quickToggle').addEventListener('change', (e) => store.set('quick', e.target.checked));
 document.addEventListener('pointerdown', unlockAudio, { passive: true });
@@ -3048,11 +3192,15 @@ $('#seeAllBtn').addEventListener('click', () => {
   location.hash = '#/history';
 });
 
+// Clothes collect a few photos (whole piece, labels, tag) before scanning; items scan straight away,
+// with every photo picked from the library counted as the same item.
 for (const id of ['#cameraInput', '#galleryInput']) {
   $(id).addEventListener('change', (e) => {
-    const file = e.target.files?.[0];
+    const files = [...(e.target.files || [])];
     e.target.value = '';
-    startScan(file);
+    if (!files.length) return;
+    if (settings.scanKind === 'clothes') addToTray(files);
+    else startScan(files);
   });
 }
 
@@ -3091,7 +3239,94 @@ for (const b of document.querySelectorAll('#kindSwitch [data-kind]')) {
 
 $('#rescanBtn').addEventListener('click', () => current && rescan(current.id));
 $('#navHome').addEventListener('click', () => { location.hash = '#/'; });
-$('#resPhoto').addEventListener('click', () => current && openPhoto(current.imageId || current.id, current.thumb));
+$('#resPhotoBtn').addEventListener('click', () => current && openPhotos(photoIds(current), [current.thumb, ...(current.extra || []).map((p) => p.thumb)]));
+$('#addPhotoInput').addEventListener('change', (e) => {
+  const files = [...(e.target.files || [])];
+  e.target.value = '';
+  if (current && files.length) addPhotos(current.id, files);
+});
+$('#settingsClose').addEventListener('click', () => $('#settingsDialog').close());
+$('#verdict').addEventListener('click', () => {
+  if (!current) return;
+  verdictOpen = verdictOpen === current.id ? null : current.id;
+  $('#verdict').classList.toggle('expanded', verdictOpen === current.id);
+});
+
+// ---------- photo tray: several photos, then one scan ----------
+
+let trayPhotos = [];
+
+function renderTray() {
+  const clothes = settings.scanKind === 'clothes';
+  $('#trayHint').textContent = clothes ? 'Whole piece first, then the brand label and price tag.' : 'Different angles, the label and the price tag.';
+  const full = trayPhotos.length >= MAX_PHOTOS;
+  $('#trayList').replaceChildren(
+    ...trayPhotos.map((p, i) => el('li', { class: 'tray-item' },
+      el('img', { src: p.thumb, alt: `Photo ${i + 1}` }),
+      el('button', {
+        class: 'tray-remove',
+        type: 'button',
+        'aria-label': `Remove photo ${i + 1}`,
+        onclick: () => {
+          trayPhotos.splice(i, 1);
+          if (trayPhotos.length) renderTray();
+          else closeTray();
+        },
+      }, '×'),
+    )),
+    full ? null : el('li', {}, el('label', { class: 'tray-add', for: 'trayCamera' }, el('span', { 'aria-hidden': 'true' }, '+'), el('span', {}, 'Add photo'))),
+  );
+  $('#trayGo').textContent = trayPhotos.length > 1 ? `Check price · ${trayPhotos.length} photos` : 'Check price';
+}
+
+async function addToTray(files) {
+  const photos = await preparePhotos(files.slice(0, MAX_PHOTOS - trayPhotos.length));
+  if (!photos.length && !trayPhotos.length) return;
+  trayPhotos.push(...photos);
+  renderTray();
+  if (!$('#photoTray').open) $('#photoTray').showModal();
+}
+
+function closeTray() {
+  trayPhotos = [];
+  if ($('#photoTray').open) $('#photoTray').close();
+}
+
+for (const id of ['#trayCamera', '#trayGallery']) {
+  $(id).addEventListener('change', (e) => {
+    const files = [...(e.target.files || [])];
+    e.target.value = '';
+    if (files.length) addToTray(files);
+  });
+}
+$('#trayClose').addEventListener('click', closeTray);
+$('#photoTray').addEventListener('cancel', () => { trayPhotos = []; });
+$('#trayGo').addEventListener('click', () => {
+  const photos = trayPhotos;
+  closeTray();
+  if (!photos.length) return;
+  if (!settings.apiKey) {
+    openSettings();
+    return;
+  }
+  startScanPhotos(photos);
+});
+
+// ---------- back ----------
+// Remembers in-app pages so Back returns to where you came from (a scan opened from History goes back there).
+
+const navStack = [];
+
+function trackNav(hash) {
+  if (navStack.at(-2) === hash) navStack.pop();
+  else if (navStack.at(-1) !== hash) navStack.push(hash);
+}
+
+// History and Trip are tabs, so Back from them goes Home; a scan, shelf or comparison returns to where it was opened from.
+$('#backBtn').addEventListener('click', () => {
+  if (/^#\/(history|trip)/.test(location.hash) || navStack.length < 2) location.hash = '#/';
+  else history.back();
+});
 $('#notesInput').addEventListener('input', (e) => {
   if (!current) return;
   current.notes = e.target.value;
@@ -3214,8 +3449,9 @@ function saveServerSettings() {
 
 function renderTelegramStatus() {
   const tg = settings.telegram;
-  $('#tgStatus').textContent = tg?.chatId ? `Linked to @${tg.bot}${tg.name ? ` (messages go to ${tg.name})` : ''} ✓` : 'Not linked yet.';
+  $('#tgStatus').textContent = tg?.chatId ? `Linked to @${tg.bot} ✓` : '';
   $('#tgUnlink').hidden = !tg?.chatId;
+  $('#tgSetup').hidden = Boolean(tg?.chatId);
 }
 
 $('#tgLink').addEventListener('click', async () => {

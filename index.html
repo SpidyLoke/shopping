@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Kaimono Check</title>
   <meta name="description" content="Snap a Japanese price tag, get it translated, and compare against Shopee and Carousell Malaysia.">
-  <meta name="theme-color" content="#f4f4f3" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#0b0b0c" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#f4f3ef" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0d1020" media="(prefers-color-scheme: dark)">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="Kaimono">
@@ -18,8 +18,9 @@
 </head>
 <body>
   <header class="topbar">
+    <button class="back-btn" id="backBtn" type="button" hidden><svg class="i" viewBox="0 0 256 256" aria-hidden="true"><path d="M164.24,203.76a6,6,0,1,1-8.48,8.48l-80-80a6,6,0,0,1,0-8.48l80-80a6,6,0,0,1,8.48,8.48L88.49,128Z"/></svg><span>Back</span></button>
     <button class="brand" id="homeBtn" type="button" aria-label="Home">
-      <span class="brand-mark" aria-hidden="true">買</span>
+      <svg class="brand-mark" viewBox="0 0 512 512" aria-hidden="true"><rect width="512" height="512" rx="116" fill="var(--accent-bg)"/><path d="M204 204c0-34 22-56 52-56s52 22 52 56" fill="none" stroke="#f4f3ef" stroke-width="28" stroke-linecap="round"/><path d="M148 196h216l18 192a34 34 0 0 1-34 37H164a34 34 0 0 1-34-37z" fill="#f4f3ef"/><path d="M214 252l42 50 42-50M256 302v76M222 318h68M222 350h68" fill="none" stroke="var(--accent-bg)" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/></svg>
       <span class="brand-name">Kaimono</span>
     </button>
     <a class="trip-line" id="tripLine" href="#/trip"></a>
@@ -44,19 +45,20 @@
         <span class="capture-icon"><svg class="i" viewBox="0 0 256 256" aria-hidden="true"><path d="M208,58H179.21L165,36.67A6,6,0,0,0,160,34H96a6,6,0,0,0-5,2.67L76.78,58H48A22,22,0,0,0,26,80V192a22,22,0,0,0,22,22H208a22,22,0,0,0,22-22V80A22,22,0,0,0,208,58Zm10,134a10,10,0,0,1-10,10H48a10,10,0,0,1-10-10V80A10,10,0,0,1,48,70H80a6,6,0,0,0,5-2.67L99.21,46h57.57L171,67.33A6,6,0,0,0,176,70h32a10,10,0,0,1,10,10ZM128,90a42,42,0,1,0,42,42A42,42,0,0,0,128,90Zm0,72a30,30,0,1,1,30-30A30,30,0,0,1,128,162Z"/></svg></span>
         <span class="capture-text">
           <span class="capture-title" id="captureLabel">Take a photo</span>
-          <span class="capture-sub">Tag, box or shelf label</span>
+          <span class="capture-sub" id="captureSub">Tag, box or label</span>
         </span>
       </label>
       <input id="cameraInput" type="file" accept="image/*" capture="environment" hidden>
 
+      <div class="segmented kind-switch" id="kindSwitch" role="radiogroup" aria-label="Scan">
+        <button type="button" role="radio" data-kind="item" aria-checked="true">Item</button>
+        <button type="button" role="radio" data-kind="clothes" aria-checked="false">Clothes</button>
+        <button type="button" role="radio" data-kind="shelf" aria-checked="false">Shelf</button>
+      </div>
       <div class="mode">
         <div class="segmented" id="modeSwitch" role="radiogroup" aria-label="Shopping for">
           <button type="button" role="radio" data-mode="new" aria-checked="true">New</button>
           <button type="button" role="radio" data-mode="used" aria-checked="false">Used</button>
-        </div>
-        <div class="segmented" id="kindSwitch" role="radiogroup" aria-label="Scan">
-          <button type="button" role="radio" data-kind="item" aria-checked="true">Item</button>
-          <button type="button" role="radio" data-kind="shelf" aria-checked="false">Shelf</button>
         </div>
         <label class="toggle-pill" title="Quick scan: Shopee and Carousell only, the rest on tap">
           <input type="checkbox" id="quickToggle">
@@ -69,12 +71,11 @@
         <label class="btn btn-ghost" for="galleryInput"><svg class="i" viewBox="0 0 256 256" aria-hidden="true"><path d="M216,42H72A14,14,0,0,0,58,56V74H40A14,14,0,0,0,26,88V200a14,14,0,0,0,14,14H184a14,14,0,0,0,14-14V182h18a14,14,0,0,0,14-14V56A14,14,0,0,0,216,42ZM70,56a2,2,0,0,1,2-2H216a2,2,0,0,1,2,2v67.57L204.53,110.1a14,14,0,0,0-19.8,0l-21.42,21.41L117.9,86.1a14,14,0,0,0-19.8,0L70,114.2ZM186,200a2,2,0,0,1-2,2H40a2,2,0,0,1-2-2V88a2,2,0,0,1,2-2H58v82a14,14,0,0,0,14,14H186Zm30-30H72a2,2,0,0,1-2-2V131.17l36.58-36.58a2,2,0,0,1,2.83,0l49.66,49.66a6,6,0,0,0,8.49,0l25.65-25.66a2,2,0,0,1,2.83,0l22,22V168A2,2,0,0,1,216,170ZM162,84a10,10,0,1,1,10,10A10,10,0,0,1,162,84Z"/></svg><span>Gallery</span></label>
         <p class="rate-pill" id="ratePill">Loading rate…</p>
       </div>
-      <input id="galleryInput" type="file" accept="image/*" hidden>
+      <input id="galleryInput" type="file" accept="image/*" multiple hidden>
 
       <div class="recent" id="favWrap" hidden>
         <div class="section-head">
           <h2>Favourites</h2>
-          <button class="link" type="button" id="refreshFavsHome">↻ Refresh prices</button>
           <button class="link" type="button" id="seeFavsBtn">All</button>
         </div>
         <ul class="history-list" id="favList"></ul>
@@ -92,7 +93,10 @@
     <!-- Result -->
     <section class="view" id="resultView" hidden>
       <div class="result-top">
-        <img class="result-photo zoomable" id="resPhoto" alt="Scan photo, tap to zoom">
+        <button class="photo-wrap" id="resPhotoBtn" type="button" aria-label="View photos">
+          <img class="result-photo" id="resPhoto" alt="">
+          <span class="photo-count" id="photoCount" hidden></span>
+        </button>
         <div class="result-title">
           <p class="eyebrow" id="resBrand"></p>
           <h1 id="resName">Reading…</h1>
@@ -105,6 +109,8 @@
         <button class="chip" id="favBtn" type="button" aria-pressed="false"><span class="off"><svg class="i" viewBox="0 0 256 256" aria-hidden="true"><path d="M178,42c-21,0-39.26,9.47-50,25.34C117.26,51.47,99,42,78,42a60.07,60.07,0,0,0-60,60c0,29.2,18.2,59.59,54.1,90.31a334.68,334.68,0,0,0,53.06,37,6,6,0,0,0,5.68,0,334.68,334.68,0,0,0,53.06-37C219.8,161.59,238,131.2,238,102A60.07,60.07,0,0,0,178,42ZM128,217.11C111.59,207.64,30,157.72,30,102A48.05,48.05,0,0,1,78,54c20.28,0,37.31,10.83,44.45,28.27a6,6,0,0,0,11.1,0C140.69,64.83,157.72,54,178,54a48.05,48.05,0,0,1,48,48C226,157.72,144.41,207.64,128,217.11Z"/></svg></span><span class="on"><svg class="i" viewBox="0 0 256 256" aria-hidden="true"><path d="M240,102c0,70-103.79,126.66-108.21,129a8,8,0,0,1-7.58,0C119.79,228.66,16,172,16,102A62.07,62.07,0,0,1,78,40c20.65,0,38.73,8.88,50,23.89C139.27,48.88,157.35,40,178,40A62.07,62.07,0,0,1,240,102Z"/></svg></span><span class="chip-label">Save</span></button>
         <button class="chip" id="boughtBtn" type="button" aria-pressed="false"><span class="off"><svg class="i" viewBox="0 0 256 256" aria-hidden="true"><path d="M172.24,99.76a6,6,0,0,1,0,8.48l-56,56a6,6,0,0,1-8.48,0l-24-24a6,6,0,0,1,8.48-8.48L112,151.51l51.76-51.75A6,6,0,0,1,172.24,99.76ZM230,128A102,102,0,1,1,128,26,102.12,102.12,0,0,1,230,128Zm-12,0a90,90,0,1,0-90,90A90.1,90.1,0,0,0,218,128Z"/></svg></span><span class="on"><svg class="i" viewBox="0 0 256 256" aria-hidden="true"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm45.66,85.66-56,56a8,8,0,0,1-11.32,0l-24-24a8,8,0,0,1,11.32-11.32L112,148.69l50.34-50.35a8,8,0,0,1,11.32,11.32Z"/></svg></span><span class="chip-label">Bought</span></button>
         <button class="chip" id="fixNameBtn" type="button"><svg class="i" viewBox="0 0 256 256" aria-hidden="true"><path d="M225.9,74.78,181.21,30.09a14,14,0,0,0-19.8,0L38.1,153.41a13.94,13.94,0,0,0-4.1,9.9V208a14,14,0,0,0,14,14H92.69a13.94,13.94,0,0,0,9.9-4.1L225.9,94.58a14,14,0,0,0,0-19.8ZM94.1,209.41a2,2,0,0,1-1.41.59H48a2,2,0,0,1-2-2V163.31a2,2,0,0,1,.59-1.41L136,72.48,183.51,120ZM217.41,86.1,192,111.51,144.49,64,169.9,38.58a2,2,0,0,1,2.83,0l44.68,44.69a2,2,0,0,1,0,2.83Z"/></svg><span class="chip-label">Fix name</span></button>
+        <label class="chip" id="addPhotoBtn" for="addPhotoInput"><svg class="i" viewBox="0 0 256 256" aria-hidden="true"><path d="M166,136a6,6,0,0,1-6,6H134v26a6,6,0,0,1-12,0V142H96a6,6,0,0,1,0-12h26V104a6,6,0,0,1,12,0v26h26A6,6,0,0,1,166,136Zm64-56V192a22,22,0,0,1-22,22H48a22,22,0,0,1-22-22V80A22,22,0,0,1,48,58H76.79L88.63,40.23A14,14,0,0,1,100.28,34h55.44a14,14,0,0,1,11.65,6.23L179.21,58H208A22,22,0,0,1,230,80Zm-12,0a10,10,0,0,0-10-10H176a6,6,0,0,1-5-2.67L157.38,46.89a2,2,0,0,0-1.66-.89H100.28a2,2,0,0,0-1.66.89L85,67.33A6,6,0,0,1,80,70H48A10,10,0,0,0,38,80V192a10,10,0,0,0,10,10H208a10,10,0,0,0,10-10Z"/></svg><span class="chip-label">Add photo</span></label>
+        <input id="addPhotoInput" type="file" accept="image/*" multiple hidden>
       </div>
 
       <form class="fix-name" id="fixName" hidden>
@@ -372,75 +378,75 @@
   <dialog id="settingsDialog">
     <form method="dialog" id="settingsForm">
       <div class="dialog-head">
+        <button class="icon-btn" type="button" id="settingsClose" aria-label="Close without saving"><svg class="i" viewBox="0 0 256 256" aria-hidden="true"><path d="M204.24,195.76a6,6,0,1,1-8.48,8.48L128,136.49,60.24,204.24a6,6,0,0,1-8.48-8.48L119.51,128,51.76,60.24a6,6,0,0,1,8.48-8.48L128,119.51l67.76-67.75a6,6,0,0,1,8.48,8.48L136.49,128Z"/></svg></button>
         <h2>Settings</h2>
         <button class="btn btn-small btn-primary" value="save" id="saveSettingsBtn">Save</button>
       </div>
 
-      <section class="settings-group">
-        <h3>API keys</h3>
+      <!-- Keys are plain text fields masked with CSS: a password field makes iOS offer to save or generate a password. -->
+      <details class="settings-group" id="keysGroup">
+        <summary><span>API keys</span><span class="group-status" id="keysStatus"></span></summary>
         <label class="field">
           <span>Google Cloud key</span>
-          <input id="apiKeyInput" type="password" autocomplete="off" spellcheck="false" placeholder="AIza…">
-          <small>Vision and Translate.</small>
+          <input class="secret" id="apiKeyInput" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-1p-ignore data-lpignore="true" placeholder="AIza…">
         </label>
         <label class="field">
-          <span>Gemini key</span>
-          <input id="geminiKeyInput" type="password" autocomplete="off" spellcheck="false" placeholder="AIza…">
-          <small>Blank uses the Cloud key.</small>
+          <span>Gemini key <small>blank uses the Cloud key</small></span>
+          <input class="secret" id="geminiKeyInput" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-1p-ignore data-lpignore="true" placeholder="AIza…">
         </label>
         <label class="field">
           <span>Gemini model</span>
-          <input id="modelInput" type="text" autocomplete="off" spellcheck="false" placeholder="gemini-flash-latest">
+          <input id="modelInput" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="gemini-flash-latest">
         </label>
-      </section>
+      </details>
 
       <section class="settings-group">
-        <h3>Preferences</h3>
         <label class="switch"><input type="checkbox" id="defaultTaxFree"><span>Tax refund by default</span></label>
         <label class="switch"><input type="checkbox" id="saveLocationToggle"><span>Save store location</span></label>
-        <label class="switch"><input type="checkbox" id="autoInfoToggle"><span>Product info on every scan<small>One extra search per scan</small></span></label>
-        <label class="switch"><input type="checkbox" id="buzzToggle"><span>Buzz and chime when done</span></label>
+        <label class="switch"><input type="checkbox" id="autoInfoToggle"><span>Product info on every scan</span></label>
+        <label class="switch"><input type="checkbox" id="buzzToggle"><span>Buzz when done</span></label>
       </section>
 
-      <section class="settings-group">
-        <h3>Background scanning</h3>
-        <p class="muted small">Finishes scans after you close the app. Setup is in the README.</p>
+      <details class="settings-group" id="serverGroup">
+        <summary><span>Background scanning</span><span class="group-status" id="serverStatus"></span></summary>
         <label class="field">
           <span>Scan server URL</span>
-          <input id="serverUrlInput" type="url" autocomplete="off" spellcheck="false" placeholder="https://script.google.com/…/exec">
+          <input id="serverUrlInput" type="text" inputmode="url" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="https://script.google.com/…/exec">
         </label>
         <div class="field">
           <span>Telegram</span>
-          <ol class="steps-text">
-            <li>@BotFather → <code>/newbot</code> → copy the token</li>
-            <li>Open your bot, tap Start</li>
-            <li>Paste the token, tap Link</li>
-          </ol>
-          <span class="inline-row">
-            <input id="tgTokenInput" type="password" autocomplete="off" spellcheck="false" placeholder="Bot token" aria-label="Telegram bot token">
-            <button class="btn btn-small btn-primary" type="button" id="tgLink">Link</button>
-          </span>
+          <div id="tgSetup">
+            <ol class="steps-text">
+              <li>@BotFather, <code>/newbot</code>, copy the token</li>
+              <li>Open your bot, tap Start</li>
+              <li>Paste the token, tap Link</li>
+            </ol>
+            <span class="inline-row">
+              <input class="secret" id="tgTokenInput" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-1p-ignore data-lpignore="true" placeholder="Bot token" aria-label="Telegram bot token">
+              <button class="btn btn-small btn-primary" type="button" id="tgLink">Link</button>
+            </span>
+          </div>
           <small id="tgStatus" role="status"></small>
-          <button class="link small" type="button" id="tgUnlink" hidden>Unlink Telegram</button>
+          <button class="link small" type="button" id="tgUnlink" hidden>Unlink</button>
         </div>
         <details class="ntfy-alt">
           <summary>Use ntfy instead</summary>
           <label class="field">
             <span>ntfy topic</span>
             <span class="inline-row">
-              <input id="ntfyInput" type="text" autocomplete="off" spellcheck="false" placeholder="kaimono-…">
+              <input id="ntfyInput" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="kaimono-…">
               <button class="btn btn-small" type="button" id="ntfyNew">New</button>
               <button class="btn btn-small" type="button" id="ntfyCopy">Copy</button>
             </span>
           </label>
           <label class="field">
             <span>ntfy access token</span>
-            <input id="ntfyTokenInput" type="password" autocomplete="off" spellcheck="false" placeholder="tk_…">
+            <input class="secret" id="ntfyTokenInput" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-1p-ignore data-lpignore="true" placeholder="tk_…">
           </label>
         </details>
         <button class="btn btn-small" type="button" id="serverTest">Test notifications</button>
         <p class="small" id="serverTestResult" role="status"></p>
-      </section>
+      </details>
 
       <button class="link danger" type="button" id="clearHistoryBtn">Clear history</button>
       <a class="link about-link" href="about/">About Kaimono</a>
@@ -450,8 +456,25 @@
   <dialog class="viewer" id="photoViewer" aria-label="Photo">
     <div class="viewer-stage" id="viewerStage"><img id="viewerImg" alt="Scan photo"></div>
     <button class="viewer-close" id="viewerClose" type="button" aria-label="Close"><svg class="i" viewBox="0 0 256 256" aria-hidden="true"><path d="M204.24,195.76a6,6,0,1,1-8.48,8.48L128,136.49,60.24,204.24a6,6,0,0,1-8.48-8.48L119.51,128,51.76,60.24a6,6,0,0,1,8.48-8.48L128,119.51l67.76-67.75a6,6,0,0,1,8.48,8.48L136.49,128Z"/></svg></button>
-    <p class="viewer-hint">Pinch or double-tap to zoom</p>
+    <p class="viewer-count" id="viewerCount" hidden></p>
+    <p class="viewer-hint" id="viewerHint">Pinch or double-tap to zoom</p>
   </dialog>
+
+  <!-- Photos waiting to be scanned together (clothes: the whole piece, then its labels) -->
+  <dialog class="sheet" id="photoTray" aria-labelledby="trayTitle">
+    <div class="sheet-head">
+      <h2 id="trayTitle">Photos</h2>
+      <button class="icon-btn" type="button" id="trayClose" aria-label="Cancel"><svg class="i" viewBox="0 0 256 256" aria-hidden="true"><path d="M204.24,195.76a6,6,0,1,1-8.48,8.48L128,136.49,60.24,204.24a6,6,0,0,1-8.48-8.48L119.51,128,51.76,60.24a6,6,0,0,1,8.48-8.48L128,119.51l67.76-67.75a6,6,0,0,1,8.48,8.48L136.49,128Z"/></svg></button>
+    </div>
+    <p class="muted small" id="trayHint">Whole piece first, then the brand label and price tag.</p>
+    <ul class="tray" id="trayList"></ul>
+    <div class="sheet-actions">
+      <label class="btn btn-ghost" for="trayGallery">Library</label>
+      <button class="btn btn-primary" type="button" id="trayGo">Check price</button>
+    </div>
+  </dialog>
+  <input id="trayCamera" type="file" accept="image/*" capture="environment" hidden>
+  <input id="trayGallery" type="file" accept="image/*" multiple hidden>
 
   <div class="update-bar" id="undoToast" role="status" hidden>
     <span id="undoText">Deleted</span>

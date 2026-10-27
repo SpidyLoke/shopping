@@ -6,14 +6,16 @@
 }
 
 :root {
-  --bg: #09090b;
-  --surface: #131316;
-  --surface-2: #1c1c20;
-  --text: #f4f4f5;
-  --muted: #a1a1aa;
-  --faint: #52525b;
+  --bg: #0d1020;
+  --surface: #161a2e;
+  --surface-2: #1f2439;
+  --text: #eef0f7;
+  --muted: #9ca2bb;
+  --faint: #4f5573;
   --line: rgb(255 255 255 / 0.08);
-  --accent: #f0405a;
+  --accent: #a6b2ff;
+  --accent-bg: #4256c4;
+  --cream: #e9dfc8;
   --ease: cubic-bezier(0.32, 0.72, 0, 1);
   --wrap: 72rem;
   color-scheme: dark;
@@ -36,27 +38,6 @@ a { color: inherit; }
 em { font-style: italic; color: var(--muted); }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 
-/* Ambient light and grain, fixed so scrolling never repaints them */
-body::before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  background:
-    radial-gradient(45% 40% at 85% 5%, rgb(240 64 90 / 0.22), transparent 70%),
-    radial-gradient(40% 35% at 5% 60%, rgb(240 64 90 / 0.08), transparent 70%),
-    radial-gradient(60% 50% at 50% 110%, rgb(255 180 120 / 0.06), transparent 70%);
-}
-body::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: 30;
-  pointer-events: none;
-  opacity: 0.05;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-}
 
 /* ---------- Nav: floating glass pill ---------- */
 
@@ -78,7 +59,7 @@ body::after {
   white-space: nowrap;
 }
 .nav-brand { display: flex; align-items: center; gap: 10px; font-weight: 650; text-decoration: none; }
-.mark { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; background: var(--accent); color: #fff; font-size: 15px; font-weight: 700; }
+.mark { width: 28px; height: 28px; flex: none; }
 .nav-links { display: flex; gap: 22px; font-size: 0.92rem; color: var(--muted); }
 .nav-links a { text-decoration: none; transition: color 0.3s var(--ease); }
 .nav-links a:hover { color: var(--text); }
@@ -108,7 +89,7 @@ body::after {
   transition: transform 0.4s var(--ease), background 0.4s var(--ease);
 }
 .btn:active { transform: scale(0.97); }
-.btn-red { background: var(--accent); color: #fff; box-shadow: 0 18px 40px -16px rgb(240 64 90 / 0.7), inset 0 1px 0 rgb(255 255 255 / 0.25); }
+.btn-red { background: var(--accent-bg); color: #fff; }
 .btn-ghost { padding: 0 26px; color: var(--text); box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.16); }
 .btn-ghost:hover { background: rgb(255 255 255 / 0.06); }
 .btn-orb {
@@ -219,8 +200,8 @@ body::after {
   gap: 10px;
   padding: 28px;
   border-radius: 30px;
-  background: linear-gradient(160deg, var(--surface-2), var(--surface) 60%);
-  box-shadow: inset 0 0 0 1px var(--line), inset 0 1px 0 rgb(255 255 255 / 0.05);
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line);
   overflow: hidden;
   transition: transform 0.6s var(--ease);
 }
@@ -238,7 +219,7 @@ body::after {
   width: 62%;
   margin-left: -31%;
   border-radius: 30px 30px 0 0;
-  box-shadow: 0 -20px 60px -20px rgb(240 64 90 / 0.4);
+  box-shadow: 0 0 0 1px var(--line);
   transition: transform 0.8s var(--ease);
 }
 .card-verdict:hover .card-shot img { translate: 0 -8px; }
@@ -251,7 +232,7 @@ body::after {
   font-weight: 650;
 }
 .grades span:first-child { background: rgb(76 217 138 / 0.14); color: #4cd98a; }
-.grades span:last-child { background: rgb(240 64 90 / 0.14); color: var(--accent); }
+.grades span:last-child { background: rgb(255 122 122 / 0.14); color: #ff8a8a; }
 .big { font-size: clamp(2.4rem, 4vw, 3.4rem); font-weight: 700; letter-spacing: -0.05em; line-height: 1; margin-bottom: auto; }
 .card-volt .big { color: #f5c04a; }
 .huge { display: block; font-size: clamp(3.4rem, 9vw, 7.5rem); font-weight: 720; letter-spacing: -0.06em; line-height: 0.95; color: #4cd98a; font-variant-numeric: tabular-nums; }
@@ -284,7 +265,7 @@ body::after {
   padding: 26px;
   border: 0;
   border-radius: 30px;
-  background: linear-gradient(160deg, var(--surface-2), var(--surface) 60%);
+  background: var(--surface);
   box-shadow: inset 0 0 0 1px var(--line);
   color: var(--text);
   text-align: left;
@@ -293,7 +274,7 @@ body::after {
   overflow: hidden;
   transition: flex 0.8s var(--ease), background 0.6s var(--ease);
 }
-.slice.is-open { flex: 4; cursor: default; background: linear-gradient(160deg, #2a1418, var(--surface) 70%); }
+.slice.is-open { flex: 4; cursor: default; background: var(--surface-2); }
 .slice-title { font-size: 1.6rem; font-weight: 650; letter-spacing: -0.03em; }
 .slice-body {
   display: flex;

@@ -10,7 +10,7 @@
 // Web app URL into the app's Settings. The first request from your app sets a private secret;
 // requests without it are refused.
 
-const VERSION = 5;
+const VERSION = 6;
 const RESULT_TTL_SECONDS = 6 * 60 * 60; // CacheService maximum
 const CEX_SEARCH = 'https://search.webuy.io/1/indexes/*/queries';
 
@@ -111,20 +111,28 @@ function runJob(req) {
   const referer = req.referer || '';
   let ocr = req.ocrText || '';
   let guess = req.webGuess || '';
+  // Several photos of the same item (whole piece, labels, price tag) are read together.
+  const images = [req.image].concat(req.moreImages || []).filter(Boolean);
 
   if (req.vision) {
     try {
       const d = post(`https://vision.googleapis.com/v1/images:annotate?key=${encodeURIComponent(keys.cloud)}`, {
-        requests: [{
-          image: { content: req.image },
+        requests: images.map((content) => ({
+          image: { content },
           features: [{ type: 'DOCUMENT_TEXT_DETECTION' }, { type: 'WEB_DETECTION', maxResults: 5 }],
           imageContext: { languageHints: ['ja', 'en'] },
-        }],
+        })),
       }, 'Vision', referer);
-      const r = (d.responses || [])[0] || {};
-      if (r.error) throw new Error(`Vision: ${r.error.message}`);
-      ocr = ((r.fullTextAnnotation || {}).text || '').trim();
-      guess = (((r.webDetection || {}).bestGuessLabels || [])[0] || {}).label || '';
+      const rs = d.responses || [];
+      const ok = rs.filter((r) => !r.error);
+      if (!ok.length) throw new Error(`Vision: ${((rs[0] || {}).error || {}).message || 'no answer'}`);
+      ocr = ok.map((r) => ((r.fullTextAnnotation || {}).text || '').trim()).filter(Boolean).join('\n\n');
+      const guesses = [];
+      ok.forEach((r) => {
+        const g = (((r.webDetection || {}).bestGuessLabels || [])[0] || {}).label;
+        if (g && guesses.indexOf(g) === -1) guesses.push(g);
+      });
+      guess = guesses.join('; ');
       out.vision = { ocrText: ocr, webGuess: guess };
     } catch (err) {
       out.visionError = err.message;
@@ -147,7 +155,7 @@ function runJob(req) {
     try {
       const prompt = req.prompt.split('{{OCR}}').join(ocr || '(none detected)').split('{{WEBGUESS}}').join(guess || 'none');
       const parts = [];
-      if (req.image) parts.push({ inline_data: { mime_type: 'image/jpeg', data: req.image } });
+      images.forEach((data) => parts.push({ inline_data: { mime_type: 'image/jpeg', data } }));
       parts.push({ text: prompt });
       const body = { contents: [{ role: 'user', parts }] };
       if (req.search !== false) body.tools = [{ google_search: {} }];

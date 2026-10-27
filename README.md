@@ -78,7 +78,8 @@ Repo **Settings → Pages → Build and deployment → Deploy from a branch → 
 ### Getting around
 
 - **Bottom bar:** Scan, History, Trip and Settings sit at the bottom for one-handed use; buttons are larger throughout.
-- **Zoom the photo:** tap the photo on a result or shelf to open it full screen, then pinch or double-tap to zoom and drag to pan. It uses the full-size photo, not the thumbnail.
+- **Back:** every page except Home has **Back** at the top left. From a scan it returns to wherever you opened it (History, Trip, a shelf); from History or Trip it goes Home.
+- **Zoom the photo:** tap the photo on a result or shelf to open it full screen, then pinch or double-tap to zoom and drag to pan. With several photos, swipe sideways between them. It uses the full-size photo, not the thumbnail.
 - **Buzz when ready:** the phone vibrates (Android) or chimes (iPhone, plus a haptic tap on iOS 18+) when a scan finishes, so you can keep browsing. Turn it off in Settings.
 
 ### While scanning
@@ -118,6 +119,20 @@ Every scan gets a **Works in Malaysia** card when it applies: 240V or 100V-only 
 ### Japan resale check
 
 Gemini also checks **Mercari Japan** and **Yahoo! Auctions** for the same item second-hand. The price shows as a fourth card, and the verdict mentions it when it's at least 15% cheaper than the shop. Buttons open both searches in Japanese.
+
+### More than one photo
+
+One scan can use up to 5 photos of the same item, for example the front, the brand or size label and the price tag. Vision reads all of them and Gemini sees them together, which helps when the price and the model are on different labels. Three ways to add them:
+
+- Pick several photos at once from **Gallery**.
+- Tap **Add photo** on a result to add another angle or label; the scan re-reads everything with it included.
+- In **Clothes** mode, each photo goes into a tray first; add more, then tap **Check price**.
+
+A **+2** badge on the result photo shows the extra photos.
+
+### Clothes
+
+Switch the home screen to **Clothes** for clothing, shoes and bags. Photograph the whole piece, then add the brand label, size or care label and price tag. Gemini identifies it from the piece itself (logos, design, product codes on Uniqlo, GU and Muji tags, collaborations) rather than relying on text, reads the size and converts it to a rough Malaysian size (Japanese sizes often run small), and notes the material and colour. Prices come from the brand's Malaysian store, Zalora, and Shopee and Lazada brand stores for new, and Carousell for used. CeX is skipped (it doesn't sell clothes), and the Zalora button replaces it. In Used mode it lists visible wear and flags anything that looks like it may not be genuine.
 
 ### Whole-shelf scan
 
@@ -172,6 +187,7 @@ Shipping, luggage allowance and warranty aren't factored in. Gemini flags Japan-
 
 - **Gemini model:** defaults to `gemini-flash-latest`, Google's alias for the current Flash model, so it keeps working when versions retire. Pin a specific model ID here if you prefer.
 - **Clear history:** deletes all saved scans from the phone.
+- **API keys** and **Background scanning** fold away once set up. Key and token fields are masked text boxes rather than password fields, so iPhone no longer offers to save or generate a password. The × at the top closes Settings without saving.
 
 ## Files
 
