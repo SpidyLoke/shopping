@@ -421,6 +421,22 @@
           <span>Scan server URL</span>
           <input id="serverUrlInput" type="url" autocomplete="off" spellcheck="false" placeholder="https://script.google.com/macros/s/…/exec">
         </label>
+        <div class="field">
+          <span>Telegram notifications</span>
+          <ol class="steps-text">
+            <li>In Telegram, open <strong>@BotFather</strong>, send <code>/newbot</code>, pick any name, and copy the token it gives you.</li>
+            <li>Paste it below, then open your new bot in Telegram and tap <strong>Start</strong>.</li>
+            <li>Tap <strong>Link</strong>.</li>
+          </ol>
+          <span class="inline-row">
+            <input id="tgTokenInput" type="password" autocomplete="off" spellcheck="false" placeholder="123456789:AA…" aria-label="Telegram bot token">
+            <button class="btn btn-small btn-primary" type="button" id="tgLink">Link</button>
+          </span>
+          <small id="tgStatus" role="status"></small>
+          <button class="link small" type="button" id="tgUnlink" hidden>Unlink Telegram</button>
+        </div>
+        <details class="ntfy-alt">
+          <summary>Use ntfy instead (often blocked from Google's servers)</summary>
         <label class="field">
           <span>ntfy topic for notifications</span>
           <span class="inline-row">
@@ -435,6 +451,7 @@
           <input id="ntfyTokenInput" type="password" autocomplete="off" spellcheck="false" placeholder="tk_…">
           <small>Only needed if the test says ntfy is refusing Google's servers. Make a free account at ntfy.sh → Account → Access tokens.</small>
         </label>
+        </details>
         <button class="btn btn-small" type="button" id="serverTest">Test notifications</button>
         <p class="small" id="serverTestResult" role="status"></p>
       </fieldset>

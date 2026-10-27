@@ -3,7 +3,7 @@
 // lives in localStorage on the user's device only.
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.10.27-7';
+const APP_VERSION = '2026.10.27-8';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -48,6 +48,7 @@ const settings = {
   get serverUrl() { return store.get('serverUrl', ''); },
   get ntfyTopic() { return store.get('ntfyTopic', ''); },
   get ntfyToken() { return store.get('ntfyToken', ''); },
+  get telegram() { return store.get('telegram', null); }, // { token, chatId, bot }
 };
 
 // Full-size photos live in IndexedDB (localStorage is too small) so old scans can be re-read properly.
@@ -1197,12 +1198,21 @@ async function serverCall(body, timeoutMs = 30000) {
   }
 }
 
+// Telegram once linked; ntfy only as a fallback (Google's shared servers get rate-limited there).
 function notifyTarget() {
+  const tg = settings.telegram;
+  if (tg?.token && tg?.chatId) return { telegram: { token: tg.token, chatId: tg.chatId } };
   return settings.ntfyTopic ? { topic: settings.ntfyTopic, token: settings.ntfyToken || undefined } : null;
 }
 
 function describeNtfy(r) {
   if (!r) return 'no answer';
+  if (r.channel === 'telegram') {
+    if (r.code === 200) return r.tries > 1 ? `sent to Telegram ✓ (after ${r.tries} tries)` : 'sent to Telegram ✓';
+    if (r.code === 401 || r.code === 404) return 'Telegram rejected the bot token. Link it again in Settings.';
+    if (r.code === 400 || r.code === 403) return 'Telegram couldn\'t message you. Open your bot, tap Start, then Link again in Settings.';
+    return `Telegram failed (${r.code || 'error'}): ${r.body || ''}`.trim();
+  }
   if (r.code >= 200 && r.code < 300) return r.tries > 1 ? `sent ✓ (after ${r.tries} tries)` : 'sent ✓';
   if (r.code === 0 && /address unavailable/i.test(r.body || '')) return `failed after ${r.tries || 1} tries: Google couldn't connect to ntfy.sh. Usually temporary.`;
   if (r.code === 429) return 'ntfy refused it: too many requests from Google\'s shared servers. Add an ntfy access token below.';
@@ -2935,6 +2945,8 @@ function openSettings() {
   $('#serverUrlInput').value = settings.serverUrl;
   $('#ntfyInput').value = settings.ntfyTopic;
   $('#ntfyTokenInput').value = settings.ntfyToken;
+  $('#tgTokenInput').value = settings.telegram?.token || '';
+  renderTelegramStatus();
   $('#serverTestResult').textContent = '';
   $('#settingsDialog').showModal();
 }
@@ -3193,6 +3205,42 @@ function saveServerSettings() {
   store.set('ntfyToken', $('#ntfyTokenInput').value.trim());
 }
 
+function renderTelegramStatus() {
+  const tg = settings.telegram;
+  $('#tgStatus').textContent = tg?.chatId ? `Linked to @${tg.bot}${tg.name ? ` (messages go to ${tg.name})` : ''} ✓` : 'Not linked yet.';
+  $('#tgUnlink').hidden = !tg?.chatId;
+}
+
+$('#tgLink').addEventListener('click', async () => {
+  saveServerSettings();
+  const token = $('#tgTokenInput').value.trim();
+  if (!settings.serverUrl) {
+    $('#tgStatus').textContent = 'Paste your scan server URL first.';
+    return;
+  }
+  if (!token) {
+    $('#tgStatus').textContent = 'Paste the bot token from @BotFather first.';
+    return;
+  }
+  $('#tgStatus').textContent = 'Linking…';
+  try {
+    const res = await serverCall({ action: 'telegramLink', token }, 45000);
+    if (!res.chatId) throw new Error(res.error || "Scan server: couldn't link. If you set the server up in the last 15 minutes, wait a bit and try again.");
+    store.set('telegram', { token, chatId: res.chatId, bot: res.bot, name: res.name });
+    renderTelegramStatus();
+    $('#tgStatus').textContent += ' Check Telegram for a hello message.';
+  } catch (e) {
+    $('#tgStatus').textContent = /Unknown action/.test(e.message)
+      ? 'Your server is still on the old code. It updates itself within 10 to 15 minutes; try again then.'
+      : e.message.replace('Scan server: ', '');
+  }
+});
+$('#tgUnlink').addEventListener('click', () => {
+  store.set('telegram', null);
+  $('#tgTokenInput').value = '';
+  renderTelegramStatus();
+});
+
 $('#ntfyNew').addEventListener('click', () => {
   const random = Array.from(crypto.getRandomValues(new Uint8Array(6)), (b) => b.toString(36).padStart(2, '0')).join('');
   $('#ntfyInput').value = `kaimono-${random}`;
@@ -3210,7 +3258,9 @@ $('#serverTest').addEventListener('click', async () => {
   saveServerSettings();
   const lines = [];
   const show = () => { $('#serverTestResult').replaceChildren(...lines.map((l) => el('span', { class: 'test-line' }, l))); };
-  if (settings.ntfyTopic) {
+  if (settings.telegram?.chatId) {
+    lines.push(`1. Telegram: linked to @${settings.telegram.bot} ✓`);
+  } else if (settings.ntfyTopic) {
     lines.push('1. Phone → ntfy: sending…');
     show();
     try {
@@ -3225,7 +3275,7 @@ $('#serverTest').addEventListener('click', async () => {
       lines[0] = "1. Phone → ntfy: couldn't reach ntfy.sh.";
     }
   } else {
-    lines.push('1. No ntfy topic yet: tap New, then subscribe to it in the ntfy app.');
+    lines.push('1. No notifications set up yet: link a Telegram bot above.');
   }
   if (!settings.serverUrl) {
     lines.push('2. No scan server URL yet.');
@@ -3237,7 +3287,7 @@ $('#serverTest').addEventListener('click', async () => {
   try {
     const res = await serverCall({ action: 'ping', notify: notifyTarget() }, 30000);
     lines[1] = `2. App → your server: OK${res.version < 2 ? ' (old version of Code.gs: paste the new one and deploy a New version)' : ''}`;
-    if (settings.ntfyTopic) lines.push(`3. Server → ntfy: ${res.ntfy ? describeNtfy(res.ntfy) : 'no report (old Code.gs)'}`);
+    if (notifyTarget()) lines.push(`3. Server → ${settings.telegram?.chatId ? 'Telegram' : 'ntfy'}: ${res.ntfy ? describeNtfy(res.ntfy) : 'no report (server is still on old code; try again in 10 minutes)'}`);
   } catch (e) {
     lines[1] = `2. App → your server: ${e.message.startsWith('Scan server') ? e.message.replace('Scan server: ', '') : "couldn't reach it. Check the URL (ends in /exec)."}`;
   }

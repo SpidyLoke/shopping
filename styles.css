@@ -1008,3 +1008,9 @@ dialog#settingsDialog form { overflow-x: hidden; }
 .test-line { display: block; margin-top: 4px; }
 .server-hint { background: var(--warn-bg); }
 .server-hint.received { background: var(--good-bg); color: var(--good); font-weight: 600; }
+
+.steps-text { margin: 4px 0 6px; padding-left: 20px; font-size: 0.86rem; color: var(--muted); display: flex; flex-direction: column; gap: 3px; }
+.ntfy-alt { font-size: 0.9rem; }
+.ntfy-alt > summary { cursor: pointer; color: var(--muted); padding: 4px 0; }
+.ntfy-alt[open] { display: flex; flex-direction: column; gap: 10px; }
+#tgUnlink { align-self: flex-start; }

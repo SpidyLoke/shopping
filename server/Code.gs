@@ -10,7 +10,7 @@
 // Web app URL into the app's Settings. The first request from your app sets a private secret;
 // requests without it are refused.
 
-const VERSION = 3;
+const VERSION = 4;
 const RESULT_TTL_SECONDS = 6 * 60 * 60; // CacheService maximum
 const CEX_SEARCH = 'https://search.webuy.io/1/indexes/*/queries';
 
@@ -29,9 +29,10 @@ function doPost(e) {
 
   if (req.action === 'ping') {
     const result = { ok: true, version: VERSION };
-    if (req.notify && req.notify.topic) result.ntfy = ntfy(req.notify, 'Kaimono Check', 'Test from your scan server: notifications are working.');
+    if (req.notify) result.ntfy = sendNotification(req.notify, 'Kaimono Check', 'Test from your scan server: notifications are working.');
     return reply(result);
   }
+  if (req.action === 'telegramLink') return reply(telegramLink(req.token));
   if (req.action === 'scan') return reply(runJob(req));
   if (req.action === 'result') return reply(load(req.jobId) || { status: 'unknown' });
   return reply({ error: 'Unknown action' });
@@ -176,14 +177,66 @@ function runJob(req) {
   out.finishedAt = Date.now();
   save(req.jobId, out);
 
-  if (req.notify && req.notify.topic) {
+  if (req.notify) {
     const name = (ai && ai.product_name) || 'Your scan';
     const price = ai && ai.jp_price_yen ? ` · ¥${Number(ai.jp_price_yen).toLocaleString('en-GB')}` : '';
     const failed = out.geminiError ? ' (price check failed, tap ↻ in the app)' : '';
-    out.ntfy = ntfy(req.notify, 'Scan ready', `${name}${price}${failed}. Open Kaimono Check to see if it's worth it.`);
+    out.ntfy = sendNotification(req.notify, 'Scan ready', `${name}${price}${failed}. Open Kaimono Check to see if it's worth it.`);
     save(req.jobId, out);
   }
   return out;
+}
+
+// Telegram when linked (reliable from Google's servers), otherwise ntfy.
+function sendNotification(notify, title, message) {
+  if (notify.telegram && notify.telegram.token && notify.telegram.chatId) return telegramSend(notify.telegram, `${title}\n${message}`);
+  if (notify.topic) return ntfy(notify, title, message);
+  return null;
+}
+
+// UrlFetchApp with retries for "Address unavailable" and 5xx, which another attempt usually fixes.
+function fetchWithRetry(url, options) {
+  const waits = [0, 2000, 5000, 10000];
+  let last = null;
+  for (let i = 0; i < waits.length; i += 1) {
+    if (waits[i]) Utilities.sleep(waits[i]);
+    try {
+      const res = UrlFetchApp.fetch(url, Object.assign({ muteHttpExceptions: true }, options));
+      last = { code: res.getResponseCode(), body: res.getContentText().slice(0, 300), tries: i + 1 };
+      if (last.code < 500) return last;
+    } catch (err) {
+      last = { code: 0, body: err.message, tries: i + 1 };
+    }
+  }
+  return last;
+}
+
+function telegramApi(token, method, payload) {
+  return fetchWithRetry(`https://api.telegram.org/bot${token}/${method}`, {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify(payload || {}),
+  });
+}
+
+function telegramSend(tg, text) {
+  const r = telegramApi(tg.token, 'sendMessage', { chat_id: tg.chatId, text, disable_web_page_preview: true });
+  return Object.assign({ channel: 'telegram' }, r);
+}
+
+// Finds your chat with the bot (you must have tapped Start in it) and says hello.
+function telegramLink(token) {
+  if (!token) return { error: 'Missing Telegram bot token' };
+  const me = telegramApi(token, 'getMe');
+  if (!me || me.code !== 200) return { error: me && me.code === 401 ? 'Telegram rejected the bot token. Copy it again from @BotFather.' : `Couldn't reach Telegram (${me ? me.code : 'no answer'}).` };
+  const bot = JSON.parse(me.body).result || {};
+  const updates = telegramApi(token, 'getUpdates', { limit: 100 });
+  const list = updates && updates.code === 200 ? (JSON.parse(updates.body).result || []) : [];
+  const chats = list.map((u) => (u.message || u.edited_message || {}).chat).filter((c) => c && c.type === 'private');
+  const chat = chats[chats.length - 1];
+  if (!chat) return { error: `Open @${bot.username} in Telegram, tap Start (or send it any message), then tap Link again.` };
+  telegramSend({ token, chatId: chat.id }, 'Kaimono Check is linked. Scan results will show up here.');
+  return { ok: true, chatId: chat.id, bot: bot.username, name: chat.first_name || '' };
 }
 
 // ntfy.sh: free push notifications. JSON publishing keeps non-ASCII titles intact.

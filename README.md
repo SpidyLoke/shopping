@@ -34,19 +34,18 @@ Free tiers at time of writing: Vision gives 1,000 units a month per feature (eac
 
 ### Background scanning (optional, recommended on iPhone)
 
-Phones cut a web app's connections a few seconds after you switch away or close it, so a scan in progress fails. A free Google Apps Script "scan server" fixes that: the app hands each scan to it, it finishes the work on Google's side, and the app picks up the result next time it's open. It can also send you a phone notification through the free **ntfy** app.
+Phones cut a web app's connections a few seconds after you switch away or close it, so a scan in progress fails. A free Google Apps Script "scan server" fixes that: the app hands each scan to it, it finishes the work on Google's side, and the app picks up the result next time it's open. It also sends you a Telegram message when each scan is done.
 
 1. Go to [script.google.com](https://script.google.com) (same Google account) → **New project**. Rename it "Kaimono server".
 2. Paste the short loader from [`server/Loader.gs`](https://raw.githubusercontent.com/SpidyLoke/shopping/main/server/Loader.gs) into `Code.gs` (below the sample `myFunction` is fine). Save. The loader fetches the real server code from this repo and re-checks it every 10 minutes, so server updates never need editing or redeploying. (You can paste the full [`server/Code.gs`](https://raw.githubusercontent.com/SpidyLoke/shopping/main/server/Code.gs) instead if you'd rather not load code from GitHub; then updates mean pasting it again and deploying a new version.)
 3. **Deploy → New deployment →** ⚙ **Web app**. Execute as **Me**, Who has access **Anyone**. **Deploy**.
 4. Authorise it. Google will warn the app isn't verified (it's your own script): **Advanced → Go to Kaimono server → Allow**. It needs permission to make web requests (Google APIs, CeX, ntfy).
 5. Copy the **Web app URL** (ends in `/exec`).
-6. In the app: **Settings → Background scanning**, paste the URL. Tap **New** to make a private ntfy topic, then **Copy**.
-7. Install **ntfy** ([App Store](https://apps.apple.com/app/ntfy/id1625396347) / Play Store), tap **+**, paste the topic, **Subscribe**, and allow notifications.
-8. Back in the app, tap **Test notifications**, then **Save**. The test checks three hops and says which one fails:
-   1. **Phone → ntfy**: if this notification doesn't arrive, the ntfy app isn't subscribed to the exact topic, or its notifications are off in iPhone Settings.
-   2. **App → your server**: "sent back a web page" means Who has access isn't **Anyone**, the script needs authorising, or you didn't deploy the latest version.
-   3. **Server → ntfy**: "too many requests" means ntfy is rate-limiting Google's shared servers. Make a free account at ntfy.sh, create an access token (Account → Access tokens) and paste it into **ntfy access token**.
+6. In the app: **Settings → Background scanning**, paste the URL.
+7. **Telegram notifications:** in Telegram open **@BotFather**, send `/newbot`, pick any name and copy the token. Paste it into the app, open your new bot in Telegram and tap **Start**, then tap **Link** in the app. You'll get a hello message.
+8. Tap **Test notifications**, then **Save**. The test reports each hop: Telegram linked, app → your server, server → Telegram.
+
+ntfy is still there under "Use ntfy instead", but ntfy rate-limits Google's shared servers, so notifications sent from Apps Script often get refused ([ntfy issue #1922](https://github.com/binwiederhier/ntfy/issues/1922)). Telegram doesn't have that problem.
 
 Notes:
 - The server uses the API keys already in the app; they're sent with each scan and never stored there. The first request from your app locks the server to it.
