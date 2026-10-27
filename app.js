@@ -3,7 +3,7 @@
 // lives in localStorage on the user's device only.
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.10.27-5';
+const APP_VERSION = '2026.10.27-6';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -1315,7 +1315,8 @@ async function applyServerResult(entry, out, { quiet = false } = {}) {
     entry.errors.push(out.geminiError || 'Gemini: no result came back from the scan server.');
   }
   if (out.cex?.hits) entry.cex = { ...pickCex(out.cex.query, out.cex.hits), checkedAt: Date.now() };
-  entry.serverJob = { ...entry.serverJob, done: true };
+  // Keep the server's timings and ntfy's answer so a missing notification can be explained.
+  entry.serverJob = { ...entry.serverJob, done: true, startedAt: out.startedAt, finishedAt: out.finishedAt, ntfy: out.ntfy || null };
   if (!entry.rate && rate) entry.rate = rate.value;
   running.delete(entry.id);
   const update = () => refresh(entry);
@@ -1324,6 +1325,18 @@ async function applyServerResult(entry, out, { quiet = false } = {}) {
   if (entry.ai && settings.autoInfo && !entry.info) loadInfo(entry.id);
   // Google's servers sit outside Malaysia and CeX may refuse them, so try from the phone as well.
   if (entry.ai && !entry.cex?.found) await lookupCex(entry, update);
+}
+
+const clock = (t) => new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(t);
+
+// One line on the result saying what the scan server did, to pin down missing notifications.
+function serverReport(job) {
+  if (!job?.done) return '';
+  if (job.stalled) return `Scan server: started at ${clock(job.startedAt || job.sentAt)} and stopped before finishing, so no notification was sent.`;
+  if (!job.finishedAt) return '';
+  const took = job.startedAt ? ` (${Math.round((job.finishedAt - job.startedAt) / 1000)}s)` : '';
+  const note = job.ntfy ? `notification ${describeNtfy(job.ntfy)}` : 'no notification topic set';
+  return `Scan server: finished at ${clock(job.finishedAt)}${took} · ${note}`;
 }
 
 function giveUpServerJob(entry, message) {
@@ -1368,8 +1381,16 @@ async function checkServerJob(entry) {
       } else {
         giveUpServerJob(entry, "Scan server: the photo couldn't be sent. Check your signal and tap ↻ to try again.");
       }
-    } else if (out.status === 'running' && age > 8 * 60 * 1000) {
-      giveUpServerJob(entry, 'Scan server: the scan took too long. Tap ↻ to try again.');
+    } else if (out.status === 'running') {
+      if (out.startedAt && entry.serverJob.startedAt !== out.startedAt) {
+        entry.serverJob = { ...entry.serverJob, startedAt: out.startedAt };
+        saveEntry(entry);
+      }
+      // A scan normally takes under a minute; three minutes with no result means the server stopped.
+      if (Date.now() - (out.startedAt || entry.serverJob.sentAt) > 3 * 60 * 1000) {
+        entry.serverJob = { ...entry.serverJob, stalled: true };
+        giveUpServerJob(entry, `Scan server: started the scan at ${clock(out.startedAt || entry.serverJob.sentAt)} but never finished it. Tap ↻ to try again.`);
+      }
     }
   } catch {
     // offline or the server is busy: try again on the next tick
@@ -2614,6 +2635,8 @@ function renderResult(entry) {
   $('#resPhoto').src = entry.thumb;
   if (document.activeElement !== $('#notesInput')) $('#notesInput').value = entry.notes || '';
   $('#quickBanner').hidden = !(entry.quick && entry.ai && !running.has(entry.id));
+  $('#serverInfo').textContent = serverReport(entry.serverJob);
+  $('#serverInfo').hidden = !$('#serverInfo').textContent;
   const onServer = entry.serverJob && !entry.serverJob.done;
   $('#serverHint').hidden = !onServer;
   $('#serverHint').classList.toggle('received', Boolean(onServer && entry.serverJob.received));
