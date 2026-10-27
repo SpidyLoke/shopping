@@ -108,6 +108,14 @@
         <button class="chip" id="boughtBtn" type="button" aria-pressed="false">Mark as bought</button>
       </div>
 
+      <div class="variant-box" id="variantBox" hidden>
+        <p class="variant-line" id="variantLine"></p>
+        <div id="lookalikeWrap" hidden>
+          <p class="muted small" id="lookalikeHint"></p>
+          <div class="lookalikes" id="lookalikes"></div>
+        </div>
+      </div>
+
       <ol class="steps" id="steps">
         <li data-step="vision">Reading the Japanese text</li>
         <li data-step="translate">Translating to English</li>
@@ -172,8 +180,14 @@
           <span class="grade-chip" id="conditionGradeValue"></span>
           <span id="conditionGradeMeaning"></span>
         </div>
+        <div class="grade-options" id="gradeOptions" hidden></div>
         <ul class="issues" id="issueList"></ul>
         <p class="muted small" id="conditionNote"></p>
+      </details>
+
+      <details class="panel info" id="infoPanel" hidden open>
+        <summary id="infoSummary">Is it worth it?</summary>
+        <div class="info-body" id="infoBody"></div>
       </details>
 
       <details class="panel place" id="placePanel" open>
@@ -194,7 +208,7 @@
       <div class="toggles" id="toggles" hidden>
         <label class="switch">
           <input type="checkbox" id="secondHandToggle">
-          <span>Second-hand item (compare against MY second-hand)</span>
+          <span id="secondHandLabel">Second-hand item (compare against MY second-hand)</span>
         </label>
         <label class="switch">
           <input type="checkbox" id="taxInclToggle">
@@ -333,6 +347,10 @@
       <label class="switch">
         <input type="checkbox" id="saveLocationToggle">
         <span>Save store location with each scan</span>
+      </label>
+      <label class="switch">
+        <input type="checkbox" id="autoInfoToggle">
+        <span>Load product info (worth it?, alternatives) on every scan. Costs an extra Gemini search per scan.</span>
       </label>
       <div class="dialog-actions">
         <button class="btn btn-ghost btn-danger" type="button" id="clearHistoryBtn">Clear history</button>

@@ -3,7 +3,7 @@
 // lives in localStorage on the user's device only.
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.10.26-9';
+const APP_VERSION = '2026.10.27-1';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -42,6 +42,7 @@ const settings = {
   get secondHand() { return store.get('secondHand', false); },
   get saveLocation() { return store.get('saveLocation', true); },
   get scanKind() { return store.get('scanKind', 'item'); },
+  get autoInfo() { return store.get('autoInfo', false); },
 };
 
 // Full-size photos live in IndexedDB (localStorage is too small) so old scans can be re-read properly.
@@ -327,10 +328,19 @@ function productTokens(entry) {
   return new Set(text.split(/[^a-z0-9\u3040-\u30ff\u4e00-\u9fff]+/).filter((t) => t.length > 1));
 }
 
+// Words that mark a different, differently priced model in the same line ("BFG Pro" vs "BFG Pro Reloaded",
+// "DualSense" vs "DualSense Edge"). Two names only match if they agree on every one of these.
+const VARIANT_WORDS = ['reloaded', 'pro', 'lite', 'oled', 'slim', 'mini', 'max', 'plus', 'ultra', 'elite', 'edge', 'neo',
+  'ii', 'iii', 'iv', 'mkii', 'mk2', 'mk3', 'v2', 'v3', 'v4', '2nd', '3rd', '4th', '5th', 'digital', 'limited', 'special', 'deluxe', 'se'];
+
+function sameVariant(a, b) {
+  return VARIANT_WORDS.every((w) => a.has(w) === b.has(w));
+}
+
 function sameProduct(a, b) {
   const ta = productTokens(a);
   const tb = productTokens(b);
-  if (!ta.size || !tb.size) return false;
+  if (!ta.size || !tb.size || !sameVariant(ta, tb)) return false;
   let shared = 0;
   for (const t of ta) if (tb.has(t)) shared += 1;
   return shared / (ta.size + tb.size - shared) >= 0.6;
@@ -393,7 +403,7 @@ async function translate(text) {
   return { translation: t.translatedText || '', sourceLang: t.detectedSourceLanguage || '' };
 }
 
-function buildPrompt({ ocrText, webGuess, secondHand, focus }) {
+function buildPrompt({ ocrText, webGuess, secondHand, focus, override }) {
   return `You are helping a Malaysian shopper standing in a shop in Japan decide whether to buy an item here or back home in Malaysia.
 
 The attached photo shows a product, box, price tag or shelf label in a Japanese shop.
@@ -402,17 +412,17 @@ OCR text from the photo:
 ${ocrText || '(none detected)'}
 """
 Google's visual best guess for the photo: "${webGuess || 'none'}"
-${focus ? `\nThe photo shows a whole shelf with several products. Evaluate ONLY this one: "${focus.name}"${focus.yen ? `, priced ${yen(focus.yen)}` : ''}. Ignore every other product in the photo.\n` : ''}${secondHand ? '\nThe shopper is in a second-hand shop (e.g. Hard Off, 2nd Street, Book Off, Sofmap used), so this is a used item. When searching Malaysia, prioritise second-hand listings in similar condition.\n' : ''}
+${focus ? `\nThe photo shows a whole shelf with several products. Evaluate ONLY this one: "${focus.name}"${focus.yen ? `, priced ${yen(focus.yen)}` : ''}. Ignore every other product in the photo.\n` : ''}${override ? `\nThe shopper has checked the box and confirmed the exact product is: "${override}". Treat that as certain and price that exact model.\n` : ''}${secondHand ? '\nThe shopper is in a second-hand shop (e.g. Hard Off, 2nd Street, Book Off, Sofmap used), so this is a used item. When searching Malaysia, prioritise second-hand listings in similar condition.\n' : ''}
 Tasks:
-1. Identify the exact product: brand, model or variant, size or capacity.
+1. Identify the exact product: brand, model, size or capacity, and above all the exact variant. Words like Reloaded, Pro, Lite, OLED, Slim, Edge, V2, Mk II, 2nd Gen, Digital Edition or a special edition usually mean a different product at a different price (e.g. "Victrix Pro BFG" and "Victrix Pro BFG Reloaded" are different controllers). Read these words from the box, tag or the product itself and say where you saw them. If the photo doesn't show enough to tell lookalike variants apart, say so and list them with how to tell them apart.
 2. Read the Japanese shop price in yen from the photo or OCR text. If both tax-inclusive (税込) and tax-exclusive (税抜) prices are shown, use the tax-inclusive one. Say whether the number you picked includes Japan's 10% consumption tax. Use null if no price is visible.
 3. Use Google Search to find current prices in Malaysia, in RM, for the same product:
    - New: Shopee Malaysia (shopee.com.my). If Shopee has none, use Lazada Malaysia or official Malaysian retailers.
    - Second-hand: Carousell Malaysia (carousell.com.my), plus used listings on Shopee Malaysia.
-   Only use Malaysian listings priced in RM. Exclude accessories, cases, spare parts and different variants. Never invent listings, prices or URLs; if you cannot find any, use null or an empty list.
+   Only use Malaysian listings priced in RM. Exclude accessories, cases, spare parts and listings for a lookalike variant: they are a different product, even if most of the name matches. Never invent listings, prices or URLs; if you cannot find any, use null or an empty list.
    Also check CeX Malaysia (my.webuy.com), which sells graded used stock: search my.webuy.com for the exact model. Its product pages show "WeSell for" (its selling price), "WeBuy for cash" and "WeBuy for voucher" prices in RM.
    Also search Japan's second-hand market for the same item in comparable condition: Mercari Japan (jp.mercari.com) and Yahoo! Auctions Japan (auctions.yahoo.co.jp), prices in yen.
-4. Read any condition information on the tag or label: the shop's condition grade or rank and what it means on that shop's scale, and every issue, defect or caveat mentioned (e.g. ジャンク, 動作未確認, 通電のみ, 欠品, キズ, 箱なし, 返品不可, 保証なし). Translate each into plain English and rate it: "high" = may not work, sold as-is, no returns or no warranty; "medium" = missing parts, visible damage or heavy wear; "low" = minor cosmetic. List stated positives (e.g. 動作確認済, 美品, 付属品完備) with severity "good". Ignore marketing claims on new-product packaging (e.g. 傷つきにくい means scratch-resistant, not scratched).
+4. Read any condition information on the tag or label: the shop's condition grade or rank and what it means on that shop's scale (second-hand chains such as 2nd Street, Hard Off, Book Off, Geo, Sofmap and Surugaya each have their own scale; explain it plainly rather than just saying "good"). If the tag or shelf shows more than one grade (for example separate A and B units of the same item at different prices, or a printed grade legend), list every grade with its price and meaning, and say which one applies to the item photographed if you can tell. Also read every issue, defect or caveat mentioned (e.g. ジャンク, 動作未確認, 通電のみ, 欠品, キズ, 箱なし, 返品不可, 保証なし). Translate each into plain English and rate it: "high" = may not work, sold as-is, no returns or no warranty; "medium" = missing parts, visible damage or heavy wear; "low" = minor cosmetic. List stated positives (e.g. 動作確認済, 美品, 付属品完備) with severity "good". Ignore marketing claims on new-product packaging (e.g. 傷つきにくい means scratch-resistant, not scratched).
 5. Check whether it will work properly in Malaysia: 240V 50Hz mains and Type G three-pin plugs (Japan is 100V with Type A two-pin plugs). Cover only what applies to this product:
    - Power: does it accept 240V? Many chargers and adapters are 100-240V and only need a plug adapter; 100V-only appliances (rice cookers, hair dryers, some kitchen and beauty gear) need a step-down transformer.
    - Region: game, Blu-ray or DVD region locks, region-specific online services or apps.
@@ -426,7 +436,13 @@ Reply with only a JSON object inside a \`\`\`json code block, with exactly these
   "product_name": "concise English product name",
   "brand": "brand or null",
   "store_name": "shop or chain name if visible in the photo (e.g. HARD OFF, Bic Camera, Don Quijote), else null",
-  "search_query": "best English query to type into Shopee or Carousell (brand + model)",
+  "search_query": "best English query to type into Shopee or Carousell: brand + model + variant words",
+  "variant": "the exact variant, edition or generation (e.g. Reloaded, OLED, 2nd Gen), or null if there is none",
+  "variant_evidence": "where you saw it, e.g. 'box says Reloaded', or null",
+  "variant_confidence": "high | medium | low",
+  "lookalikes": [
+    { "name": "full name of an easily confused variant", "how_to_tell": "how to tell them apart on the box or product", "typical_price_rm": 0 }
+  ],
   "search_query_ja": "best Japanese query for Mercari or Yahoo Auctions",
   "jp_price_yen": 12800,
   "jp_price_tax_included": true,
@@ -442,9 +458,12 @@ Reply with only a JSON object inside a \`\`\`json code block, with exactly these
     { "topic": "Power | Region | Language | Warranty | Other", "status": "ok | warn | bad", "note": "short plain-English explanation" }
   ],
   "condition": {
-    "is_used": true,
-    "grade": "grade or rank exactly as shown (e.g. B, ランクA, ジャンク), or null",
-    "grade_meaning": "what that grade means in plain English, or null",
+    "is_used": "true if the tag or item shows it is second-hand (中古, a condition grade, ジャンク), otherwise false",
+    "grade": "grade or rank exactly as shown for this item (e.g. B, ランクA, ジャンク), or null",
+    "grade_meaning": "what that grade means on this shop's scale, in plain English, or null",
+    "grade_options": [
+      { "grade": "A", "price_yen": 0, "meaning": "plain-English meaning" }
+    ],
     "issues": [
       { "jp": "original Japanese wording", "en": "plain English meaning", "severity": "high | medium | low | good" }
     ],
@@ -453,7 +472,7 @@ Reply with only a JSON object inside a \`\`\`json code block, with exactly these
   "confidence": "high | medium | low",
   "notes": "one or two sentences on matching caveats (Japan-only variant, voltage, region lock, etc.)"
 }
-Use price_rm for Malaysian listings and price_yen for Japanese ones. Use null for any price you could not find. Use an empty issues list if the tag mentions no condition information.`;
+Use price_rm for Malaysian listings and price_yen for Japanese ones. Use null for any price you could not find. Use an empty issues list if the tag mentions no condition information, an empty grade_options list unless more than one grade is shown, and an empty lookalikes list when nothing is easily confused with it.`;
 }
 
 function parseJson(text) {
@@ -465,8 +484,8 @@ function parseJson(text) {
   return JSON.parse(body.slice(start, end + 1));
 }
 
-async function askGemini({ imageB64, ocrText, webGuess, secondHand, focus }) {
-  const { json, sources } = await callGemini(imageB64, buildPrompt({ ocrText, webGuess, secondHand, focus }));
+async function askGemini({ imageB64, ocrText, webGuess, secondHand, focus, override }) {
+  const { json, sources } = await callGemini(imageB64, buildPrompt({ ocrText, webGuess, secondHand, focus, override }));
   return { ai: json, sources };
 }
 
@@ -523,6 +542,7 @@ function pickCex(query, hits) {
     const shared = [...want].filter((t) => have.has(t)).length;
     return want.size && shared / want.size >= 0.6
       && modelWords.every((t) => have.has(t))
+      && sameVariant(want, have)
       && !ACCESSORY_WORDS.some((w) => have.has(w) && !want.has(w));
   });
   // Anything priced under a quarter of the typical match is almost certainly a part, not the product.
@@ -676,7 +696,17 @@ function conditionFor(entry) {
       .filter((i) => i && (i.en || i.jp))
       .map((i) => ({ jp: i.jp || '', en: i.en || i.jp, severity: SEVERITY_ORDER[i.severity] !== undefined ? i.severity : 'medium' }))
       .sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]);
-    return { source: 'ai', grade: c.grade || null, gradeMeaning: c.grade_meaning || null, issues, missing: Array.isArray(c.missing) ? c.missing : [] };
+    const gradeOptions = (Array.isArray(c.grade_options) ? c.grade_options : []).filter((o) => o && o.grade);
+    // The shopper's pick from a multi-grade tag overrides Gemini's guess.
+    const picked = entry.gradePicked && gradeOptions.find((o) => o.grade === entry.gradePicked);
+    return {
+      source: 'ai',
+      grade: picked?.grade || c.grade || null,
+      gradeMeaning: picked?.meaning || c.grade_meaning || null,
+      gradeOptions,
+      issues,
+      missing: Array.isArray(c.missing) ? c.missing : [],
+    };
   }
   if (!entry.secondHand) return null;
   const grade = detectGrade(entry.ocrText);
@@ -686,6 +716,7 @@ function conditionFor(entry) {
     gradeMeaning: grade ? `${GRADE_MEANINGS[grade[0]] || ''} (typical scale; shops vary)` : null,
     issues: detectIssues(entry.ocrText),
     missing: [],
+    gradeOptions: [],
   };
 }
 
@@ -976,9 +1007,15 @@ async function searchPrices(entry, imageB64, update) {
       webGuess: entry.webGuess,
       secondHand: entry.secondHand,
       focus: entry.focus,
+      override: entry.override,
     });
     entry.ai = ai;
     entry.sources = sources;
+    // A graded or 中古 tag means a used item even if the app was in New mode; compare it like for like.
+    if (ai.condition?.is_used === true && !entry.secondHand && !entry.secondHandEdited) {
+      entry.secondHand = true;
+      entry.autoUsed = true;
+    }
     if (!entry.yenEdited) {
       entry.yen = toNum(ai.jp_price_yen) || entry.yen || parseYen(entry.ocrText);
       if (typeof ai.jp_price_tax_included === 'boolean') entry.taxIncluded = ai.jp_price_tax_included;
@@ -989,6 +1026,8 @@ async function searchPrices(entry, imageB64, update) {
     entry.errors.push(e.message);
   }
   update();
+
+  if (entry.ai && settings.autoInfo && !entry.info) loadInfo(entry.id);
 
   const query = entry.ai?.search_query || entry.ai?.product_name;
   if (query) {
@@ -1579,6 +1618,9 @@ function renderPrices(entry) {
   $('#taxInclToggle').checked = entry.taxIncluded !== false;
   $('#taxFreeToggle').checked = Boolean(entry.taxFree);
   $('#secondHandToggle').checked = Boolean(entry.secondHand);
+  $('#secondHandLabel').textContent = entry.autoUsed && entry.secondHand
+    ? 'Second-hand item (detected from the tag)'
+    : 'Second-hand item (compare against MY second-hand)';
   $('#jpHead').textContent = entry.secondHand ? 'Japan used' : 'Japan';
 
   for (const [key, valueSel, rangeSel] of [['my_new', '#myNew', '#myNewRange'], ['my_used', '#myUsed', '#myUsedRange']]) {
@@ -1631,6 +1673,27 @@ function renderCondition(entry) {
   $('#conditionGradeValue').textContent = c.grade || '';
   $('#conditionGradeMeaning').textContent = c.gradeMeaning || '';
 
+  const opts = c.gradeOptions;
+  $('#gradeOptions').hidden = opts.length < 2;
+  if (opts.length >= 2) {
+    $('#gradeOptions').replaceChildren(
+      el('p', { class: 'muted small' }, "The tag lists more than one grade. Tap the one you're buying:"),
+      ...opts.map((o) => {
+        const price = toNum(o.price_yen);
+        return el('button', {
+          class: `grade-opt${o.grade === c.grade ? ' on' : ''}`,
+          type: 'button',
+          'aria-pressed': String(o.grade === c.grade),
+          onclick: () => pickGrade(entry, o),
+        },
+          el('span', { class: 'grade-chip' }, o.grade),
+          el('span', { class: 'go-meaning' }, o.meaning || ''),
+          price ? el('span', { class: 'go-price' }, yen(price), el('small', {}, rm(price * (fx(entry) || 0)))) : null,
+        );
+      }),
+    );
+  }
+
   const items = c.issues.map((i) => el('li', { class: `issue sev-${i.severity}` },
     el('span', { class: 'issue-dot', 'aria-hidden': 'true' }),
     el('div', {},
@@ -1649,9 +1712,10 @@ function renderCondition(entry) {
 
   const highs = c.issues.filter((i) => i.severity === 'high').length;
   const concerns = c.issues.filter((i) => i.severity !== 'good').length + (c.missing.length ? 1 : 0);
-  $('#conditionSummary').textContent = highs
-    ? `Condition: ${highs} serious issue${highs > 1 ? 's' : ''}`
-    : concerns ? `Condition: ${concerns} thing${concerns > 1 ? 's' : ''} to check` : 'Condition';
+  const issuesText = highs
+    ? `${highs} serious issue${highs > 1 ? 's' : ''}`
+    : concerns ? `${concerns} thing${concerns > 1 ? 's' : ''} to check` : '';
+  $('#conditionSummary').textContent = `Condition: ${[c.grade ? `grade ${c.grade}` : null, issuesText].filter(Boolean).join(' · ') || (c.source === 'ai' ? 'nothing listed' : 'checking')}`;
   panel.classList.toggle('has-serious', highs > 0);
 
   let note = '';
@@ -1660,6 +1724,154 @@ function renderCondition(entry) {
   }
   if (c.source === 'local') note = `${note} Quick keyword check; the full read arrives with the price search.`.trim();
   $('#conditionNote').textContent = note;
+}
+
+function pickGrade(entry, option) {
+  entry.gradePicked = option.grade;
+  const price = toNum(option.price_yen);
+  if (price) {
+    entry.yen = price;
+    entry.yenEdited = true;
+  }
+  saveEntry(entry);
+  renderPrices(entry);
+  renderCondition(entry);
+}
+
+// ---------- exact model ----------
+
+function renderVariant(entry) {
+  const ai = entry.ai;
+  const lookalikes = (Array.isArray(ai?.lookalikes) ? ai.lookalikes : []).filter((l) => l?.name).slice(0, 3);
+  const box = $('#variantBox');
+  box.hidden = !ai || (!ai.variant && !lookalikes.length && !entry.override);
+  if (box.hidden) return;
+  const unsure = !entry.override && ai.variant_confidence === 'low';
+  box.classList.toggle('unsure', unsure);
+  $('#variantLine').textContent = entry.override
+    ? `Model set by you: ${entry.override}`
+    : `Exact model: ${ai.product_name || ''}${ai.variant_evidence ? ` (${ai.variant_evidence})` : ''}${unsure ? '. Not certain, check the box.' : ''}`;
+  $('#lookalikeHint').textContent = unsure ? 'Could also be one of these. Tap the right one to re-price it:' : 'Easy to mix up with (tap if this is actually it):';
+  const buttons = lookalikes.map((l) => el('button', { class: 'lookalike', type: 'button', onclick: () => setOverride(entry.id, l.name) },
+    el('span', { class: 'lk-name' }, `It's ${l.name}`),
+    el('span', { class: 'lk-how' }, [l.how_to_tell, toNum(l.typical_price_rm) ? `usually ${rm(toNum(l.typical_price_rm))} in MY` : null].filter(Boolean).join(' · ')),
+  ));
+  if (entry.override) {
+    buttons.push(el('button', { class: 'lookalike lk-reset', type: 'button', onclick: () => setOverride(entry.id, null) }, el('span', { class: 'lk-name' }, 'Use the detected model instead')));
+  }
+  $('#lookalikeWrap').hidden = !buttons.length;
+  $('#lookalikes').replaceChildren(...buttons);
+}
+
+async function setOverride(id, name) {
+  const entry = findEntry(id);
+  if (!entry || running.has(id)) return;
+  entry.override = name;
+  entry.info = null;
+  entry.cex = null;
+  saveEntry(entry);
+  await rescan(id);
+}
+
+// ---------- product info ----------
+
+const infoLoading = new Set();
+
+function infoPrompt(entry) {
+  const ai = entry.ai || {};
+  const jp = japanPrice(entry).rm;
+  const name = entry.override || ai.product_name;
+  return `You are advising a Malaysian shopper in Japan who is deciding whether to buy: "${name}"${ai.brand ? ` by ${ai.brand}` : ''}${entry.secondHand ? ' (second-hand)' : ''}.
+Price here: ${toNum(entry.yen) ? `${yen(paidYen(entry))} (about ${rm(jp)})` : 'unknown'}. In Malaysia it is typically ${rm(rangeValue(ai.my_new))} new and ${rm(rangeValue(ai.my_used))} second-hand.
+
+Use Google Search (reviews, spec pages, Malaysian and Japanese retailers) to write a short buying guide:
+- What it is and the features or specs that matter.
+- Pros and cons from reviews, and the reviewer consensus with a typical score if there is one.
+- Lookalike variants that are easy to confuse with it (older or newer generations, Lite/Pro versions, editions): what differs, how to tell them apart on the box, and typical price in RM.
+- Better or better-value alternatives available in Malaysia or Japan: what makes each better or cheaper, for whom, and a typical price.
+- Whether it is worth buying at this price, and whether a successor has been released or announced.
+
+Reply with only a JSON object inside a \`\`\`json code block:
+{
+  "summary": "one or two sentences",
+  "key_features": ["3 to 6 short items"],
+  "pros": ["up to 4"],
+  "cons": ["up to 4"],
+  "reviews": "reviewer consensus in one sentence, with a typical score if available",
+  "worth_it": { "verdict": "yes | depends | no", "reason": "one sentence" },
+  "successor": "newer model if released or announced, else null",
+  "variants": [{ "name": "", "difference": "", "how_to_tell": "", "price_rm": 0 }],
+  "alternatives": [{ "name": "", "why": "", "price_rm": 0, "price_yen": 0 }]
+}
+Keep every string short. Up to 3 variants and 4 alternatives. Never invent prices; use null if unknown.`;
+}
+
+async function loadInfo(id) {
+  const entry = findEntry(id);
+  if (!entry?.ai || infoLoading.has(id)) return;
+  infoLoading.add(id);
+  entry.infoError = null;
+  refresh(entry);
+  try {
+    const { json, sources } = await callGemini(null, infoPrompt(entry));
+    entry.info = { ...json, sources, at: Date.now() };
+  } catch (e) {
+    entry.infoError = e.message;
+  }
+  infoLoading.delete(id);
+  refresh(entry);
+}
+
+function renderInfo(entry) {
+  const panel = $('#infoPanel');
+  panel.hidden = !entry.ai;
+  if (panel.hidden) return;
+  const info = entry.info;
+  const loading = infoLoading.has(entry.id);
+  const list = (x) => (Array.isArray(x) ? x.filter(Boolean) : []);
+  const verdicts = { yes: ['Worth it', 'yes'], depends: ['Depends', 'depends'], no: ['Probably not', 'no'] };
+  const w = verdicts[info?.worth_it?.verdict];
+  $('#infoSummary').textContent = w ? `Worth it? ${w[0]}` : 'Is it worth it?';
+
+  if (!info) {
+    $('#infoBody').replaceChildren(...[
+      el('p', { class: 'muted small' }, 'Features, reviews, lookalike models and better alternatives.'),
+      entry.infoError ? el('p', { class: 'error' }, entry.infoError) : null,
+      el('button', { class: 'btn btn-block', type: 'button', disabled: loading, onclick: () => loadInfo(entry.id) }, loading ? 'Looking it up…' : 'Get product info'),
+    ].filter(Boolean));
+    return;
+  }
+
+  const shopee = (name) => `https://shopee.com.my/search?keyword=${encodeURIComponent(name)}`;
+  const priceText = (r, y) => [toNum(r) ? rm(toNum(r)) : null, toNum(y) ? yen(toNum(y)) : null].filter(Boolean).join(' · ');
+  $('#infoBody').replaceChildren(...[
+    w ? el('div', { class: `worth worth-${w[1]}` }, el('strong', {}, w[0]), el('span', {}, info.worth_it.reason || '')) : null,
+    info.successor ? el('p', { class: 'successor' }, `Newer model: ${info.successor}`) : null,
+    info.summary ? el('p', {}, info.summary) : null,
+    list(info.key_features).length ? el('ul', { class: 'feature-list' }, list(info.key_features).map((f) => el('li', {}, f))) : null,
+    list(info.pros).length || list(info.cons).length ? el('div', { class: 'pros-cons' },
+      el('ul', { class: 'pros' }, list(info.pros).map((p) => el('li', {}, p))),
+      el('ul', { class: 'cons' }, list(info.cons).map((c) => el('li', {}, c))),
+    ) : null,
+    info.reviews ? el('p', { class: 'muted small' }, `Reviews: ${info.reviews}`) : null,
+    list(info.variants).length ? el('div', {},
+      el('h3', { class: 'mini-head' }, "Don't mix up with"),
+      el('ul', { class: 'info-list' }, list(info.variants).map((v) => el('li', {},
+        el('div', {}, el('strong', {}, v.name), v.difference ? el('span', {}, ` ${v.difference}`) : null),
+        v.how_to_tell ? el('small', {}, `How to tell: ${v.how_to_tell}`) : null,
+        toNum(v.price_rm) ? el('span', { class: 'info-price' }, rm(toNum(v.price_rm))) : null,
+      ))),
+    ) : null,
+    list(info.alternatives).length ? el('div', {},
+      el('h3', { class: 'mini-head' }, 'Alternatives'),
+      el('ul', { class: 'info-list' }, list(info.alternatives).map((a) => el('li', {},
+        el('div', {}, el('a', { href: shopee(a.name), target: '_blank', rel: 'noopener' }, a.name)),
+        a.why ? el('small', {}, a.why) : null,
+        priceText(a.price_rm, a.price_yen) ? el('span', { class: 'info-price' }, priceText(a.price_rm, a.price_yen)) : null,
+      ))),
+    ) : null,
+    el('button', { class: 'link small', type: 'button', disabled: loading, onclick: () => loadInfo(entry.id) }, loading ? 'Refreshing…' : 'Refresh info'),
+  ].filter(Boolean));
 }
 
 function renderCompat(entry) {
@@ -1808,6 +2020,8 @@ function renderResult(entry) {
   renderPrices(entry);
   renderCondition(entry);
   renderCompat(entry);
+  renderVariant(entry);
+  renderInfo(entry);
   renderPlace(entry);
 
   const q = searchQuery(entry);
@@ -2059,6 +2273,7 @@ function openSettings() {
   $('#modelInput').value = store.get('model', '') || DEFAULT_MODEL;
   $('#defaultTaxFree').checked = settings.taxFree;
   $('#saveLocationToggle').checked = settings.saveLocation;
+  $('#autoInfoToggle').checked = settings.autoInfo;
   $('#settingsDialog').showModal();
 }
 
@@ -2069,6 +2284,7 @@ $('#settingsForm').addEventListener('submit', () => {
   store.set('model', model && model !== DEFAULT_MODEL ? model : '');
   store.set('taxFree', $('#defaultTaxFree').checked);
   store.set('saveLocation', $('#saveLocationToggle').checked);
+  store.set('autoInfo', $('#autoInfoToggle').checked);
   route();
 });
 
@@ -2139,7 +2355,11 @@ $('#yenInput').addEventListener('input', (e) => editCurrent((entry) => {
 }));
 $('#taxInclToggle').addEventListener('change', (e) => editCurrent((entry) => { entry.taxIncluded = e.target.checked; }));
 $('#taxFreeToggle').addEventListener('change', (e) => editCurrent((entry) => { entry.taxFree = e.target.checked; }));
-$('#secondHandToggle').addEventListener('change', (e) => editCurrent((entry) => { entry.secondHand = e.target.checked; }));
+$('#secondHandToggle').addEventListener('change', (e) => editCurrent((entry) => {
+  entry.secondHand = e.target.checked;
+  entry.secondHandEdited = true;
+  entry.autoUsed = false;
+}));
 
 for (const b of document.querySelectorAll('#modeSwitch [data-mode]')) {
   b.addEventListener('click', () => {

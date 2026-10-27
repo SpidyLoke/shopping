@@ -50,6 +50,14 @@ Repo **Settings → Pages → Build and deployment → Deploy from a branch → 
 - **Claim tourist tax refund:** knocks the 10% consumption tax off for purchases of ¥5,000 or more. Set it as the default in Settings.
 - **Shopee MY / Carousell MY** buttons open a live search for the product, for when you want to eyeball listings yourself.
 
+### Exact model check
+
+Gemini reads edition words off the box (Reloaded, Pro, Lite, OLED, V2…) and the result shows the exact model it found and how it knew. When it isn't sure, the box turns amber and lists lookalikes with how to tell them apart; tap **It's …** to re-price the scan as that model. Price matching (CeX, same item at other stores) treats lookalike variants as different products.
+
+### Product info: worth it?
+
+Tap **Get product info** on a result for a short buying guide: what it is, key features, pros and cons, reviewer consensus, lookalike models to avoid mixing up, better or better-value alternatives with prices, whether a newer model is out, and a Worth it / Depends / Probably not call. Turn on "Load product info on every scan" in Settings to get it automatically (one extra Gemini search per scan).
+
 ### CeX Malaysia
 
 The app asks [CeX Malaysia](https://my.webuy.com)'s own site search for the same item (Google rarely indexes CeX prices, so this is far more reliable), ignoring accessories and other models; the card says **Live from CeX** and names the listing it matched. If CeX can't be reached (it's an unofficial endpoint and may block some regions), it falls back to Gemini's web search and says **Via web search**. The **CeX Malaysia sells** card shows its used price (and grade), and **CeX buys at** shows its trade-in offer in cash and voucher, which is roughly what you could resell it for at home. The verdict mentions CeX when it's cheaper than the Japan price, and the CeX Malaysia button opens the product or a search.
@@ -98,7 +106,8 @@ History has a **Nearest** sort for when you're deciding which shop to go back to
 Switch the home screen to **Second-hand shop** before scanning at Hard Off, 2nd Street, Book Off, Sofmap and the like. Each scan then:
 
 - Compares the Japan price against **Malaysian second-hand prices** (like for like), and calls it a skip if it's cheaper brand new at home. With no Malaysian used listings, it needs to be 30%+ under the new price to count as a buy.
-- Shows a **Condition** card: the shop's grade (ランクA/B/C…) in plain English, and every issue on the tag ranked by severity. Red: junk, untested, sold as-is, no returns, no warranty. Amber: missing parts, no box, wear. Green: tested working, no scratches.
+- Shows a **Condition** card: the shop's grade (ランクA/B/C…) on that chain's own scale, in plain English. When a tag lists several grades (separate A and B units at different prices), each is listed with its price; tap the one you're buying and the verdict re-prices. A used tag (中古, a grade, ジャンク) switches the scan to second-hand comparison even in New mode.
+- Also lists every issue on the tag ranked by severity. Red: junk, untested, sold as-is, no returns, no warranty. Amber: missing parts, no box, wear. Green: tested working, no scratches.
 - Downgrades a "Buy" to **Cheap, but read the issues** when the tag has a serious issue.
 
 A built-in keyword check flags issues the moment the text is read, so you still get the warnings if Gemini is slow or fails. Gemini's fuller read replaces it when it arrives. The **Second-hand item** switch on any result flips the comparison after the fact.
