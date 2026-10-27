@@ -5,7 +5,7 @@
 // keeps going, stores the result for six hours, and pings your phone through ntfy when it's done.
 // The app collects the result the next time it's open.
 //
-// Setup (once): paste this file into a new project at script.google.com, then
+// Setup (once): paste this file into a new project at script.google.com, run "authorise" once, then
 // Deploy → New deployment → Web app, Execute as "Me", Who has access "Anyone", and copy the
 // Web app URL into the app's Settings. The first request from your app sets a private secret;
 // requests without it are refused.
@@ -196,4 +196,10 @@ function ntfy(topic, title, message) {
     payload: JSON.stringify({ topic, title, message, tags: ['shopping_cart'] }),
     muteHttpExceptions: true,
   });
+}
+
+// Run this once from the editor (pick "authorise" next to Debug, then Run) to grant the script
+// permission to make web requests. It does nothing else.
+function authorise() {
+  UrlFetchApp.fetch('https://ntfy.sh/v1/health', { muteHttpExceptions: true });
 }
