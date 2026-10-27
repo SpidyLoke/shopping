@@ -5,7 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Kaimono Check</title>
   <meta name="description" content="Snap a Japanese price tag, get it translated, and compare against Shopee and Carousell Malaysia.">
-  <meta name="theme-color" content="#c8102e">
+  <meta name="theme-color" content="#f4f4f3" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0b0b0c" media="(prefers-color-scheme: dark)">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="Kaimono">
@@ -18,86 +19,70 @@
   <header class="topbar">
     <button class="brand" id="homeBtn" type="button" aria-label="Home">
       <span class="brand-mark" aria-hidden="true">買</span>
-      <span class="brand-name">Kaimono Check</span>
+      <span class="brand-name">Kaimono</span>
     </button>
     <a class="trip-line" id="tripLine" href="#/trip"></a>
   </header>
 
   <nav class="bottom-nav" aria-label="Main">
-      <button id="navHome" type="button" data-nav="home">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/></svg>
-        <span>Scan</span>
-      </button>
-      <button id="historyBtn" type="button" data-nav="history">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7v5l3 2M3.5 12a8.5 8.5 0 1 0 2.5-6M3 4v4h4"/></svg>
-        <span>History</span>
-      </button>
-      <button id="tripBtn" type="button" data-nav="trip">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5 7.5h13l-1 12.5h-11l-1-12.5zM9 7.5V6a3 3 0 0 1 6 0v1.5"/></svg>
-        <span>Trip</span>
-      </button>
-      <button id="settingsBtn" type="button" data-nav="settings">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
-        <span>Settings</span>
-      </button>
+    <button id="navHome" type="button" data-nav="home"><svg class="i" viewBox="0 0 256 256" aria-hidden="true"><path d="M208,58H179.21L165,36.67A6,6,0,0,0,160,34H96a6,6,0,0,0-5,2.67L76.78,58H48A22,22,0,0,0,26,80V192a22,22,0,0,0,22,22H208a22,22,0,0,0,22-22V80A22,22,0,0,0,208,58Zm10,134a10,10,0,0,1-10,10H48a10,10,0,0,1-10-10V80A10,10,0,0,1,48,70H80a6,6,0,0,0,5-2.67L99.21,46h57.57L171,67.33A6,6,0,0,0,176,70h32a10,10,0,0,1,10,10ZM128,90a42,42,0,1,0,42,42A42,42,0,0,0,128,90Zm0,72a30,30,0,1,1,30-30A30,30,0,0,1,128,162Z"/></svg><span>Scan</span></button>
+    <button id="historyBtn" type="button" data-nav="history"><svg class="i" viewBox="0 0 256 256" aria-hidden="true"><path d="M134,80v44.6l37.09,22.25a6,6,0,0,1-6.18,10.3l-40-24A6,6,0,0,1,122,128V80a6,6,0,0,1,12,0Zm-6-46A93.4,93.4,0,0,0,61.51,61.56c-8.58,8.68-16,17-23.51,25.8V64a6,6,0,0,0-12,0v40a6,6,0,0,0,6,6H72a6,6,0,0,0,0-12H44.73C52.86,88.29,60.79,79.35,70,70a82,82,0,1,1,1.7,117.62,6,6,0,1,0-8.24,8.72A94,94,0,1,0,128,34Z"/></svg><span>History</span></button>
+    <button id="tripBtn" type="button" data-nav="trip"><svg class="i" viewBox="0 0 256 256" aria-hidden="true"><path d="M216,42H40A14,14,0,0,0,26,56V200a14,14,0,0,0,14,14H216a14,14,0,0,0,14-14V56A14,14,0,0,0,216,42Zm2,158a2,2,0,0,1-2,2H40a2,2,0,0,1-2-2V56a2,2,0,0,1,2-2H216a2,2,0,0,1,2,2ZM174,88a46,46,0,0,1-92,0,6,6,0,0,1,12,0,34,34,0,0,0,68,0,6,6,0,0,1,12,0Z"/></svg><span>Trip</span></button>
+    <button id="settingsBtn" type="button" data-nav="settings"><svg class="i" viewBox="0 0 256 256" aria-hidden="true"><path d="M128,82a46,46,0,1,0,46,46A46.06,46.06,0,0,0,128,82Zm0,80a34,34,0,1,1,34-34A34,34,0,0,1,128,162Zm108-54.4a6,6,0,0,0-2.92-4L202.64,86.22l-.42-.71L202.1,51.2A6,6,0,0,0,200,46.64a110.12,110.12,0,0,0-36.07-20.31,6,6,0,0,0-4.84.45L128.46,43.86h-1L96.91,26.76a6,6,0,0,0-4.86-.44A109.92,109.92,0,0,0,56,46.68a6,6,0,0,0-2.12,4.55l-.16,34.34c-.14.23-.28.47-.41.71L22.91,103.57A6,6,0,0,0,20,107.62a104.81,104.81,0,0,0,0,40.78,6,6,0,0,0,2.92,4l30.42,17.33.42.71.12,34.31A6,6,0,0,0,56,209.36a110.12,110.12,0,0,0,36.07,20.31,6,6,0,0,0,4.84-.45l30.61-17.08h1l30.56,17.1A6.09,6.09,0,0,0,162,230a5.83,5.83,0,0,0,1.93-.32,109.92,109.92,0,0,0,36-20.36,6,6,0,0,0,2.12-4.55l.16-34.34c.14-.23.28-.47.41-.71l30.42-17.29a6,6,0,0,0,2.92-4.05A104.81,104.81,0,0,0,236,107.6Zm-11.25,35.79L195.32,160.1a6.07,6.07,0,0,0-2.28,2.3c-.59,1-1.21,2.11-1.86,3.14a6,6,0,0,0-.91,3.16l-.16,33.21a98.15,98.15,0,0,1-27.52,15.53L133,200.88a6,6,0,0,0-2.93-.77h-.14c-1.24,0-2.5,0-3.74,0a6,6,0,0,0-3.07.76L93.45,217.43a98,98,0,0,1-27.56-15.49l-.12-33.17a6,6,0,0,0-.91-3.16c-.64-1-1.27-2.08-1.86-3.14a6,6,0,0,0-2.27-2.3L31.3,143.4a93,93,0,0,1,0-30.79L60.68,95.9A6.07,6.07,0,0,0,63,93.6c.59-1,1.21-2.11,1.86-3.14a6,6,0,0,0,.91-3.16l.16-33.21A98.15,98.15,0,0,1,93.41,38.56L123,55.12a5.81,5.81,0,0,0,3.07.76c1.24,0,2.5,0,3.74,0a6,6,0,0,0,3.07-.76l29.65-16.56a98,98,0,0,1,27.56,15.49l.12,33.17a6,6,0,0,0,.91,3.16c.64,1,1.27,2.08,1.86,3.14a6,6,0,0,0,2.27,2.3L224.7,112.6A93,93,0,0,1,224.73,143.39Z"/></svg><span>Settings</span></button>
   </nav>
 
   <main>
     <!-- Home -->
     <section class="view" id="homeView">
-      <div class="hero">
-        <h1>Worth buying here, or cheaper back home?</h1>
-        <p class="muted">Snap the box, tag or shelf label. You get the translation, the yen price in RM, and what it goes for on Shopee and Carousell Malaysia.</p>
-      </div>
-
       <div class="notice" id="keyNotice" hidden>
-        <strong>Add your Google API keys first.</strong>
-        <span>One for Vision and Translate, one for Gemini.</span>
+        <strong>Add your API keys to start.</strong>
         <button class="btn btn-small" type="button" data-open-settings>Open settings</button>
       </div>
 
-      <div class="mode">
-        <div class="mode-row">
-          <div class="segmented" id="modeSwitch" role="radiogroup" aria-label="Shopping for">
-            <button type="button" role="radio" data-mode="new" aria-checked="true">New</button>
-            <button type="button" role="radio" data-mode="used" aria-checked="false">Used</button>
-          </div>
-          <div class="segmented" id="kindSwitch" role="radiogroup" aria-label="Scan">
-            <button type="button" role="radio" data-kind="item" aria-checked="true">Item</button>
-            <button type="button" role="radio" data-kind="shelf" aria-checked="false">Shelf</button>
-          </div>
-        </div>
-        <p class="muted small" id="modeHint"></p>
-        <label class="switch">
-          <input type="checkbox" id="quickToggle">
-          <span>Quick scan: Shopee and Carousell only, the rest on tap (faster, cheaper)</span>
-        </label>
-      </div>
-
       <label class="capture" for="cameraInput">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/></svg>
-        <span id="captureLabel">Take a photo</span>
+        <span class="capture-icon"><svg class="i" viewBox="0 0 256 256" aria-hidden="true"><path d="M208,58H179.21L165,36.67A6,6,0,0,0,160,34H96a6,6,0,0,0-5,2.67L76.78,58H48A22,22,0,0,0,26,80V192a22,22,0,0,0,22,22H208a22,22,0,0,0,22-22V80A22,22,0,0,0,208,58Zm10,134a10,10,0,0,1-10,10H48a10,10,0,0,1-10-10V80A10,10,0,0,1,48,70H80a6,6,0,0,0,5-2.67L99.21,46h57.57L171,67.33A6,6,0,0,0,176,70h32a10,10,0,0,1,10,10ZM128,90a42,42,0,1,0,42,42A42,42,0,0,0,128,90Zm0,72a30,30,0,1,1,30-30A30,30,0,0,1,128,162Z"/></svg></span>
+        <span class="capture-text">
+          <span class="capture-title" id="captureLabel">Take a photo</span>
+          <span class="capture-sub">Tag, box or shelf label</span>
+        </span>
       </label>
       <input id="cameraInput" type="file" accept="image/*" capture="environment" hidden>
 
-      <label class="btn btn-ghost btn-block" for="galleryInput">Choose from gallery</label>
-      <input id="galleryInput" type="file" accept="image/*" hidden>
+      <div class="mode">
+        <div class="segmented" id="modeSwitch" role="radiogroup" aria-label="Shopping for">
+          <button type="button" role="radio" data-mode="new" aria-checked="true">New</button>
+          <button type="button" role="radio" data-mode="used" aria-checked="false">Used</button>
+        </div>
+        <div class="segmented" id="kindSwitch" role="radiogroup" aria-label="Scan">
+          <button type="button" role="radio" data-kind="item" aria-checked="true">Item</button>
+          <button type="button" role="radio" data-kind="shelf" aria-checked="false">Shelf</button>
+        </div>
+        <label class="toggle-pill" title="Quick scan: Shopee and Carousell only, the rest on tap">
+          <input type="checkbox" id="quickToggle">
+          <svg class="i" viewBox="0 0 256 256" aria-hidden="true"><path d="M213.84,118.63a6,6,0,0,0-3.73-4.25L150.88,92.17l15-75a6,6,0,0,0-10.27-5.27l-112,120a6,6,0,0,0,2.28,9.71l59.23,22.21-15,75a6,6,0,0,0,3.14,6.52A6.07,6.07,0,0,0,96,246a6,6,0,0,0,4.39-1.91l112-120A6,6,0,0,0,213.84,118.63ZM106,220.46l11.85-59.28a6,6,0,0,0-3.77-6.8l-55.6-20.85,91.46-98L138.12,94.82a6,6,0,0,0,3.77,6.8l55.6,20.85Z"/></svg><span>Quick</span>
+        </label>
+      </div>
+      <p class="mode-hint" id="modeHint" hidden></p>
 
-      <p class="rate-pill" id="ratePill">Loading exchange rate…</p>
+      <div class="home-row">
+        <label class="btn btn-ghost" for="galleryInput"><svg class="i" viewBox="0 0 256 256" aria-hidden="true"><path d="M216,42H72A14,14,0,0,0,58,56V74H40A14,14,0,0,0,26,88V200a14,14,0,0,0,14,14H184a14,14,0,0,0,14-14V182h18a14,14,0,0,0,14-14V56A14,14,0,0,0,216,42ZM70,56a2,2,0,0,1,2-2H216a2,2,0,0,1,2,2v67.57L204.53,110.1a14,14,0,0,0-19.8,0l-21.42,21.41L117.9,86.1a14,14,0,0,0-19.8,0L70,114.2ZM186,200a2,2,0,0,1-2,2H40a2,2,0,0,1-2-2V88a2,2,0,0,1,2-2H58v82a14,14,0,0,0,14,14H186Zm30-30H72a2,2,0,0,1-2-2V131.17l36.58-36.58a2,2,0,0,1,2.83,0l49.66,49.66a6,6,0,0,0,8.49,0l25.65-25.66a2,2,0,0,1,2.83,0l22,22V168A2,2,0,0,1,216,170ZM162,84a10,10,0,1,1,10,10A10,10,0,0,1,162,84Z"/></svg><span>Gallery</span></label>
+        <p class="rate-pill" id="ratePill">Loading rate…</p>
+      </div>
+      <input id="galleryInput" type="file" accept="image/*" hidden>
 
       <div class="recent" id="favWrap" hidden>
         <div class="section-head">
           <h2>Favourites</h2>
           <button class="link" type="button" id="refreshFavsHome">↻ Refresh prices</button>
-          <button class="link" type="button" id="seeFavsBtn">See all</button>
+          <button class="link" type="button" id="seeFavsBtn">All</button>
         </div>
         <ul class="history-list" id="favList"></ul>
       </div>
 
       <div class="recent" id="recentWrap" hidden>
         <div class="section-head">
-          <h2>Recent scans</h2>
-          <button class="link" type="button" id="seeAllBtn">See all</button>
+          <h2>Recent</h2>
+          <button class="link" type="button" id="seeAllBtn">All</button>
         </div>
         <ul class="history-list" id="recentList"></ul>
       </div>
@@ -112,61 +97,61 @@
           <h1 id="resName">Reading…</h1>
           <p class="muted small" id="resTime"></p>
         </div>
-        <button class="rescan-btn" id="rescanBtn" type="button" aria-label="Rescan" title="Rescan">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5"/></svg>
-        </button>
+        <button class="rescan-btn" id="rescanBtn" type="button" aria-label="Rescan" title="Rescan"><svg class="i" viewBox="0 0 256 256" aria-hidden="true"><path d="M222,48V96a6,6,0,0,1-6,6H168a6,6,0,0,1,0-12h33.52L183.47,72a81.51,81.51,0,0,0-57.53-24h-.46A81.5,81.5,0,0,0,68.19,71.28a6,6,0,1,1-8.38-8.58,93.38,93.38,0,0,1,65.67-26.76H126a93.45,93.45,0,0,1,66,27.53l18,18V48a6,6,0,0,1,12,0ZM187.81,184.72a81.5,81.5,0,0,1-57.29,23.34h-.46a81.51,81.51,0,0,1-57.53-24L54.48,166H88a6,6,0,0,0,0-12H40a6,6,0,0,0-6,6v48a6,6,0,0,0,12,0V174.48l18,18.05a93.45,93.45,0,0,0,66,27.53h.52a93.38,93.38,0,0,0,65.67-26.76,6,6,0,1,0-8.38-8.58Z"/></svg></button>
       </div>
 
       <div class="chip-row">
-        <button class="chip" id="favBtn" type="button" aria-pressed="false">♡ Favourite</button>
-        <button class="chip" id="boughtBtn" type="button" aria-pressed="false">Mark as bought</button>
-        <button class="chip" id="fixNameBtn" type="button">✎ Fix name</button>
+        <button class="chip" id="favBtn" type="button" aria-pressed="false"><span class="off"><svg class="i" viewBox="0 0 256 256" aria-hidden="true"><path d="M178,42c-21,0-39.26,9.47-50,25.34C117.26,51.47,99,42,78,42a60.07,60.07,0,0,0-60,60c0,29.2,18.2,59.59,54.1,90.31a334.68,334.68,0,0,0,53.06,37,6,6,0,0,0,5.68,0,334.68,334.68,0,0,0,53.06-37C219.8,161.59,238,131.2,238,102A60.07,60.07,0,0,0,178,42ZM128,217.11C111.59,207.64,30,157.72,30,102A48.05,48.05,0,0,1,78,54c20.28,0,37.31,10.83,44.45,28.27a6,6,0,0,0,11.1,0C140.69,64.83,157.72,54,178,54a48.05,48.05,0,0,1,48,48C226,157.72,144.41,207.64,128,217.11Z"/></svg></span><span class="on"><svg class="i" viewBox="0 0 256 256" aria-hidden="true"><path d="M240,102c0,70-103.79,126.66-108.21,129a8,8,0,0,1-7.58,0C119.79,228.66,16,172,16,102A62.07,62.07,0,0,1,78,40c20.65,0,38.73,8.88,50,23.89C139.27,48.88,157.35,40,178,40A62.07,62.07,0,0,1,240,102Z"/></svg></span><span class="chip-label">Save</span></button>
+        <button class="chip" id="boughtBtn" type="button" aria-pressed="false"><span class="off"><svg class="i" viewBox="0 0 256 256" aria-hidden="true"><path d="M172.24,99.76a6,6,0,0,1,0,8.48l-56,56a6,6,0,0,1-8.48,0l-24-24a6,6,0,0,1,8.48-8.48L112,151.51l51.76-51.75A6,6,0,0,1,172.24,99.76ZM230,128A102,102,0,1,1,128,26,102.12,102.12,0,0,1,230,128Zm-12,0a90,90,0,1,0-90,90A90.1,90.1,0,0,0,218,128Z"/></svg></span><span class="on"><svg class="i" viewBox="0 0 256 256" aria-hidden="true"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm45.66,85.66-56,56a8,8,0,0,1-11.32,0l-24-24a8,8,0,0,1,11.32-11.32L112,148.69l50.34-50.35a8,8,0,0,1,11.32,11.32Z"/></svg></span><span class="chip-label">Bought</span></button>
+        <button class="chip" id="fixNameBtn" type="button"><svg class="i" viewBox="0 0 256 256" aria-hidden="true"><path d="M225.9,74.78,181.21,30.09a14,14,0,0,0-19.8,0L38.1,153.41a13.94,13.94,0,0,0-4.1,9.9V208a14,14,0,0,0,14,14H92.69a13.94,13.94,0,0,0,9.9-4.1L225.9,94.58a14,14,0,0,0,0-19.8ZM94.1,209.41a2,2,0,0,1-1.41.59H48a2,2,0,0,1-2-2V163.31a2,2,0,0,1,.59-1.41L136,72.48,183.51,120ZM217.41,86.1,192,111.51,144.49,64,169.9,38.58a2,2,0,0,1,2.83,0l44.68,44.69a2,2,0,0,1,0,2.83Z"/></svg><span class="chip-label">Fix name</span></button>
       </div>
 
       <form class="fix-name" id="fixName" hidden>
         <label class="visually-hidden" for="fixNameInput">Correct product name</label>
-        <input id="fixNameInput" type="text" autocomplete="off" placeholder="e.g. Victrix Pro BFG Reloaded">
+        <input id="fixNameInput" type="text" autocomplete="off" placeholder="Exact product name">
         <button class="btn btn-small btn-primary" type="submit">Re-price</button>
       </form>
 
-      <div class="variant-box" id="variantBox" hidden>
-        <p class="variant-line" id="variantLine"></p>
-        <div id="lookalikeWrap" hidden>
-          <p class="muted small" id="lookalikeHint"></p>
-          <div class="lookalikes" id="lookalikes"></div>
-        </div>
-      </div>
-
       <ol class="steps" id="steps">
-        <li data-step="vision">Reading the Japanese text</li>
-        <li data-step="translate">Translating to English</li>
-        <li data-step="search">Searching Shopee &amp; Carousell MY</li>
+        <li data-step="vision">Reading the tag</li>
+        <li data-step="translate">Translating</li>
+        <li data-step="search">Checking prices</li>
       </ol>
 
-      <p class="server-hint" id="serverHint" hidden>Running on your scan server. You can close the app; you'll get a notification when it's done.</p>
-
+      <p class="server-hint" id="serverHint" hidden></p>
       <p class="error" id="resError" role="alert" hidden></p>
-      <p class="muted small" id="serverInfo" hidden></p>
 
       <div class="verdict" id="verdict" hidden>
         <p class="verdict-label" id="verdictLabel"></p>
         <p class="verdict-detail" id="verdictDetail"></p>
       </div>
 
+      <div class="variant-box" id="variantBox" hidden>
+        <p class="variant-line" id="variantLine"></p>
+        <details class="lookalike-wrap" id="lookalikeWrap" hidden>
+          <summary id="lookalikeHint">Not this model?</summary>
+          <div class="lookalikes" id="lookalikes"></div>
+        </details>
+      </div>
+
       <div class="quick-banner" id="quickBanner" hidden>
-        <span>Quick scan: CeX via web, Mercari and compatibility were skipped.</span>
-        <button class="btn btn-small" type="button" id="fullCheckBtn">Run full check</button>
+        <span><svg class="i" viewBox="0 0 256 256" aria-hidden="true"><path d="M213.84,118.63a6,6,0,0,0-3.73-4.25L150.88,92.17l15-75a6,6,0,0,0-10.27-5.27l-112,120a6,6,0,0,0,2.28,9.71l59.23,22.21-15,75a6,6,0,0,0,3.14,6.52A6.07,6.07,0,0,0,96,246a6,6,0,0,0,4.39-1.91l112-120A6,6,0,0,0,213.84,118.63ZM106,220.46l11.85-59.28a6,6,0,0,0-3.77-6.8l-55.6-20.85,91.46-98L138.12,94.82a6,6,0,0,0,3.77,6.8l55.6,20.85Z"/></svg> Quick scan</span>
+        <button class="btn btn-small" type="button" id="fullCheckBtn">Full check</button>
       </div>
 
       <div class="prices" id="prices" hidden>
-        <div class="price-card">
-          <p class="price-head" id="jpHead">Japan</p>
-          <div class="yen-input">
-            <span>¥</span>
-            <input id="yenInput" type="number" inputmode="numeric" min="0" step="1" placeholder="Price" aria-label="Japan price in yen">
+        <div class="price-card price-main">
+          <div>
+            <p class="price-head" id="jpHead">Japan</p>
+            <div class="yen-input">
+              <span>¥</span>
+              <input id="yenInput" type="number" inputmode="numeric" min="0" step="1" placeholder="Price" aria-label="Japan price in yen">
+            </div>
           </div>
-          <p class="price-rm" id="jpRm">–</p>
-          <p class="price-sub" id="jpNote"></p>
+          <div class="price-main-rm">
+            <p class="price-rm" id="jpRm">–</p>
+            <p class="price-sub" id="jpNote"></p>
+          </div>
         </div>
         <div class="price-card">
           <p class="price-head">MY new</p>
@@ -174,158 +159,165 @@
           <p class="price-sub" id="myNewRange"></p>
         </div>
         <div class="price-card">
-          <p class="price-head">MY second-hand</p>
+          <p class="price-head">MY used</p>
           <p class="price-rm" id="myUsed">–</p>
           <p class="price-sub" id="myUsedRange"></p>
         </div>
         <div class="price-card">
-          <p class="price-head">JP second-hand</p>
+          <p class="price-head">JP used</p>
           <p class="price-rm" id="jpUsed">–</p>
           <p class="price-sub" id="jpUsedRange"></p>
         </div>
-        <div class="price-card price-card-wide">
-          <div>
-            <p class="price-head">CeX Malaysia sells</p>
-            <p class="price-rm" id="cexSell">–</p>
-            <p class="price-sub" id="cexSellNote"></p>
-            <p class="price-sub cex-name" id="cexName"></p>
-          </div>
-          <div>
-            <p class="price-head">CeX buys at</p>
-            <p class="price-rm" id="cexCash">–</p>
-            <p class="price-sub" id="cexVoucher"></p>
-          </div>
+        <div class="price-card">
+          <p class="price-head">CeX sells</p>
+          <p class="price-rm" id="cexSell">–</p>
+          <p class="price-sub" id="cexSellNote"></p>
+          <p class="price-sub cex-name" id="cexName"></p>
+        </div>
+        <div class="price-card price-wide">
+          <p class="price-head">CeX buys</p>
+          <p class="price-rm" id="cexCash">–</p>
+          <p class="price-sub" id="cexVoucher"></p>
         </div>
       </div>
 
-      <details class="panel condition" id="compatPanel" hidden open>
-        <summary id="compatSummary">Works in Malaysia</summary>
-        <ul class="compat-list" id="compatList"></ul>
-      </details>
-
-      <details class="panel condition" id="conditionPanel" hidden open>
-        <summary id="conditionSummary">Condition</summary>
-        <div class="grade" id="conditionGrade" hidden>
-          <span class="grade-chip" id="conditionGradeValue"></span>
-          <span id="conditionGradeMeaning"></span>
-        </div>
-        <div class="grade-options" id="gradeOptions" hidden></div>
-        <ul class="issues" id="issueList"></ul>
-        <p class="muted small" id="conditionNote"></p>
-      </details>
-
-      <details class="panel info" id="infoPanel" hidden open>
-        <summary id="infoSummary">Is it worth it?</summary>
-        <div class="info-body" id="infoBody"></div>
-      </details>
-
-      <details class="panel" id="askPanel" hidden open>
-        <summary>Ask about this item</summary>
-        <ul class="qa-list" id="qaList"></ul>
-        <form class="ask-form" id="askForm">
-          <input id="askInput" type="text" autocomplete="off" placeholder="Works with PC? Is this the 2025 model?" aria-label="Your question">
-          <button class="btn btn-small btn-primary" type="submit" id="askBtn">Ask</button>
-        </form>
-      </details>
-
-      <details class="panel" id="notesPanel" open>
-        <summary>Notes</summary>
-        <textarea class="notes-input" id="notesInput" rows="2" placeholder="e.g. size M, ask for discount, for Amir" aria-label="Notes"></textarea>
-      </details>
-
-      <details class="panel place" id="placePanel" open>
-        <summary>Where</summary>
-        <input class="store-input" id="storeInput" type="text" autocomplete="off" placeholder="Store name (e.g. Bic Camera Ikebukuro)" aria-label="Store name">
-        <p class="muted small" id="placeArea"></p>
-        <div class="place-actions">
-          <a class="btn btn-small" id="directionsLink" target="_blank" rel="noopener" hidden>Directions</a>
-          <button class="btn btn-small btn-ghost" type="button" id="locateBtn">Use current location</button>
-        </div>
-        <div id="comparePlaces" hidden>
-          <h3 class="mini-head">Same item at other stores</h3>
-          <ul class="compare-list" id="compareList"></ul>
-          <a class="btn btn-small" id="compareStoresLink" href="#/compare/">Compare side by side</a>
+      <details class="panel" id="toggles" hidden>
+        <summary>Price settings</summary>
+        <div class="toggles">
+          <label class="switch">
+            <input type="checkbox" id="secondHandToggle">
+            <span id="secondHandLabel">Second-hand item</span>
+          </label>
+          <label class="switch">
+            <input type="checkbox" id="taxInclToggle">
+            <span>Tag includes tax (税込)</span>
+          </label>
+          <label class="switch">
+            <input type="checkbox" id="taxFreeToggle">
+            <span>Tourist tax refund (¥5,000+)</span>
+          </label>
         </div>
       </details>
-
-      <div class="toggles" id="toggles" hidden>
-        <label class="switch">
-          <input type="checkbox" id="secondHandToggle">
-          <span id="secondHandLabel">Second-hand item (compare against MY second-hand)</span>
-        </label>
-        <label class="switch">
-          <input type="checkbox" id="taxInclToggle">
-          <span>Tag price already includes 10% tax (税込)</span>
-        </label>
-        <label class="switch">
-          <input type="checkbox" id="taxFreeToggle">
-          <span>Claim tourist tax refund (purchases ¥5,000+)</span>
-        </label>
-      </div>
 
       <div class="search-links" id="searchLinks" hidden>
-        <a class="btn btn-shopee" id="shopeeLink" target="_blank" rel="noopener">Shopee MY</a>
-        <a class="btn btn-carousell" id="carousellLink" target="_blank" rel="noopener">Carousell MY</a>
-        <a class="btn btn-wide" id="cexLink" target="_blank" rel="noopener">CeX Malaysia</a>
-        <a class="btn" id="mercariLink" target="_blank" rel="noopener">Mercari JP</a>
-        <a class="btn" id="yahooLink" target="_blank" rel="noopener">Yahoo Auctions</a>
+        <a class="link-pill" id="shopeeLink" target="_blank" rel="noopener">Shopee</a>
+        <a class="link-pill" id="carousellLink" target="_blank" rel="noopener">Carousell</a>
+        <a class="link-pill" id="cexLink" target="_blank" rel="noopener">CeX</a>
+        <a class="link-pill" id="mercariLink" target="_blank" rel="noopener">Mercari</a>
+        <a class="link-pill" id="yahooLink" target="_blank" rel="noopener">Yahoo</a>
       </div>
 
-      <details class="panel" id="listingsPanel" hidden open>
-        <summary>Listings found</summary>
-        <div id="listings"></div>
-        <p class="muted small" id="aiNotes"></p>
-      </details>
-
-      <details class="panel" id="translationPanel" hidden open>
-        <summary>Translation</summary>
-        <p class="translation" id="translation"></p>
-        <details class="sub">
-          <summary>Original Japanese</summary>
-          <p class="original" id="original" lang="ja"></p>
+      <div class="panel-group">
+        <details class="panel condition" id="compatPanel" hidden>
+          <summary id="compatSummary">Works in Malaysia</summary>
+          <ul class="compat-list" id="compatList"></ul>
         </details>
-      </details>
 
-      <details class="panel" id="sourcesPanel" hidden>
-        <summary>Search sources</summary>
-        <ul class="sources" id="sources"></ul>
-      </details>
+        <details class="panel condition" id="conditionPanel" hidden>
+          <summary id="conditionSummary">Condition</summary>
+          <div class="grade" id="conditionGrade" hidden>
+            <span class="grade-chip" id="conditionGradeValue"></span>
+            <span id="conditionGradeMeaning"></span>
+          </div>
+          <div class="grade-options" id="gradeOptions" hidden></div>
+          <ul class="issues" id="issueList"></ul>
+          <p class="muted small" id="conditionNote"></p>
+        </details>
+
+        <details class="panel info" id="infoPanel" hidden>
+          <summary id="infoSummary">Is it worth it?</summary>
+          <div class="info-body" id="infoBody"></div>
+        </details>
+
+        <details class="panel" id="askPanel" hidden>
+          <summary>Ask about it</summary>
+          <ul class="qa-list" id="qaList"></ul>
+          <form class="ask-form" id="askForm">
+            <input id="askInput" type="text" autocomplete="off" placeholder="Works with PC?" aria-label="Your question">
+            <button class="btn btn-small btn-primary" type="submit" id="askBtn">Ask</button>
+          </form>
+        </details>
+
+        <details class="panel place" id="placePanel">
+          <summary id="placeSummary">Where</summary>
+          <input class="store-input" id="storeInput" type="text" autocomplete="off" placeholder="Store name" aria-label="Store name">
+          <p class="muted small" id="placeArea"></p>
+          <div class="place-actions">
+            <a class="btn btn-small" id="directionsLink" target="_blank" rel="noopener" hidden><svg class="i" viewBox="0 0 256 256" aria-hidden="true"><path d="M128,66a38,38,0,1,0,38,38A38,38,0,0,0,128,66Zm0,64a26,26,0,1,1,26-26A26,26,0,0,1,128,130Zm0-112a86.1,86.1,0,0,0-86,86c0,30.91,14.34,63.74,41.47,94.94a252.32,252.32,0,0,0,41.09,38,6,6,0,0,0,6.88,0,252.32,252.32,0,0,0,41.09-38c27.13-31.2,41.47-64,41.47-94.94A86.1,86.1,0,0,0,128,18Zm0,206.51C113,212.93,54,163.62,54,104a74,74,0,0,1,148,0C202,163.62,143,212.93,128,224.51Z"/></svg><span>Directions</span></a>
+            <button class="btn btn-small btn-ghost" type="button" id="locateBtn">Use current location</button>
+          </div>
+          <div id="comparePlaces" hidden>
+            <h3 class="mini-head">Other stores</h3>
+            <ul class="compare-list" id="compareList"></ul>
+            <a class="btn btn-small" id="compareStoresLink" href="#/compare/">Compare side by side</a>
+          </div>
+        </details>
+
+        <details class="panel" id="notesPanel">
+          <summary id="notesSummary">Notes</summary>
+          <textarea class="notes-input" id="notesInput" rows="2" placeholder="Size, who it's for, ask for discount…" aria-label="Notes"></textarea>
+        </details>
+
+        <details class="panel" id="listingsPanel" hidden>
+          <summary>Listings</summary>
+          <div id="listings"></div>
+          <p class="muted small" id="aiNotes"></p>
+        </details>
+
+        <details class="panel" id="translationPanel" hidden>
+          <summary>Translation</summary>
+          <p class="translation" id="translation"></p>
+          <details class="sub">
+            <summary>Original Japanese</summary>
+            <p class="original" id="original" lang="ja"></p>
+          </details>
+        </details>
+
+        <details class="panel" id="sourcesPanel" hidden>
+          <summary>Sources</summary>
+          <ul class="sources" id="sources"></ul>
+        </details>
+      </div>
+
+      <p class="muted small server-info" id="serverInfo" hidden></p>
 
       <div class="result-actions">
-        <label class="btn btn-primary" for="cameraInput">Scan another</label>
-        <button class="btn btn-ghost btn-danger" type="button" id="deleteBtn" hidden>Delete scan</button>
+        <label class="btn btn-primary btn-block" for="cameraInput"><svg class="i" viewBox="0 0 256 256" aria-hidden="true"><path d="M208,58H179.21L165,36.67A6,6,0,0,0,160,34H96a6,6,0,0,0-5,2.67L76.78,58H48A22,22,0,0,0,26,80V192a22,22,0,0,0,22,22H208a22,22,0,0,0,22-22V80A22,22,0,0,0,208,58Zm10,134a10,10,0,0,1-10,10H48a10,10,0,0,1-10-10V80A10,10,0,0,1,48,70H80a6,6,0,0,0,5-2.67L99.21,46h57.57L171,67.33A6,6,0,0,0,176,70h32a10,10,0,0,1,10,10ZM128,90a42,42,0,1,0,42,42A42,42,0,0,0,128,90Zm0,72a30,30,0,1,1,30-30A30,30,0,0,1,128,162Z"/></svg><span>Scan another</span></label>
+        <button class="link danger" type="button" id="deleteBtn" hidden>Delete scan</button>
       </div>
     </section>
 
     <!-- History -->
     <section class="view" id="historyView" hidden>
-      <div class="section-head">
-        <h1>Scan history</h1>
+      <div class="section-head page-head">
+        <h1>History</h1>
         <button class="link" type="button" id="selectToggle">Select</button>
       </div>
       <div class="history-tools">
-        <input class="search-input" id="historySearch" type="search" placeholder="Search items, stores, notes" aria-label="Search scans">
+        <label class="search-field"><svg class="i" viewBox="0 0 256 256" aria-hidden="true"><path d="M228.24,219.76l-51.38-51.38a86.15,86.15,0,1,0-8.48,8.48l51.38,51.38a6,6,0,0,0,8.48-8.48ZM38,112a74,74,0,1,1,74,74A74.09,74.09,0,0,1,38,112Z"/></svg><input class="search-input" id="historySearch" type="search" placeholder="Search" aria-label="Search scans"></label>
         <select class="trip-select" id="historyTrip" aria-label="Trip"></select>
       </div>
-      <div class="segmented seg-3" id="historyFilter" role="radiogroup" aria-label="Show">
-        <button type="button" role="radio" data-filter="all" aria-checked="true">All</button>
-        <button type="button" role="radio" data-filter="fav" aria-checked="false">Favourites</button>
-        <button type="button" role="radio" data-filter="bought" aria-checked="false">Bought</button>
-      </div>
-      <div class="segmented" id="historySort" role="radiogroup" aria-label="Sort scans">
-        <button type="button" role="radio" data-sort="recent" aria-checked="true">Recent</button>
-        <button type="button" role="radio" data-sort="nearest" aria-checked="false">Nearest</button>
+      <div class="filter-row">
+        <div class="segmented seg-3" id="historyFilter" role="radiogroup" aria-label="Show">
+          <button type="button" role="radio" data-filter="all" aria-checked="true">All</button>
+          <button type="button" role="radio" data-filter="fav" aria-checked="false">Saved</button>
+          <button type="button" role="radio" data-filter="bought" aria-checked="false">Bought</button>
+        </div>
+        <div class="segmented" id="historySort" role="radiogroup" aria-label="Sort scans">
+          <button type="button" role="radio" data-sort="recent" aria-checked="true">Recent</button>
+          <button type="button" role="radio" data-sort="nearest" aria-checked="false">Near</button>
+        </div>
       </div>
       <p class="muted small" id="historyHint" hidden></p>
       <button class="btn btn-small" type="button" id="refreshFavsHistory" hidden>↻ Refresh prices</button>
-      <p class="muted" id="historyEmpty">No scans yet.</p>
+      <p class="empty" id="historyEmpty">No scans yet.</p>
       <ul class="history-list" id="historyList"></ul>
       <div class="compare-bar select-bar" id="selectBar" hidden>
         <span id="selectCount">0 selected</span>
         <div class="select-actions">
           <button class="btn btn-small" type="button" id="selCompare" disabled title="Pick 2 or 3">Compare</button>
           <button class="btn btn-small" type="button" id="selFav" aria-label="Favourite">♥</button>
-          <button class="btn btn-small" type="button" id="selBought">✓ Bought</button>
+          <button class="btn btn-small" type="button" id="selBought" aria-label="Mark bought">✓</button>
           <button class="btn btn-small btn-primary" type="button" id="selDelete">Delete</button>
         </div>
       </div>
@@ -333,25 +325,21 @@
 
     <!-- Trip -->
     <section class="view" id="tripView" hidden>
-      <div class="section-head">
-        <h1>Trip spending</h1>
-      </div>
       <div class="trip-picker">
-        <select class="trip-select" id="tripSelect" aria-label="Trip"></select>
-        <button class="btn btn-small btn-ghost" type="button" id="tripRename">Rename</button>
+        <select class="trip-select trip-title" id="tripSelect" aria-label="Trip"></select>
+        <button class="link" type="button" id="tripRename">Rename</button>
       </div>
-      <p class="muted small">New scans are saved to this trip.</p>
       <div class="trip-card">
         <label class="budget-field">
-          <span>Trip budget</span>
-          <span class="rm-input"><span>RM</span><input id="budgetInput" type="number" inputmode="decimal" min="0" placeholder="e.g. 3000"></span>
+          <span>Budget</span>
+          <span class="rm-input"><span>RM</span><input id="budgetInput" type="number" inputmode="decimal" min="0" placeholder="3000"></span>
         </label>
+        <div class="meter" id="tripMeterWrap" hidden><div class="meter-fill" id="tripMeter"></div></div>
         <div class="trip-stats">
           <div><p class="stat-label">Spent</p><p class="stat-value" id="tripSpent">RM 0</p><p class="stat-sub" id="tripSpentYen"></p></div>
-          <div><p class="stat-label">Tax back (est.)</p><p class="stat-value" id="tripRefund">RM 0</p></div>
+          <div><p class="stat-label">Tax back</p><p class="stat-value" id="tripRefund">RM 0</p></div>
           <div><p class="stat-label">Left</p><p class="stat-value" id="tripLeft">–</p></div>
         </div>
-        <div class="meter" id="tripMeterWrap" hidden><div class="meter-fill" id="tripMeter"></div></div>
         <div class="trip-saved" id="tripSaved" hidden>
           <p class="trip-saved-value" id="tripSavedValue"></p>
           <p class="trip-saved-note" id="tripSavedNote"></p>
@@ -363,13 +351,13 @@
         <h2>Bought</h2>
         <span class="saved-sum" id="boughtSaved"></span>
       </div>
-      <p class="muted" id="tripEmpty">Nothing marked as bought yet. Open a scan and tap “Mark as bought”.</p>
+      <p class="empty" id="tripEmpty">Nothing bought yet.</p>
       <ul class="history-list" id="boughtList"></ul>
     </section>
 
     <!-- Compare -->
     <section class="view" id="compareView" hidden>
-      <div class="section-head">
+      <div class="section-head page-head">
         <h1>Compare</h1>
       </div>
       <div class="cmp" id="cmpTable"></div>
@@ -382,89 +370,84 @@
   <!-- Settings -->
   <dialog id="settingsDialog">
     <form method="dialog" id="settingsForm">
-      <h2>Settings</h2>
-      <label class="field">
-        <span>Google Cloud API key</span>
-        <input id="apiKeyInput" type="password" autocomplete="off" spellcheck="false" placeholder="AIza…">
-        <small>For Cloud Vision and Cloud Translation. Stored on this device only.</small>
-      </label>
-      <label class="field">
-        <span>Gemini API key</span>
-        <input id="geminiKeyInput" type="password" autocomplete="off" spellcheck="false" placeholder="AIza…">
-        <small>A separate key restricted to the Gemini API. Leave blank if your Cloud key is unrestricted.</small>
-      </label>
-      <label class="field">
-        <span>Gemini model</span>
-        <input id="modelInput" type="text" autocomplete="off" spellcheck="false" placeholder="gemini-flash-latest">
-        <small>Leave as <code>gemini-flash-latest</code> unless you want to pin a version.</small>
-      </label>
-      <label class="switch">
-        <input type="checkbox" id="defaultTaxFree">
-        <span>Assume tourist tax refund by default</span>
-      </label>
-      <label class="switch">
-        <input type="checkbox" id="saveLocationToggle">
-        <span>Save store location with each scan</span>
-      </label>
-      <label class="switch">
-        <input type="checkbox" id="autoInfoToggle">
-        <span>Load product info (worth it?, alternatives) on every scan. Costs an extra Gemini search per scan.</span>
-      </label>
-      <label class="switch">
-        <input type="checkbox" id="buzzToggle">
-        <span>Buzz and chime when a scan finishes (iPhone: chime, plus a haptic tap on iOS 18+)</span>
-      </label>
-      <fieldset class="field-group">
-        <legend>Background scanning</legend>
-        <p class="muted small">Lets a scan finish after you close the app and sends a notification when it's done. Needs your own free Google Apps Script server; the setup steps are in the README.</p>
+      <div class="dialog-head">
+        <h2>Settings</h2>
+        <button class="btn btn-small btn-primary" value="save" id="saveSettingsBtn">Save</button>
+      </div>
+
+      <section class="settings-group">
+        <h3>API keys</h3>
+        <label class="field">
+          <span>Google Cloud key</span>
+          <input id="apiKeyInput" type="password" autocomplete="off" spellcheck="false" placeholder="AIza…">
+          <small>Vision and Translate.</small>
+        </label>
+        <label class="field">
+          <span>Gemini key</span>
+          <input id="geminiKeyInput" type="password" autocomplete="off" spellcheck="false" placeholder="AIza…">
+          <small>Blank uses the Cloud key.</small>
+        </label>
+        <label class="field">
+          <span>Gemini model</span>
+          <input id="modelInput" type="text" autocomplete="off" spellcheck="false" placeholder="gemini-flash-latest">
+        </label>
+      </section>
+
+      <section class="settings-group">
+        <h3>Preferences</h3>
+        <label class="switch"><input type="checkbox" id="defaultTaxFree"><span>Tax refund by default</span></label>
+        <label class="switch"><input type="checkbox" id="saveLocationToggle"><span>Save store location</span></label>
+        <label class="switch"><input type="checkbox" id="autoInfoToggle"><span>Product info on every scan<small>One extra search per scan</small></span></label>
+        <label class="switch"><input type="checkbox" id="buzzToggle"><span>Buzz and chime when done</span></label>
+      </section>
+
+      <section class="settings-group">
+        <h3>Background scanning</h3>
+        <p class="muted small">Finishes scans after you close the app. Setup is in the README.</p>
         <label class="field">
           <span>Scan server URL</span>
-          <input id="serverUrlInput" type="url" autocomplete="off" spellcheck="false" placeholder="https://script.google.com/macros/s/…/exec">
+          <input id="serverUrlInput" type="url" autocomplete="off" spellcheck="false" placeholder="https://script.google.com/…/exec">
         </label>
         <div class="field">
-          <span>Telegram notifications</span>
+          <span>Telegram</span>
           <ol class="steps-text">
-            <li>In Telegram, open <strong>@BotFather</strong>, send <code>/newbot</code>, pick any name, and copy the token it gives you.</li>
-            <li>Paste it below, then open your new bot in Telegram and tap <strong>Start</strong>.</li>
-            <li>Tap <strong>Link</strong>.</li>
+            <li>@BotFather → <code>/newbot</code> → copy the token</li>
+            <li>Open your bot, tap Start</li>
+            <li>Paste the token, tap Link</li>
           </ol>
           <span class="inline-row">
-            <input id="tgTokenInput" type="password" autocomplete="off" spellcheck="false" placeholder="123456789:AA…" aria-label="Telegram bot token">
+            <input id="tgTokenInput" type="password" autocomplete="off" spellcheck="false" placeholder="Bot token" aria-label="Telegram bot token">
             <button class="btn btn-small btn-primary" type="button" id="tgLink">Link</button>
           </span>
           <small id="tgStatus" role="status"></small>
           <button class="link small" type="button" id="tgUnlink" hidden>Unlink Telegram</button>
         </div>
         <details class="ntfy-alt">
-          <summary>Use ntfy instead (often blocked from Google's servers)</summary>
-        <label class="field">
-          <span>ntfy topic for notifications</span>
-          <span class="inline-row">
-            <input id="ntfyInput" type="text" autocomplete="off" spellcheck="false" placeholder="kaimono-…">
-            <button class="btn btn-small" type="button" id="ntfyNew">New</button>
-            <button class="btn btn-small" type="button" id="ntfyCopy">Copy</button>
-          </span>
-          <small>Install the free ntfy app and subscribe to this exact topic. Anyone who knows the name can see your notifications, so keep the random one.</small>
-        </label>
-        <label class="field">
-          <span>ntfy access token (optional)</span>
-          <input id="ntfyTokenInput" type="password" autocomplete="off" spellcheck="false" placeholder="tk_…">
-          <small>Only needed if the test says ntfy is refusing Google's servers. Make a free account at ntfy.sh → Account → Access tokens.</small>
-        </label>
+          <summary>Use ntfy instead</summary>
+          <label class="field">
+            <span>ntfy topic</span>
+            <span class="inline-row">
+              <input id="ntfyInput" type="text" autocomplete="off" spellcheck="false" placeholder="kaimono-…">
+              <button class="btn btn-small" type="button" id="ntfyNew">New</button>
+              <button class="btn btn-small" type="button" id="ntfyCopy">Copy</button>
+            </span>
+          </label>
+          <label class="field">
+            <span>ntfy access token</span>
+            <input id="ntfyTokenInput" type="password" autocomplete="off" spellcheck="false" placeholder="tk_…">
+          </label>
         </details>
         <button class="btn btn-small" type="button" id="serverTest">Test notifications</button>
         <p class="small" id="serverTestResult" role="status"></p>
-      </fieldset>
-      <div class="dialog-actions">
-        <button class="btn btn-ghost btn-danger" type="button" id="clearHistoryBtn">Clear history</button>
-        <button class="btn btn-primary" value="save" id="saveSettingsBtn">Save</button>
-      </div>
+      </section>
+
+      <button class="link danger" type="button" id="clearHistoryBtn">Clear history</button>
     </form>
   </dialog>
 
   <dialog class="viewer" id="photoViewer" aria-label="Photo">
     <div class="viewer-stage" id="viewerStage"><img id="viewerImg" alt="Scan photo"></div>
-    <button class="viewer-close" id="viewerClose" type="button" aria-label="Close">✕</button>
+    <button class="viewer-close" id="viewerClose" type="button" aria-label="Close"><svg class="i" viewBox="0 0 256 256" aria-hidden="true"><path d="M204.24,195.76a6,6,0,1,1-8.48,8.48L128,136.49,60.24,204.24a6,6,0,0,1-8.48-8.48L119.51,128,51.76,60.24a6,6,0,0,1,8.48-8.48L128,119.51l67.76-67.75a6,6,0,0,1,8.48,8.48L136.49,128Z"/></svg></button>
     <p class="viewer-hint">Pinch or double-tap to zoom</p>
   </dialog>
 
@@ -474,7 +457,7 @@
   </div>
 
   <div class="update-bar" id="updateBar" role="status" hidden>
-    <span>New version of the app is ready.</span>
+    <span>Update ready</span>
     <button class="btn btn-small btn-primary" type="button" id="updateBtn">Reload</button>
   </div>
 

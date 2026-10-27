@@ -3,7 +3,7 @@
 // lives in localStorage on the user's device only.
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.10.27-9';
+const APP_VERSION = '2026.10.27-10';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -208,16 +208,20 @@ function yen(n) {
 }
 
 const dateFmt = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+const shortDate = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' });
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
+// Phosphor (light / fill) paths, 256 viewBox.
 const ICONS = {
-  rescan: 'M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5',
-  heart: 'M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21l7.8-7.5 1-1.1a5.5 5.5 0 0 0 0-7.8z',
+  rescan: 'M222,48V96a6,6,0,0,1-6,6H168a6,6,0,0,1,0-12h33.52L183.47,72a81.51,81.51,0,0,0-57.53-24h-.46A81.5,81.5,0,0,0,68.19,71.28a6,6,0,1,1-8.38-8.58,93.38,93.38,0,0,1,65.67-26.76H126a93.45,93.45,0,0,1,66,27.53l18,18V48a6,6,0,0,1,12,0ZM187.81,184.72a81.5,81.5,0,0,1-57.29,23.34h-.46a81.51,81.51,0,0,1-57.53-24L54.48,166H88a6,6,0,0,0,0-12H40a6,6,0,0,0-6,6v48a6,6,0,0,0,12,0V174.48l18,18.05a93.45,93.45,0,0,0,66,27.53h.52a93.38,93.38,0,0,0,65.67-26.76,6,6,0,1,0-8.38-8.58Z',
+  heart: 'M178,42c-21,0-39.26,9.47-50,25.34C117.26,51.47,99,42,78,42a60.07,60.07,0,0,0-60,60c0,29.2,18.2,59.59,54.1,90.31a334.68,334.68,0,0,0,53.06,37,6,6,0,0,0,5.68,0,334.68,334.68,0,0,0,53.06-37C219.8,161.59,238,131.2,238,102A60.07,60.07,0,0,0,178,42ZM128,217.11C111.59,207.64,30,157.72,30,102A48.05,48.05,0,0,1,78,54c20.28,0,37.31,10.83,44.45,28.27a6,6,0,0,0,11.1,0C140.69,64.83,157.72,54,178,54a48.05,48.05,0,0,1,48,48C226,157.72,144.41,207.64,128,217.11Z',
+  heartFill: 'M240,102c0,70-103.79,126.66-108.21,129a8,8,0,0,1-7.58,0C119.79,228.66,16,172,16,102A62.07,62.07,0,0,1,78,40c20.65,0,38.73,8.88,50,23.89C139.27,48.88,157.35,40,178,40A62.07,62.07,0,0,1,240,102Z',
 };
 
 function icon(name) {
   const svg = document.createElementNS(SVG_NS, 'svg');
-  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('viewBox', '0 0 256 256');
+  svg.setAttribute('class', 'i');
   svg.setAttribute('aria-hidden', 'true');
   const path = document.createElementNS(SVG_NS, 'path');
   path.setAttribute('d', ICONS[name]);
@@ -1803,15 +1807,18 @@ function historyItem(entry, opts = {}) {
   const tagText = failed ? 'Failed' : { buy: 'Buy', maybe: 'Maybe', skip: 'Skip' }[v?.cls] || (isRunning ? '…' : '–');
   const serious = seriousIssues(entry).length;
   const meta = [
-    entry.bought ? '✓ Bought' : null,
-    entry.secondHand ? 'Used' : null,
-    toNum(entry.yen) ? yen(entry.yen) : null,
     jp ? rm(jp) : null,
+    toNum(entry.yen) ? yen(entry.yen) : null,
+    entry.secondHand ? 'Used' : null,
     serious ? `${serious} issue${serious > 1 ? 's' : ''}` : null,
-    dateFmt.format(entry.createdAt),
   ].filter(Boolean).join(' · ');
   const dist = distanceFromHere(entry);
-  const where = [storeName(entry) || entry.place?.area, dist !== null ? fmtAway(dist) : null].filter(Boolean).join(' · ');
+  const where = [
+    entry.bought ? 'Bought' : null,
+    storeName(entry) || entry.place?.area,
+    dist !== null ? fmtAway(dist) : null,
+    shortDate.format(entry.createdAt),
+  ].filter(Boolean).join(' · ');
   const selecting = selectMode && location.hash.startsWith('#/history');
   const selected = selecting && selection.includes(entry.id);
   return swipeRow(entry, el('div', { class: 'history-row' },
@@ -1824,9 +1831,8 @@ function historyItem(entry, opts = {}) {
       el('img', { src: entry.thumb, alt: '' }),
       el('div', { class: 'history-body' },
         el('p', { class: 'history-name' }, entry.ai?.product_name || entry.webGuess || 'Unidentified item'),
-        el('p', { class: 'history-meta' }, meta),
-        where ? el('p', { class: 'history-where' }, where) : null,
-        entry.notes ? el('p', { class: 'history-note' }, entry.notes) : null,
+        meta ? el('p', { class: 'history-meta' }, meta) : null,
+        el('p', { class: 'history-where' }, where),
         Number.isFinite(opts.saved)
           ? el('p', { class: `history-saved${opts.saved < 0 ? ' neg' : ''}` }, opts.saved >= 0 ? `Saved ${rm(opts.saved)}` : `${rm(-opts.saved)} more than MY`)
           : null,
@@ -1946,7 +1952,7 @@ function rowActions(entry, isRunning, failed) {
       'aria-label': entry.fav ? 'Remove from favourites' : 'Add to favourites',
       'aria-pressed': String(Boolean(entry.fav)),
       onclick: () => toggleFlag(entry.id, 'fav'),
-    }, icon('heart')),
+    }, icon(entry.fav ? 'heartFill' : 'heart')),
     el('button', {
       class: `rescan-btn${isRunning ? ' spinning' : ''}${failed ? ' attention' : ''}`,
       type: 'button',
@@ -2120,9 +2126,7 @@ function renderPrices(entry) {
   $('#taxInclToggle').checked = entry.taxIncluded !== false;
   $('#taxFreeToggle').checked = Boolean(entry.taxFree);
   $('#secondHandToggle').checked = Boolean(entry.secondHand);
-  $('#secondHandLabel').textContent = entry.autoUsed && entry.secondHand
-    ? 'Second-hand item (detected from the tag)'
-    : 'Second-hand item (compare against MY second-hand)';
+  $('#secondHandLabel').textContent = entry.autoUsed && entry.secondHand ? 'Second-hand (from the tag)' : 'Second-hand';
   $('#jpHead').textContent = entry.secondHand ? 'Japan used' : 'Japan';
 
   for (const [key, valueSel, rangeSel] of [['my_new', '#myNew', '#myNewRange'], ['my_used', '#myUsed', '#myUsedRange']]) {
@@ -2251,17 +2255,18 @@ function renderVariant(entry) {
   const unsure = !entry.override && ai.variant_confidence === 'low';
   box.classList.toggle('unsure', unsure);
   $('#variantLine').textContent = entry.override
-    ? `Model set by you: ${entry.override}`
-    : `Exact model: ${ai.product_name || ''}${ai.variant_evidence ? ` (${ai.variant_evidence})` : ''}${unsure ? '. Not certain, check the box.' : ''}`;
-  $('#lookalikeHint').textContent = unsure ? 'Could also be one of these. Tap the right one to re-price it:' : 'Easy to mix up with (tap if this is actually it):';
+    ? `Set by you: ${entry.override}`
+    : `${unsure ? 'Not sure which model. ' : ''}${ai.variant_evidence || ai.product_name || ''}`;
+  $('#lookalikeHint').textContent = unsure ? 'Pick the right model' : 'Similar models';
   const buttons = lookalikes.map((l) => el('button', { class: 'lookalike', type: 'button', onclick: () => setOverride(entry.id, l.name) },
-    el('span', { class: 'lk-name' }, `It's ${l.name}`),
+    el('span', { class: 'lk-name' }, l.name),
     el('span', { class: 'lk-how' }, [l.how_to_tell, toNum(l.typical_price_rm) ? `usually ${rm(toNum(l.typical_price_rm))} in MY` : null].filter(Boolean).join(' · ')),
   ));
   if (entry.override) {
     buttons.push(el('button', { class: 'lookalike lk-reset', type: 'button', onclick: () => setOverride(entry.id, null) }, el('span', { class: 'lk-name' }, 'Use the detected model instead')));
   }
   $('#lookalikeWrap').hidden = !buttons.length;
+  if (unsure) $('#lookalikeWrap').open = true;
   $('#lookalikes').replaceChildren(...buttons);
 }
 
@@ -2398,10 +2403,10 @@ function renderCompat(entry) {
 }
 
 function renderChips(entry) {
-  for (const [sel, flag, on, off] of [['#favBtn', 'fav', '♥ Favourite', '♡ Favourite'], ['#boughtBtn', 'bought', '✓ Bought', 'Mark as bought']]) {
+  for (const [sel, flag, on, off] of [['#favBtn', 'fav', 'Saved', 'Save'], ['#boughtBtn', 'bought', 'Bought', 'Bought?']]) {
     const b = $(sel);
     b.setAttribute('aria-pressed', String(Boolean(entry[flag])));
-    b.textContent = entry[flag] ? on : off;
+    b.querySelector('.chip-label').textContent = entry[flag] ? on : off;
   }
 }
 
@@ -2425,6 +2430,7 @@ function renderPlace(entry) {
     area = 'No location saved for this scan.';
   }
   $('#placeArea').textContent = area;
+  $('#placeSummary').textContent = storeName(entry) || p?.area || 'Where';
   $('#directionsLink').hidden = !p?.lat;
   if (p?.lat) $('#directionsLink').href = `https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}`;
   $('#locateBtn').textContent = p?.lat ? 'Move pin to here' : 'Use current location';
@@ -2645,6 +2651,7 @@ function renderResult(entry) {
   current = entry;
   $('#resPhoto').src = entry.thumb;
   if (document.activeElement !== $('#notesInput')) $('#notesInput').value = entry.notes || '';
+  $('#notesSummary').textContent = entry.notes ? `Notes · ${entry.notes.length > 28 ? `${entry.notes.slice(0, 26)}…` : entry.notes}` : 'Notes';
   $('#quickBanner').hidden = !(entry.quick && entry.ai && !running.has(entry.id));
   $('#serverInfo').textContent = serverReport(entry.serverJob);
   $('#serverInfo').hidden = !$('#serverInfo').textContent;
@@ -2652,8 +2659,8 @@ function renderResult(entry) {
   $('#serverHint').hidden = !onServer;
   $('#serverHint').classList.toggle('received', Boolean(onServer && entry.serverJob.received));
   $('#serverHint').textContent = onServer && entry.serverJob.received
-    ? "✓ Safe to close the app. Your scan server has it; you'll get a notification when it's done."
-    : 'Sending the photo to your scan server… keep the app open until this says it\'s safe to close.';
+    ? 'Safe to close. You\'ll get a notification.'
+    : 'Sending to your scan server. Keep the app open.';
   renderAsk(entry);
   $('#resName').textContent = entry.ai?.product_name || entry.webGuess || (running.has(entry.id) ? 'Reading…' : 'Unidentified item');
   $('#resBrand').textContent = entry.ai?.brand || '';
@@ -2775,7 +2782,7 @@ function renderTrip() {
   $('#tripSpent').textContent = rm(t.spentRm);
   $('#tripSpentYen').textContent = t.spentYen ? yen(t.spentYen) : '';
   $('#tripRefund').textContent = t.refundRm ? `− ${rm(t.refundRm)}` : rm(0);
-  $('#tripLeft').textContent = !budget ? 'Set a budget' : net > budget ? `${rm(net - budget)} over` : rm(budget - net);
+  $('#tripLeft').textContent = !budget ? '–' : net > budget ? `${rm(net - budget)} over` : rm(budget - net);
   $('#tripLeft').classList.toggle('over', Boolean(budget) && net > budget);
   $('#tripMeterWrap').hidden = !budget;
   if (budget) $('#tripMeter').style.width = `${Math.min(100, (net / budget) * 100)}%`;
