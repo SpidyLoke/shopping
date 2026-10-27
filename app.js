@@ -3,7 +3,7 @@
 // lives in localStorage on the user's device only.
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.10.27-4';
+const APP_VERSION = '2026.10.27-5';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -944,7 +944,7 @@ async function startScan(file) {
   let thumb;
   try {
     const src = await decodeImage(file);
-    full = toJpeg(src, 1600, 0.85);
+    full = toJpeg(src, 1400, 0.8); // small enough to upload in a second or two, sharp enough for tag text
     thumb = toJpeg(src, 320, 0.7);
     src.close?.();
   } catch {
@@ -1244,14 +1244,43 @@ async function runScanOnServer(entry, imageB64, { quiet = false } = {}) {
   if (!['done', 'skipped'].includes(entry.status.translate)) entry.status.translate = 'active';
   entry.status.search = 'active';
   refresh(entry);
+  const jobId = entry.serverJob.id;
+  const stopAck = watchForReceipt(entry, jobId);
   let out = null;
   try {
     out = await serverCall(serverJobRequest(entry, imageB64), 330000);
   } catch {
-    // The app was closed or lost signal mid-request. The server carries on; collect it later.
+    // The app was closed or lost signal mid-request. If the upload got through, the server carries
+    // on; if not, the scan is re-sent when the app is back.
+    if (entry.serverJob?.id === jobId) entry.serverJob = { ...entry.serverJob, requestFailed: true };
+    saveEntry(entry);
   }
+  stopAck();
   if (out?.status === 'done') await applyServerResult(entry, out, { quiet });
   else pollServerJobs();
+}
+
+// While the photo uploads, ask the server whether it has started the job, so the app can say
+// when it's safe to close. The server marks a job "running" the moment it arrives.
+function watchForReceipt(entry, jobId) {
+  let stopped = false;
+  const check = async () => {
+    if (stopped || entry.serverJob?.id !== jobId || entry.serverJob.received) return;
+    try {
+      const r = await serverCall({ action: 'result', jobId }, 8000);
+      if (!stopped && (r.status === 'running' || r.status === 'done') && entry.serverJob?.id === jobId) {
+        entry.serverJob = { ...entry.serverJob, received: true };
+        refresh(entry);
+        navigator.vibrate?.(30);
+        return;
+      }
+    } catch {
+      // try again shortly
+    }
+    if (!stopped) setTimeout(check, 1500);
+  };
+  setTimeout(check, 1200);
+  return () => { stopped = true; };
 }
 
 async function applyServerResult(entry, out, { quiet = false } = {}) {
@@ -1317,17 +1346,27 @@ async function checkServerJob(entry) {
     const age = Date.now() - entry.serverJob.sentAt;
     if (out.status === 'done') {
       await applyServerResult(entry, out);
-    } else if (out.status === 'unknown' && age > 20000) {
-      // The upload never arrived (the app closed while sending). Send it once more.
-      if (!entry.serverJob.resent) {
+    } else if (out.status === 'unknown' && (age > 20000 || entry.serverJob.requestFailed)) {
+      // The upload never arrived (the app closed or lost signal while sending). Send it again.
+      const resends = entry.serverJob.resends || 0;
+      if (resends < 3) {
         const image = (await imageDb.get(entry.imageId || entry.id)) || entry.thumb.split(',')[1];
-        entry.serverJob = { ...entry.serverJob, resent: true, sentAt: Date.now() };
+        const jobId = entry.serverJob.id;
+        entry.serverJob = { ...entry.serverJob, resends: resends + 1, requestFailed: false, sentAt: Date.now() };
         saveEntry(entry);
+        refresh(entry);
+        const stopAck = watchForReceipt(entry, jobId);
         serverCall(serverJobRequest(entry, image), 330000)
-          .then((res) => (res?.status === 'done' && !findEntry(entry.id)?.serverJob?.done ? applyServerResult(entry, res) : null))
-          .catch(() => {});
+          .then((res) => (res?.status === 'done' ? applyServerResult(entry, res) : null))
+          .catch(() => {
+            if (entry.serverJob?.id === jobId && !entry.serverJob.done) {
+              entry.serverJob = { ...entry.serverJob, requestFailed: true };
+              saveEntry(entry);
+            }
+          })
+          .finally(stopAck);
       } else {
-        giveUpServerJob(entry, "Scan server: this scan never arrived. Tap ↻ to try again.");
+        giveUpServerJob(entry, "Scan server: the photo couldn't be sent. Check your signal and tap ↻ to try again.");
       }
     } else if (out.status === 'running' && age > 8 * 60 * 1000) {
       giveUpServerJob(entry, 'Scan server: the scan took too long. Tap ↻ to try again.');
@@ -2575,7 +2614,12 @@ function renderResult(entry) {
   $('#resPhoto').src = entry.thumb;
   if (document.activeElement !== $('#notesInput')) $('#notesInput').value = entry.notes || '';
   $('#quickBanner').hidden = !(entry.quick && entry.ai && !running.has(entry.id));
-  $('#serverHint').hidden = !(entry.serverJob && !entry.serverJob.done);
+  const onServer = entry.serverJob && !entry.serverJob.done;
+  $('#serverHint').hidden = !onServer;
+  $('#serverHint').classList.toggle('received', Boolean(onServer && entry.serverJob.received));
+  $('#serverHint').textContent = onServer && entry.serverJob.received
+    ? "✓ Safe to close the app. Your scan server has it; you'll get a notification when it's done."
+    : 'Sending the photo to your scan server… keep the app open until this says it\'s safe to close.';
   renderAsk(entry);
   $('#resName').textContent = entry.ai?.product_name || entry.webGuess || (running.has(entry.id) ? 'Reading…' : 'Unidentified item');
   $('#resBrand').textContent = entry.ai?.brand || '';

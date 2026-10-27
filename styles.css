@@ -1006,3 +1006,5 @@ dialog#settingsDialog form { overflow-x: hidden; }
 .chip-row { flex-wrap: wrap; }
 .chip { white-space: nowrap; padding: 0 12px; }
 .test-line { display: block; margin-top: 4px; }
+.server-hint { background: var(--warn-bg); }
+.server-hint.received { background: var(--good-bg); color: var(--good); font-weight: 600; }
