@@ -37,7 +37,7 @@ Free tiers at time of writing: Vision gives 1,000 units a month per feature (eac
 Phones cut a web app's connections a few seconds after you switch away or close it, so a scan in progress fails. A free Google Apps Script "scan server" fixes that: the app hands each scan to it, it finishes the work on Google's side, and the app picks up the result next time it's open. It can also send you a phone notification through the free **ntfy** app.
 
 1. Go to [script.google.com](https://script.google.com) (same Google account) → **New project**. Rename it "Kaimono server".
-2. Delete the sample code in `Code.gs` and paste in everything from [`server/Code.gs`](https://raw.githubusercontent.com/SpidyLoke/shopping/main/server/Code.gs). Save.
+2. Paste the short loader from [`server/Loader.gs`](https://raw.githubusercontent.com/SpidyLoke/shopping/main/server/Loader.gs) into `Code.gs` (below the sample `myFunction` is fine). Save. The loader fetches the real server code from this repo and re-checks it every 10 minutes, so server updates never need editing or redeploying. (You can paste the full [`server/Code.gs`](https://raw.githubusercontent.com/SpidyLoke/shopping/main/server/Code.gs) instead if you'd rather not load code from GitHub; then updates mean pasting it again and deploying a new version.)
 3. **Deploy → New deployment →** ⚙ **Web app**. Execute as **Me**, Who has access **Anyone**. **Deploy**.
 4. Authorise it. Google will warn the app isn't verified (it's your own script): **Advanced → Go to Kaimono server → Allow**. It needs permission to make web requests (Google APIs, CeX, ntfy).
 5. Copy the **Web app URL** (ends in `/exec`).
@@ -51,7 +51,8 @@ Phones cut a web app's connections a few seconds after you switch away or close 
 Notes:
 - The server uses the API keys already in the app; they're sent with each scan and never stored there. The first request from your app locks the server to it.
 - Results are kept for 6 hours. While a scan is on the server the result page says so; you can close the app.
-- If you update `Code.gs` later: **Deploy → Manage deployments → ✎ → Version: New version**. The URL stays the same.
+- With the loader, updates arrive by themselves. If you pasted the full `Code.gs` instead, update it with **Deploy → Manage deployments → ✎ → Version: New version**; the URL stays the same.
+- The loader runs whatever is in `server/Code.gs` on this repo's main branch, with only the permission to make web requests (no access to Drive, Gmail or anything else in your account).
 - If scans fail with "Requests from referer … are blocked", Apps Script didn't pass your site as the referrer. Make a second pair of keys with **API restrictions only** (no website restriction) and use those in the app.
 
 Without a server, a scan cut off by leaving the app restarts by itself when you come back to the app.
