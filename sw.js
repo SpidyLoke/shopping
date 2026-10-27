@@ -1,5 +1,5 @@
 // Caches the app shell so it opens instantly (and offline) in Japan. API calls are never cached.
-const CACHE = 'kaimono-v12';
+const CACHE = 'kaimono-v13';
 const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png'];
 
 self.addEventListener('install', (e) => {

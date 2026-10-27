@@ -429,7 +429,12 @@
           </span>
           <small>Install the free ntfy app and subscribe to this exact topic. Anyone who knows the name can see your notifications, so keep the random one.</small>
         </label>
-        <button class="btn btn-small" type="button" id="serverTest">Test server and notification</button>
+        <label class="field">
+          <span>ntfy access token (optional)</span>
+          <input id="ntfyTokenInput" type="password" autocomplete="off" spellcheck="false" placeholder="tk_…">
+          <small>Only needed if the test says ntfy is refusing Google's servers. Make a free account at ntfy.sh → Account → Access tokens.</small>
+        </label>
+        <button class="btn btn-small" type="button" id="serverTest">Test notifications</button>
         <p class="small" id="serverTestResult" role="status"></p>
       </fieldset>
       <div class="dialog-actions">

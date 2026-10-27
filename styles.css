@@ -1005,3 +1005,4 @@ dialog#settingsDialog { max-height: calc(100dvh - 32px); overflow-y: auto; }
 dialog#settingsDialog form { overflow-x: hidden; }
 .chip-row { flex-wrap: wrap; }
 .chip { white-space: nowrap; padding: 0 12px; }
+.test-line { display: block; margin-top: 4px; }

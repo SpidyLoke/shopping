@@ -10,7 +10,7 @@
 // Web app URL into the app's Settings. The first request from your app sets a private secret;
 // requests without it are refused.
 
-const VERSION = 1;
+const VERSION = 2;
 const RESULT_TTL_SECONDS = 6 * 60 * 60; // CacheService maximum
 const CEX_SEARCH = 'https://search.webuy.io/1/indexes/*/queries';
 
@@ -28,8 +28,9 @@ function doPost(e) {
   else if (saved !== req.secret) return reply({ error: 'This server belongs to another copy of the app' });
 
   if (req.action === 'ping') {
-    if (req.notify && req.notify.topic) ntfy(req.notify.topic, 'Kaimono Check', 'Notifications are working.');
-    return reply({ ok: true, version: VERSION });
+    const result = { ok: true, version: VERSION };
+    if (req.notify && req.notify.topic) result.ntfy = ntfy(req.notify, 'Kaimono Check', 'Test from your scan server: notifications are working.');
+    return reply(result);
   }
   if (req.action === 'scan') return reply(runJob(req));
   if (req.action === 'result') return reply(load(req.jobId) || { status: 'unknown' });
@@ -179,23 +180,29 @@ function runJob(req) {
     const name = (ai && ai.product_name) || 'Your scan';
     const price = ai && ai.jp_price_yen ? ` · ¥${Number(ai.jp_price_yen).toLocaleString('en-GB')}` : '';
     const failed = out.geminiError ? ' (price check failed, tap ↻ in the app)' : '';
-    try {
-      ntfy(req.notify.topic, 'Scan ready', `${name}${price}${failed}. Open Kaimono Check to see if it's worth it.`);
-    } catch (err) {
-      // the result is saved either way
-    }
+    out.ntfy = ntfy(req.notify, 'Scan ready', `${name}${price}${failed}. Open Kaimono Check to see if it's worth it.`);
+    save(req.jobId, out);
   }
   return out;
 }
 
 // ntfy.sh: free push notifications. JSON publishing keeps non-ASCII titles intact.
-function ntfy(topic, title, message) {
-  UrlFetchApp.fetch('https://ntfy.sh/', {
-    method: 'post',
-    contentType: 'application/json',
-    payload: JSON.stringify({ topic, title, message, tags: ['shopping_cart'] }),
-    muteHttpExceptions: true,
-  });
+// Google's servers share addresses with many other scripts, so ntfy may rate-limit them;
+// an ntfy access token (free account) makes the limit yours alone.
+// Returns what ntfy said, so the app can show why a notification didn't arrive.
+function ntfy(notify, title, message) {
+  try {
+    const res = UrlFetchApp.fetch('https://ntfy.sh/', {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify({ topic: notify.topic, title, message, tags: ['shopping_cart'] }),
+      headers: notify.token ? { Authorization: `Bearer ${notify.token}` } : {},
+      muteHttpExceptions: true,
+    });
+    return { code: res.getResponseCode(), body: res.getContentText().slice(0, 200) };
+  } catch (err) {
+    return { code: 0, body: err.message };
+  }
 }
 
 // Run this once from the editor (pick "authorise" next to Debug, then Run) to grant the script

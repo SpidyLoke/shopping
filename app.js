@@ -3,7 +3,7 @@
 // lives in localStorage on the user's device only.
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.10.27-3';
+const APP_VERSION = '2026.10.27-4';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -47,6 +47,7 @@ const settings = {
   get buzz() { return store.get('buzz', true); },
   get serverUrl() { return store.get('serverUrl', ''); },
   get ntfyTopic() { return store.get('ntfyTopic', ''); },
+  get ntfyToken() { return store.get('ntfyToken', ''); },
 };
 
 // Full-size photos live in IndexedDB (localStorage is too small) so old scans can be re-read properly.
@@ -1180,12 +1181,32 @@ async function serverCall(body, timeoutMs = 30000) {
   try {
     // No custom headers: a plain text POST skips the CORS preflight that Apps Script can't answer.
     const res = await fetch(settings.serverUrl, { method: 'POST', body: JSON.stringify({ ...body, secret: serverSecret() }), signal: ctrl.signal });
-    const data = await res.json();
+    const text = await res.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      // Apps Script answers with an HTML page when the deployment isn't public or the script crashed.
+      const hint = /permission|authori[sz]/i.test(text) ? 'it needs authorising (run "authorise" in the editor)' : 'check Who has access is "Anyone" and that you deployed the latest version';
+      throw new Error(`Scan server: sent back a web page instead of a reply; ${hint}.`);
+    }
     if (data.error) throw new Error(`Scan server: ${data.error}`);
     return data;
   } finally {
     clearTimeout(timer);
   }
+}
+
+function notifyTarget() {
+  return settings.ntfyTopic ? { topic: settings.ntfyTopic, token: settings.ntfyToken || undefined } : null;
+}
+
+function describeNtfy(r) {
+  if (!r) return 'no answer';
+  if (r.code >= 200 && r.code < 300) return 'sent ✓';
+  if (r.code === 429) return 'ntfy refused it: too many requests from Google\'s shared servers. Add an ntfy access token below.';
+  if (r.code === 401 || r.code === 403) return `ntfy refused it (${r.code}): check the access token, or that the topic isn't reserved by someone else.`;
+  return `failed (${r.code || 'error'}): ${r.body || ''}`.trim();
 }
 
 function serverJobRequest(entry, imageB64) {
@@ -1211,7 +1232,7 @@ function serverJobRequest(entry, imageB64) {
       quick: entry.quick,
     }),
     cex: { index: CEX_INDEX },
-    notify: settings.ntfyTopic ? { topic: settings.ntfyTopic } : null,
+    notify: notifyTarget(),
   };
 }
 
@@ -2845,6 +2866,7 @@ function openSettings() {
   $('#buzzToggle').checked = settings.buzz;
   $('#serverUrlInput').value = settings.serverUrl;
   $('#ntfyInput').value = settings.ntfyTopic;
+  $('#ntfyTokenInput').value = settings.ntfyToken;
   $('#serverTestResult').textContent = '';
   $('#settingsDialog').showModal();
 }
@@ -3100,6 +3122,7 @@ document.addEventListener('visibilitychange', () => {
 function saveServerSettings() {
   store.set('serverUrl', $('#serverUrlInput').value.trim());
   store.set('ntfyTopic', $('#ntfyInput').value.trim());
+  store.set('ntfyToken', $('#ntfyTokenInput').value.trim());
 }
 
 $('#ntfyNew').addEventListener('click', () => {
@@ -3114,22 +3137,43 @@ $('#ntfyCopy').addEventListener('click', async () => {
     $('#ntfyInput').select();
   }
 });
+// Tests each hop separately so a missing notification can be pinned on the subscription, the server or ntfy.
 $('#serverTest').addEventListener('click', async () => {
   saveServerSettings();
-  const out = $('#serverTestResult');
+  const lines = [];
+  const show = () => { $('#serverTestResult').replaceChildren(...lines.map((l) => el('span', { class: 'test-line' }, l))); };
+  if (settings.ntfyTopic) {
+    lines.push('1. Phone → ntfy: sending…');
+    show();
+    try {
+      const headers = settings.ntfyToken ? { Authorization: `Bearer ${settings.ntfyToken}` } : {};
+      const res = await fetch('https://ntfy.sh/', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ topic: settings.ntfyTopic, title: 'Kaimono Check', message: 'Test from your phone: your ntfy subscription works.' }),
+      });
+      lines[0] = `1. Phone → ntfy: ${describeNtfy({ code: res.status, body: (await res.text()).slice(0, 120) })}`;
+    } catch {
+      lines[0] = "1. Phone → ntfy: couldn't reach ntfy.sh.";
+    }
+  } else {
+    lines.push('1. No ntfy topic yet: tap New, then subscribe to it in the ntfy app.');
+  }
   if (!settings.serverUrl) {
-    out.textContent = 'Paste your scan server URL first.';
+    lines.push('2. No scan server URL yet.');
+    show();
     return;
   }
-  out.textContent = 'Testing…';
+  lines.push('2. App → your server: checking…');
+  show();
   try {
-    await serverCall({ action: 'ping', notify: settings.ntfyTopic ? { topic: settings.ntfyTopic } : null }, 30000);
-    out.textContent = settings.ntfyTopic
-      ? 'Server OK. A test notification is on its way to the ntfy app.'
-      : 'Server OK. Add an ntfy topic to get notifications.';
+    const res = await serverCall({ action: 'ping', notify: notifyTarget() }, 30000);
+    lines[1] = `2. App → your server: OK${res.version < 2 ? ' (old version of Code.gs: paste the new one and deploy a New version)' : ''}`;
+    if (settings.ntfyTopic) lines.push(`3. Server → ntfy: ${res.ntfy ? describeNtfy(res.ntfy) : 'no report (old Code.gs)'}`);
   } catch (e) {
-    out.textContent = e.message.startsWith('Scan server') ? e.message : "Couldn't reach the server. Check the URL and that it's deployed with access for Anyone.";
+    lines[1] = `2. App → your server: ${e.message.startsWith('Scan server') ? e.message.replace('Scan server: ', '') : "couldn't reach it. Check the URL (ends in /exec)."}`;
   }
+  show();
 });
 checkForUpdate();
 resumeWork();

@@ -43,7 +43,10 @@ Phones cut a web app's connections a few seconds after you switch away or close 
 5. Copy the **Web app URL** (ends in `/exec`).
 6. In the app: **Settings → Background scanning**, paste the URL. Tap **New** to make a private ntfy topic, then **Copy**.
 7. Install **ntfy** ([App Store](https://apps.apple.com/app/ntfy/id1625396347) / Play Store), tap **+**, paste the topic, **Subscribe**, and allow notifications.
-8. Back in the app, tap **Test server and notification**, then **Save**.
+8. Back in the app, tap **Test notifications**, then **Save**. The test checks three hops and says which one fails:
+   1. **Phone → ntfy**: if this notification doesn't arrive, the ntfy app isn't subscribed to the exact topic, or its notifications are off in iPhone Settings.
+   2. **App → your server**: "sent back a web page" means Who has access isn't **Anyone**, the script needs authorising, or you didn't deploy the latest version.
+   3. **Server → ntfy**: "too many requests" means ntfy is rate-limiting Google's shared servers. Make a free account at ntfy.sh, create an access token (Account → Access tokens) and paste it into **ntfy access token**.
 
 Notes:
 - The server uses the API keys already in the app; they're sent with each scan and never stored there. The first request from your app locks the server to it.
