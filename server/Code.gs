@@ -10,7 +10,7 @@
 // Web app URL into the app's Settings. The first request from your app sets a private secret;
 // requests without it are refused.
 
-const VERSION = 2;
+const VERSION = 3;
 const RESULT_TTL_SECONDS = 6 * 60 * 60; // CacheService maximum
 const CEX_SEARCH = 'https://search.webuy.io/1/indexes/*/queries';
 
@@ -189,20 +189,30 @@ function runJob(req) {
 // ntfy.sh: free push notifications. JSON publishing keeps non-ASCII titles intact.
 // Google's servers share addresses with many other scripts, so ntfy may rate-limit them;
 // an ntfy access token (free account) makes the limit yours alone.
+// UrlFetchApp sometimes can't reach ntfy at all ("Address unavailable") from one of Google's
+// addresses; the next attempt usually goes out from another, so retry with backoff.
 // Returns what ntfy said, so the app can show why a notification didn't arrive.
 function ntfy(notify, title, message) {
-  try {
-    const res = UrlFetchApp.fetch('https://ntfy.sh/', {
-      method: 'post',
-      contentType: 'application/json',
-      payload: JSON.stringify({ topic: notify.topic, title, message, tags: ['shopping_cart'] }),
-      headers: notify.token ? { Authorization: `Bearer ${notify.token}` } : {},
-      muteHttpExceptions: true,
-    });
-    return { code: res.getResponseCode(), body: res.getContentText().slice(0, 200) };
-  } catch (err) {
-    return { code: 0, body: err.message };
+  const waits = [0, 2000, 5000, 10000, 20000];
+  let last = null;
+  for (let i = 0; i < waits.length; i += 1) {
+    if (waits[i]) Utilities.sleep(waits[i]);
+    try {
+      const res = UrlFetchApp.fetch('https://ntfy.sh/', {
+        method: 'post',
+        contentType: 'application/json',
+        payload: JSON.stringify({ topic: notify.topic, title, message, tags: ['shopping_cart'] }),
+        headers: notify.token ? { Authorization: `Bearer ${notify.token}` } : {},
+        muteHttpExceptions: true,
+      });
+      last = { code: res.getResponseCode(), body: res.getContentText().slice(0, 200), tries: i + 1 };
+      // Delivered, or refused for a reason another try won't fix.
+      if (last.code < 500 && last.code !== 0) return last;
+    } catch (err) {
+      last = { code: 0, body: err.message, tries: i + 1 };
+    }
   }
+  return last;
 }
 
 // Run this once from the editor (pick "authorise" next to Debug, then Run) to grant the script

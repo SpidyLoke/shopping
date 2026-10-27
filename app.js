@@ -3,7 +3,7 @@
 // lives in localStorage on the user's device only.
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.10.27-6';
+const APP_VERSION = '2026.10.27-7';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -1203,7 +1203,8 @@ function notifyTarget() {
 
 function describeNtfy(r) {
   if (!r) return 'no answer';
-  if (r.code >= 200 && r.code < 300) return 'sent ✓';
+  if (r.code >= 200 && r.code < 300) return r.tries > 1 ? `sent ✓ (after ${r.tries} tries)` : 'sent ✓';
+  if (r.code === 0 && /address unavailable/i.test(r.body || '')) return `failed after ${r.tries || 1} tries: Google couldn't connect to ntfy.sh. Usually temporary.`;
   if (r.code === 429) return 'ntfy refused it: too many requests from Google\'s shared servers. Add an ntfy access token below.';
   if (r.code === 401 || r.code === 403) return `ntfy refused it (${r.code}): check the access token, or that the topic isn't reserved by someone else.`;
   return `failed (${r.code || 'error'}): ${r.body || ''}`.trim();
