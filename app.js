@@ -3,7 +3,7 @@
 // lives in localStorage on the user's device only.
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.10.27-8';
+const APP_VERSION = '2026.10.27-9';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -3232,7 +3232,9 @@ $('#tgLink').addEventListener('click', async () => {
   } catch (e) {
     $('#tgStatus').textContent = /Unknown action/.test(e.message)
       ? 'Your server is still on the old code. It updates itself within 10 to 15 minutes; try again then.'
-      : e.message.replace('Scan server: ', '');
+      : /load failed|failed to fetch|networkerror/i.test(e.message)
+        ? "Your scan server crashed or couldn't be reached. If it just updated, wait 10 to 15 minutes and tap Link again."
+        : e.message.replace('Scan server: ', '');
   }
 });
 $('#tgUnlink').addEventListener('click', () => {

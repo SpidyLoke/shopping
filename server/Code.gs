@@ -10,11 +10,21 @@
 // Web app URL into the app's Settings. The first request from your app sets a private secret;
 // requests without it are refused.
 
-const VERSION = 4;
+const VERSION = 5;
 const RESULT_TTL_SECONDS = 6 * 60 * 60; // CacheService maximum
 const CEX_SEARCH = 'https://search.webuy.io/1/indexes/*/queries';
 
+// Any crash still answers in JSON: an Apps Script error page has no CORS headers, so the app
+// would only see "Load failed".
 function doPost(e) {
+  try {
+    return handle(e);
+  } catch (err) {
+    return reply({ error: `Server error: ${err.message}` });
+  }
+}
+
+function handle(e) {
   let req;
   try {
     req = JSON.parse(e.postData.contents);
@@ -202,7 +212,7 @@ function fetchWithRetry(url, options) {
     if (waits[i]) Utilities.sleep(waits[i]);
     try {
       const res = UrlFetchApp.fetch(url, Object.assign({ muteHttpExceptions: true }, options));
-      last = { code: res.getResponseCode(), body: res.getContentText().slice(0, 300), tries: i + 1 };
+      last = { code: res.getResponseCode(), body: res.getContentText(), tries: i + 1 };
       if (last.code < 500) return last;
     } catch (err) {
       last = { code: 0, body: err.message, tries: i + 1 };
@@ -220,8 +230,16 @@ function telegramApi(token, method, payload) {
 }
 
 function telegramSend(tg, text) {
-  const r = telegramApi(tg.token, 'sendMessage', { chat_id: tg.chatId, text, disable_web_page_preview: true });
-  return Object.assign({ channel: 'telegram' }, r);
+  const r = telegramApi(tg.token, 'sendMessage', { chat_id: tg.chatId, text, disable_web_page_preview: true }) || {};
+  return { channel: 'telegram', code: r.code, tries: r.tries, body: (r.body || '').slice(0, 200) };
+}
+
+function parseOr(text, fallback) {
+  try {
+    return JSON.parse(text);
+  } catch (err) {
+    return fallback;
+  }
 }
 
 // Finds your chat with the bot (you must have tapped Start in it) and says hello.
@@ -229,9 +247,9 @@ function telegramLink(token) {
   if (!token) return { error: 'Missing Telegram bot token' };
   const me = telegramApi(token, 'getMe');
   if (!me || me.code !== 200) return { error: me && me.code === 401 ? 'Telegram rejected the bot token. Copy it again from @BotFather.' : `Couldn't reach Telegram (${me ? me.code : 'no answer'}).` };
-  const bot = JSON.parse(me.body).result || {};
+  const bot = parseOr(me.body, {}).result || {};
   const updates = telegramApi(token, 'getUpdates', { limit: 100 });
-  const list = updates && updates.code === 200 ? (JSON.parse(updates.body).result || []) : [];
+  const list = updates && updates.code === 200 ? (parseOr(updates.body, {}).result || []) : [];
   const chats = list.map((u) => (u.message || u.edited_message || {}).chat).filter((c) => c && c.type === 'private');
   const chat = chats[chats.length - 1];
   if (!chat) return { error: `Open @${bot.username} in Telegram, tap Start (or send it any message), then tap Link again.` };
