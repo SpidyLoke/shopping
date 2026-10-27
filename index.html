@@ -121,7 +121,6 @@
 
       <ol class="steps" id="steps">
         <li data-step="vision">Reading the tag</li>
-        <li data-step="translate">Translating</li>
         <li data-step="search">Checking prices</li>
       </ol>
 
@@ -188,23 +187,11 @@
         </div>
       </div>
 
-      <details class="panel" id="toggles" hidden>
-        <summary>Price settings</summary>
-        <div class="toggles">
-          <label class="switch">
-            <input type="checkbox" id="secondHandToggle">
-            <span id="secondHandLabel">Second-hand item</span>
-          </label>
-          <label class="switch">
-            <input type="checkbox" id="taxInclToggle">
-            <span>Tag includes tax (税込)</span>
-          </label>
-          <label class="switch">
-            <input type="checkbox" id="taxFreeToggle">
-            <span>Tourist tax refund (¥5,000+)</span>
-          </label>
-        </div>
-      </details>
+      <div class="price-toggles" id="toggles" hidden>
+        <label class="toggle-pill"><input type="checkbox" id="secondHandToggle"><span id="secondHandLabel">Used</span></label>
+        <label class="toggle-pill"><input type="checkbox" id="taxInclToggle"><span>Tax incl.</span></label>
+        <label class="toggle-pill"><input type="checkbox" id="taxFreeToggle"><span>Tax refund</span></label>
+      </div>
 
       <div class="search-links" id="searchLinks" hidden>
         <a class="link-pill" id="shopeeLink" target="_blank" rel="noopener">Shopee</a>
@@ -214,77 +201,58 @@
         <a class="link-pill" id="yahooLink" target="_blank" rel="noopener">Yahoo</a>
       </div>
 
-      <div class="panel-group">
-        <details class="panel condition" id="compatPanel" hidden>
-          <summary id="compatSummary">Works in Malaysia</summary>
-          <ul class="compat-list" id="compatList"></ul>
-        </details>
+      <!-- Flat sections, no folding: each only shows when it has something to say -->
+      <section class="flat" id="compatPanel" hidden>
+        <h2 class="flat-title" id="compatSummary">Works in Malaysia</h2>
+        <ul class="compat-list" id="compatList"></ul>
+      </section>
 
-        <details class="panel condition" id="conditionPanel" hidden>
-          <summary id="conditionSummary">Condition</summary>
-          <div class="grade" id="conditionGrade" hidden>
-            <span class="grade-chip" id="conditionGradeValue"></span>
-            <span id="conditionGradeMeaning"></span>
-          </div>
-          <div class="grade-options" id="gradeOptions" hidden></div>
-          <ul class="issues" id="issueList"></ul>
-          <p class="muted small" id="conditionNote"></p>
-        </details>
+      <section class="flat" id="conditionPanel" hidden>
+        <h2 class="flat-title" id="conditionSummary">Condition</h2>
+        <div class="grade" id="conditionGrade" hidden>
+          <span class="grade-chip" id="conditionGradeValue"></span>
+          <span id="conditionGradeMeaning"></span>
+        </div>
+        <div class="grade-options" id="gradeOptions" hidden></div>
+        <ul class="issues" id="issueList"></ul>
+        <p class="muted small" id="conditionNote"></p>
+      </section>
 
-        <details class="panel info" id="infoPanel" hidden>
-          <summary id="infoSummary">Is it worth it?</summary>
-          <div class="info-body" id="infoBody"></div>
-        </details>
+      <section class="flat" id="askPanel" hidden>
+        <h2 class="flat-title">Ask</h2>
+        <div class="ask-quick">
+          <button class="chip-pill" type="button" id="worthBtn">Worth it?</button>
+          <button class="chip-pill" type="button" data-ask="What are better alternatives at this price?">Alternatives</button>
+          <button class="chip-pill" type="button" data-ask="What does the tag say, in English?">Translate tag</button>
+        </div>
+        <div class="info-body" id="infoBody"></div>
+        <ul class="qa-list" id="qaList"></ul>
+        <form class="ask-form" id="askForm">
+          <input id="askInput" type="text" autocomplete="off" placeholder="Anything else? e.g. works with PC?" aria-label="Your question">
+          <button class="btn btn-small btn-primary" type="submit" id="askBtn">Ask</button>
+        </form>
+      </section>
 
-        <details class="panel" id="askPanel" hidden>
-          <summary>Ask about it</summary>
-          <ul class="qa-list" id="qaList"></ul>
-          <form class="ask-form" id="askForm">
-            <input id="askInput" type="text" autocomplete="off" placeholder="Works with PC?" aria-label="Your question">
-            <button class="btn btn-small btn-primary" type="submit" id="askBtn">Ask</button>
-          </form>
-        </details>
-
-        <details class="panel place" id="placePanel">
-          <summary id="placeSummary">Where</summary>
+      <section class="flat place" id="placePanel">
+        <div class="place-row">
+          <svg class="i" viewBox="0 0 256 256" aria-hidden="true"><path d="M128,66a38,38,0,1,0,38,38A38,38,0,0,0,128,66Zm0,64a26,26,0,1,1,26-26A26,26,0,0,1,128,130Zm0-112a86.1,86.1,0,0,0-86,86c0,30.91,14.34,63.74,41.47,94.94a252.32,252.32,0,0,0,41.09,38,6,6,0,0,0,6.88,0,252.32,252.32,0,0,0,41.09-38c27.13-31.2,41.47-64,41.47-94.94A86.1,86.1,0,0,0,128,18Zm0,206.51C113,212.93,54,163.62,54,104a74,74,0,0,1,148,0C202,163.62,143,212.93,128,224.51Z"/></svg>
           <input class="store-input" id="storeInput" type="text" autocomplete="off" placeholder="Store name" aria-label="Store name">
-          <p class="muted small" id="placeArea"></p>
-          <div class="place-actions">
-            <a class="btn btn-small" id="directionsLink" target="_blank" rel="noopener" hidden><svg class="i" viewBox="0 0 256 256" aria-hidden="true"><path d="M128,66a38,38,0,1,0,38,38A38,38,0,0,0,128,66Zm0,64a26,26,0,1,1,26-26A26,26,0,0,1,128,130Zm0-112a86.1,86.1,0,0,0-86,86c0,30.91,14.34,63.74,41.47,94.94a252.32,252.32,0,0,0,41.09,38,6,6,0,0,0,6.88,0,252.32,252.32,0,0,0,41.09-38c27.13-31.2,41.47-64,41.47-94.94A86.1,86.1,0,0,0,128,18Zm0,206.51C113,212.93,54,163.62,54,104a74,74,0,0,1,148,0C202,163.62,143,212.93,128,224.51Z"/></svg><span>Directions</span></a>
-            <button class="btn btn-small btn-ghost" type="button" id="locateBtn">Use current location</button>
-          </div>
-          <div id="comparePlaces" hidden>
-            <h3 class="mini-head">Other stores</h3>
-            <ul class="compare-list" id="compareList"></ul>
-            <a class="btn btn-small" id="compareStoresLink" href="#/compare/">Compare side by side</a>
-          </div>
-        </details>
+          <a class="link" id="directionsLink" target="_blank" rel="noopener" hidden>Directions</a>
+        </div>
+        <p class="muted small" id="placeArea"></p>
+        <button class="link small" type="button" id="locateBtn">Use current location</button>
+        <div id="comparePlaces" hidden>
+          <h2 class="flat-title">Other stores</h2>
+          <ul class="compare-list" id="compareList"></ul>
+          <a class="link" id="compareStoresLink" href="#/compare/">Compare side by side</a>
+        </div>
+      </section>
 
-        <details class="panel" id="notesPanel">
-          <summary id="notesSummary">Notes</summary>
-          <textarea class="notes-input" id="notesInput" rows="2" placeholder="Size, who it's for, ask for discount…" aria-label="Notes"></textarea>
-        </details>
-
-        <details class="panel" id="listingsPanel" hidden>
-          <summary>Listings</summary>
-          <div id="listings"></div>
-          <p class="muted small" id="aiNotes"></p>
-        </details>
-
-        <details class="panel" id="translationPanel" hidden>
-          <summary>Translation</summary>
-          <p class="translation" id="translation"></p>
-          <details class="sub">
-            <summary>Original Japanese</summary>
-            <p class="original" id="original" lang="ja"></p>
-          </details>
-        </details>
-
-        <details class="panel" id="sourcesPanel" hidden>
-          <summary>Sources</summary>
-          <ul class="sources" id="sources"></ul>
-        </details>
-      </div>
+      <section class="flat" id="listingsPanel" hidden>
+        <h2 class="flat-title">Listings</h2>
+        <div id="listings"></div>
+        <p class="muted small" id="aiNotes"></p>
+      </section>
 
       <p class="muted small server-info" id="serverInfo" hidden></p>
 
@@ -376,23 +344,23 @@
 
   <!-- Settings -->
   <dialog id="settingsDialog">
-    <form method="dialog" id="settingsForm">
+    <div class="settings-form" id="settingsForm">
       <div class="dialog-head">
         <button class="icon-btn" type="button" id="settingsClose" aria-label="Close without saving"><svg class="i" viewBox="0 0 256 256" aria-hidden="true"><path d="M204.24,195.76a6,6,0,1,1-8.48,8.48L128,136.49,60.24,204.24a6,6,0,0,1-8.48-8.48L119.51,128,51.76,60.24a6,6,0,0,1,8.48-8.48L128,119.51l67.76-67.75a6,6,0,0,1,8.48,8.48L136.49,128Z"/></svg></button>
         <h2>Settings</h2>
-        <button class="btn btn-small btn-primary" value="save" id="saveSettingsBtn">Save</button>
+        <button class="btn btn-small btn-primary" type="button" id="saveSettingsBtn">Save</button>
       </div>
 
-      <!-- Keys are plain text fields masked with CSS: a password field makes iOS offer to save or generate a password. -->
+      <!-- No form, no password-style fields: either makes iOS offer to save a password. Saved keys show only as a hint. -->
       <details class="settings-group" id="keysGroup">
         <summary><span>API keys</span><span class="group-status" id="keysStatus"></span></summary>
         <label class="field">
           <span>Google Cloud key</span>
-          <input class="secret" id="apiKeyInput" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-1p-ignore data-lpignore="true" placeholder="AIza…">
+          <input id="apiKeyInput" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-1p-ignore data-lpignore="true" placeholder="AIza…">
         </label>
         <label class="field">
-          <span>Gemini key <small>blank uses the Cloud key</small></span>
-          <input class="secret" id="geminiKeyInput" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-1p-ignore data-lpignore="true" placeholder="AIza…">
+          <span>Gemini key <small>blank uses the Cloud key</small> <button class="link small" type="button" id="geminiKeyRemove" hidden>Remove</button></span>
+          <input id="geminiKeyInput" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-1p-ignore data-lpignore="true" placeholder="AIza…">
         </label>
         <label class="field">
           <span>Gemini model</span>
@@ -422,7 +390,7 @@
               <li>Paste the token, tap Link</li>
             </ol>
             <span class="inline-row">
-              <input class="secret" id="tgTokenInput" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-1p-ignore data-lpignore="true" placeholder="Bot token" aria-label="Telegram bot token">
+              <input id="tgTokenInput" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-1p-ignore data-lpignore="true" placeholder="Bot token" aria-label="Telegram bot token">
               <button class="btn btn-small btn-primary" type="button" id="tgLink">Link</button>
             </span>
           </div>
@@ -441,16 +409,26 @@
           </label>
           <label class="field">
             <span>ntfy access token</span>
-            <input class="secret" id="ntfyTokenInput" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-1p-ignore data-lpignore="true" placeholder="tk_…">
+            <input id="ntfyTokenInput" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-1p-ignore data-lpignore="true" placeholder="tk_…">
           </label>
         </details>
         <button class="btn btn-small" type="button" id="serverTest">Test notifications</button>
         <p class="small" id="serverTestResult" role="status"></p>
       </details>
 
+      <section class="settings-group data-group">
+        <div class="data-row">
+          <span>Your data</span>
+          <button class="btn btn-small" type="button" id="backupBtn">Back up</button>
+          <label class="btn btn-small" for="restoreInput">Restore</label>
+        </div>
+        <input id="restoreInput" type="file" accept="application/json,.json" hidden>
+        <p class="muted small" id="backupStatus" role="status"></p>
+      </section>
+
       <button class="link danger" type="button" id="clearHistoryBtn">Clear history</button>
       <a class="link about-link" href="about/">About Kaimono</a>
-    </form>
+    </div>
   </dialog>
 
   <dialog class="viewer" id="photoViewer" aria-label="Photo">

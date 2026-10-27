@@ -289,8 +289,6 @@ main {
   transition: transform 0.3s var(--ease);
 }
 .switch input:checked { background: var(--accent-bg); }
-.secret { -webkit-text-security: disc; text-security: disc; }
-.secret:placeholder-shown { -webkit-text-security: none; text-security: none; }
 .switch input:checked::before { transform: translateX(18px); }
 
 input[type="text"], input[type="password"], input[type="url"], input[type="search"], input[type="number"], textarea, select {
@@ -1224,3 +1222,45 @@ dialog.sheet[open] { animation: sheet-up 0.4s var(--ease) both; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
 }
+
+/* ---------- Result: flat lower half ---------- */
+
+.price-toggles { display: flex; flex-wrap: wrap; gap: 8px; }
+.price-toggles .toggle-pill { min-height: 38px; padding: 0 14px; font-size: 0.84rem; }
+
+.flat { display: flex; flex-direction: column; gap: 8px; padding: 14px 2px 0; border-top: 1px solid var(--line); }
+.flat-title { font-size: 0.98rem; font-weight: 650; }
+.flat.has-serious .flat-title { color: var(--bad); }
+.flat .compat-list:empty, .flat .issues:empty { display: none; }
+.flat .compat-row, .flat .issue { padding: 4px 0; }
+.flat .info-list li { padding: 6px 0; }
+
+.ask-quick { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip-pill {
+  min-height: 38px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.86rem;
+  font-weight: 600;
+  transition: transform 0.2s var(--ease), opacity 0.2s;
+}
+.chip-pill:active { transform: scale(0.96); }
+.chip-pill:disabled { opacity: 0.5; }
+.info-body:empty { display: none; }
+
+.place-row { display: flex; align-items: center; gap: 8px; color: var(--muted); }
+.place-row svg.i { width: 20px; height: 20px; }
+.place-row .store-input { min-height: 0; padding: 4px 0; background: none; font-size: 0.98rem; font-weight: 650; color: var(--text); }
+.place-row .store-input:focus { outline: none; box-shadow: 0 2px 0 var(--accent); border-radius: 0; }
+#placeArea:empty { display: none; }
+#locateBtn { align-self: flex-start; padding: 0; }
+
+.data-row { display: flex; align-items: center; gap: 8px; min-height: 48px; font-weight: 600; }
+.data-row > span { margin-right: auto; }
+.data-group { padding-bottom: 6px; }
+#backupStatus:empty { display: none; }
+.place-row .link { text-decoration: none; }
+#locateBtn { color: var(--muted); font-weight: 500; }

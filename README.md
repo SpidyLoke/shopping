@@ -86,13 +86,12 @@ Repo **Settings → Pages → Build and deployment → Deploy from a branch → 
 
 - **Quick scan** (switch on the home screen): only Shopee and Carousell are searched, for a faster, cheaper first look. **Run full check** on the result fills in Mercari, CeX (web), compatibility and the rest.
 - **✎ Fix name:** type the right product name if Gemini got it wrong, and the scan re-prices without a new photo.
-- **Ask about this item:** type any question ("works with PC?", "is this the 2025 model?") and get a short answer that knows the item, the tag and the prices. Answers are saved with the scan.
-- **Notes:** add your own notes to any scan (size, who it's for, "ask for discount").
+- **Ask:** under the prices, tap **Worth it?**, **Alternatives** or **Translate tag**, or type any question ("works with PC?", "is this the 2025 model?") for a short answer that knows the item, the tag and the prices. Answers are saved with the scan. There's no separate translation step any more: Gemini reads the Japanese directly, and **Translate tag** gives you the English when you want it.
 
 ### Keeping track
 
 - **Trips:** name each trip in the Trip tab (e.g. "Osaka Nov 2026"). New scans go into the current trip; budget, spending, tax back and savings are per trip, and History can show one trip or all.
-- **Search:** History searches item names, brands, stores, areas, notes and translations.
+- **Search:** History searches item names, brands, stores and areas.
 - **Refresh prices:** on the Favourites list (home or History), one tap re-checks the Malaysian prices for every favourite.
 - **Select:** in History tap **Select** to pick scans, then favourite, mark as bought, delete (with Undo) or compare 2 to 3 of them.
 
@@ -102,7 +101,7 @@ Gemini reads edition words off the box (Reloaded, Pro, Lite, OLED, V2…) and th
 
 ### Product info: worth it?
 
-Tap **Get product info** on a result for a short buying guide: what it is, key features, pros and cons, reviewer consensus, lookalike models to avoid mixing up, better or better-value alternatives with prices, whether a newer model is out, and a Worth it / Depends / Probably not call. Turn on "Load product info on every scan" in Settings to get it automatically (one extra Gemini search per scan).
+Tap **Worth it?** in the Ask section for a Worth it / Depends / Probably not call with the reason, pros and cons, whether a newer model is out, and up to three better or better-value alternatives with prices. Turn on "Load product info on every scan" in Settings to get it automatically (one extra Gemini search per scan).
 
 ### CeX Malaysia
 
@@ -186,8 +185,9 @@ Shipping, luggage allowance and warranty aren't factored in. Gemini flags Japan-
 ## Settings
 
 - **Gemini model:** defaults to `gemini-flash-latest`, Google's alias for the current Flash model, so it keeps working when versions retire. Pin a specific model ID here if you prefer.
+- **Back up / Restore:** saves everything (scans, photos, trips, keys and the scan server pairing) to one file you keep in Files, and puts it back. A home-screen app's data is deleted when you remove it from the home screen, so back up first if you reinstall (for example to pick up a new app icon).
 - **Clear history:** deletes all saved scans from the phone.
-- **API keys** and **Background scanning** fold away once set up. Key and token fields are masked text boxes rather than password fields, so iPhone no longer offers to save or generate a password. The × at the top closes Settings without saving.
+- **API keys** and **Background scanning** fold away once set up. Saved keys and tokens are never shown or refilled; the box shows a hint like "Saved · AIza…x9Q2", and leaving it empty keeps what's saved. With no password-style fields and no form, iPhone doesn't offer to save a password. The × at the top closes Settings without saving.
 
 ## Files
 

@@ -3,7 +3,7 @@
 // lives in localStorage on the user's device only.
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.10.27-12';
+const APP_VERSION = '2026.10.27-13';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -1090,6 +1090,7 @@ function refresh(entry) {
 
 async function runScan(entry, imageB64, { quiet = false } = {}) {
   running.set(entry.id, entry);
+  if (entry.status.translate !== 'done') entry.status.translate = 'skipped'; // ask "Translate tag" instead
   const images = await scanImages(entry, imageB64);
   if (settings.serverUrl) {
     await runScanOnServer(entry, images, { quiet });
@@ -1111,8 +1112,6 @@ async function runScan(entry, imageB64, { quiet = false } = {}) {
     }
   }
   if (!entry.yen) entry.yen = parseYen(entry.ocrText);
-  if (!entry.ocrText) entry.status.translate = 'skipped';
-  else if (entry.status.translate !== 'done') entry.status.translate = 'active';
   update();
 
   const translating = entry.status.translate === 'active'
@@ -2209,7 +2208,7 @@ function renderPrices(entry) {
   $('#taxInclToggle').checked = entry.taxIncluded !== false;
   $('#taxFreeToggle').checked = Boolean(entry.taxFree);
   $('#secondHandToggle').checked = Boolean(entry.secondHand);
-  $('#secondHandLabel').textContent = entry.autoUsed && entry.secondHand ? 'Second-hand (from the tag)' : 'Second-hand';
+  $('#secondHandLabel').textContent = entry.autoUsed && entry.secondHand ? 'Used (tag)' : 'Used';
   $('#jpHead').textContent = entry.secondHand ? 'Japan used' : 'Japan';
 
   for (const [key, valueSel, rangeSel] of [['my_new', '#myNew', '#myNewRange'], ['my_used', '#myUsed', '#myUsedRange']]) {
@@ -2419,23 +2418,19 @@ async function loadInfo(id) {
   refresh(entry);
 }
 
+// "Worth it?" answer, shown inline in the Ask section: the call, a line of why, pros and cons, and alternatives.
 function renderInfo(entry) {
-  const panel = $('#infoPanel');
-  panel.hidden = !entry.ai;
-  if (panel.hidden) return;
   const info = entry.info;
   const loading = infoLoading.has(entry.id);
   const list = (x) => (Array.isArray(x) ? x.filter(Boolean) : []);
   const verdicts = { yes: ['Worth it', 'yes'], depends: ['Depends', 'depends'], no: ['Probably not', 'no'] };
   const w = verdicts[info?.worth_it?.verdict];
-  $('#infoSummary').textContent = w ? `Worth it? ${w[0]}` : 'Is it worth it?';
+  $('#worthBtn').hidden = Boolean(info) && !loading;
+  $('#worthBtn').disabled = loading || !entry.ai;
+  $('#worthBtn').textContent = loading ? 'Checking…' : 'Worth it?';
 
   if (!info) {
-    $('#infoBody').replaceChildren(...[
-      el('p', { class: 'muted small' }, 'Features, reviews, lookalike models and better alternatives.'),
-      entry.infoError ? el('p', { class: 'error' }, entry.infoError) : null,
-      el('button', { class: 'btn btn-block', type: 'button', disabled: loading, onclick: () => loadInfo(entry.id) }, loading ? 'Looking it up…' : 'Get product info'),
-    ].filter(Boolean));
+    $('#infoBody').replaceChildren(...[entry.infoError ? el('p', { class: 'error' }, entry.infoError) : null].filter(Boolean));
     return;
   }
 
@@ -2444,30 +2439,19 @@ function renderInfo(entry) {
   $('#infoBody').replaceChildren(...[
     w ? el('div', { class: `worth worth-${w[1]}` }, el('strong', {}, w[0]), el('span', {}, info.worth_it.reason || '')) : null,
     info.successor ? el('p', { class: 'successor' }, `Newer model: ${info.successor}`) : null,
-    info.summary ? el('p', {}, info.summary) : null,
-    list(info.key_features).length ? el('ul', { class: 'feature-list' }, list(info.key_features).map((f) => el('li', {}, f))) : null,
     list(info.pros).length || list(info.cons).length ? el('div', { class: 'pros-cons' },
       el('ul', { class: 'pros' }, list(info.pros).map((p) => el('li', {}, p))),
       el('ul', { class: 'cons' }, list(info.cons).map((c) => el('li', {}, c))),
     ) : null,
-    info.reviews ? el('p', { class: 'muted small' }, `Reviews: ${info.reviews}`) : null,
-    list(info.variants).length ? el('div', {},
-      el('h3', { class: 'mini-head' }, "Don't mix up with"),
-      el('ul', { class: 'info-list' }, list(info.variants).map((v) => el('li', {},
-        el('div', {}, el('strong', {}, v.name), v.difference ? el('span', {}, ` ${v.difference}`) : null),
-        v.how_to_tell ? el('small', {}, `How to tell: ${v.how_to_tell}`) : null,
-        toNum(v.price_rm) ? el('span', { class: 'info-price' }, rm(toNum(v.price_rm))) : null,
-      ))),
-    ) : null,
     list(info.alternatives).length ? el('div', {},
       el('h3', { class: 'mini-head' }, 'Alternatives'),
-      el('ul', { class: 'info-list' }, list(info.alternatives).map((a) => el('li', {},
+      el('ul', { class: 'info-list' }, list(info.alternatives).slice(0, 3).map((a) => el('li', {},
         el('div', {}, el('a', { href: shopee(a.name), target: '_blank', rel: 'noopener' }, a.name)),
         a.why ? el('small', {}, a.why) : null,
         priceText(a.price_rm, a.price_yen) ? el('span', { class: 'info-price' }, priceText(a.price_rm, a.price_yen)) : null,
       ))),
     ) : null,
-    el('button', { class: 'link small', type: 'button', disabled: loading, onclick: () => loadInfo(entry.id) }, loading ? 'Refreshing…' : 'Refresh info'),
+    el('button', { class: 'link small', type: 'button', disabled: loading, onclick: () => loadInfo(entry.id) }, loading ? 'Checking again…' : 'Check again'),
   ].filter(Boolean));
 }
 
@@ -2476,7 +2460,9 @@ function renderCompat(entry) {
   $('#compatPanel').hidden = !list.length;
   if (!list.length) return;
   const mark = { ok: '✓', warn: '!', bad: '✕' };
-  $('#compatList').replaceChildren(...list.map((c) => el('li', { class: `compat-row compat-${c.status}` },
+  // Only what needs attention is listed; when everything is fine the heading says so.
+  const shown = list.filter((c) => c.status !== 'ok' || entry.kind === 'clothes');
+  $('#compatList').replaceChildren(...shown.map((c) => el('li', { class: `compat-row compat-${c.status}` },
     el('span', { class: 'compat-mark', 'aria-hidden': 'true' }, mark[c.status]),
     el('div', {},
       el('span', { class: 'compat-topic' }, c.topic),
@@ -2516,17 +2502,16 @@ function renderPlace(entry) {
     area = [p.area, p.accuracy > 150 ? `±${p.accuracy} m` : null, dist !== null && dist > 0.05 ? `${fmtDistance(dist)} from you` : null]
       .filter(Boolean).join(' · ') || 'Location saved';
   } else if (p?.unavailable) {
-    area = 'Location not saved (permission off or no signal).';
+    area = 'No location (permission off or no signal)';
   } else if (running.has(entry.id) && settings.saveLocation) {
     area = 'Getting location…';
   } else {
-    area = 'No location saved for this scan.';
+    area = '';
   }
   $('#placeArea').textContent = area;
-  $('#placeSummary').textContent = storeName(entry) || p?.area || 'Where';
   $('#directionsLink').hidden = !p?.lat;
   if (p?.lat) $('#directionsLink').href = `https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lng}`;
-  $('#locateBtn').textContent = p?.lat ? 'Move pin to here' : 'Use current location';
+  $('#locateBtn').textContent = p?.lat ? 'Move pin to where I am' : 'Use current location';
 
   // Same product scanned at other stores, cheapest first.
   const others = entry.ai ? historyEntries().filter((e) => e.id !== entry.id && e.ai && sameProduct(entry, e)) : [];
@@ -2642,6 +2627,7 @@ async function askQuestion(id, question) {
 
 function renderAsk(entry) {
   $('#askPanel').hidden = !['done', 'failed'].includes(entry.status.vision);
+  for (const b of document.querySelectorAll('#askPanel [data-ask]')) b.disabled = asking.has(entry.id);
   $('#askBtn').disabled = asking.has(entry.id);
   $('#askBtn').textContent = asking.has(entry.id) ? 'Asking…' : 'Ask';
   $('#qaList').replaceChildren(...(entry.qa || []).map((x) => el('li', {},
@@ -2780,8 +2766,6 @@ function renderResult(entry) {
   $('#photoCount').hidden = !extra;
   $('#photoCount').textContent = `+${extra}`;
   $('#addPhotoBtn').classList.toggle('disabled', running.has(entry.id) || photoIds(entry).length >= MAX_PHOTOS);
-  if (document.activeElement !== $('#notesInput')) $('#notesInput').value = entry.notes || '';
-  $('#notesSummary').textContent = entry.notes ? `Notes · ${entry.notes.length > 28 ? `${entry.notes.slice(0, 26)}…` : entry.notes}` : 'Notes';
   $('#quickBanner').hidden = !(entry.quick && entry.ai && !running.has(entry.id));
   $('#serverInfo').textContent = serverReport(entry.serverJob);
   $('#serverInfo').hidden = !$('#serverInfo').textContent;
@@ -2826,16 +2810,6 @@ function renderResult(entry) {
   $('#yahooLink').href = `https://auctions.yahoo.co.jp/search/search?p=${encodeURIComponent(qJa)}`;
 
   renderListings(entry);
-
-  const showTranslation = Boolean(entry.ocrText);
-  $('#translationPanel').hidden = !showTranslation;
-  $('#translation').textContent = entry.translation || (entry.status.translate === 'active' ? 'Translating…' : entry.sourceLang === 'en' ? entry.ocrText : '');
-  $('#original').textContent = entry.ocrText;
-
-  $('#sourcesPanel').hidden = !entry.sources?.length;
-  $('#sources').replaceChildren(...(entry.sources || []).map((s) =>
-    el('li', {}, el('a', { href: safeUrl(s.url), target: '_blank', rel: 'noopener' }, s.title)),
-  ));
 
   const isRunning = running.has(entry.id);
   $('#rescanBtn').disabled = isRunning;
@@ -3080,9 +3054,31 @@ function route(keepScroll = false) {
 
 // ---------- settings ----------
 
+// Saved keys and tokens are never put back into a field (iOS treats a filled secret field as a password
+// to save); the field stays empty with a hint, and an empty field keeps what's saved.
+const SECRET_FIELDS = [['#apiKeyInput', 'apiKey', 'AIza…'], ['#geminiKeyInput', 'geminiKey', 'AIza…'], ['#ntfyTokenInput', 'ntfyToken', 'tk_…']];
+
+function hintFor(value, fallback) {
+  return value ? `Saved · ${value.slice(0, 4)}…${value.slice(-4)}` : fallback;
+}
+
+function renderSecretFields() {
+  for (const [sel, key, fallback] of SECRET_FIELDS) {
+    $(sel).value = '';
+    $(sel).placeholder = hintFor(store.get(key, ''), fallback);
+  }
+  $('#geminiKeyRemove').hidden = !store.get('geminiKey', '');
+}
+
+function saveSecretFields() {
+  for (const [sel, key] of SECRET_FIELDS) {
+    const v = $(sel).value.trim();
+    if (v) store.set(key, v);
+  }
+}
+
 function openSettings() {
-  $('#apiKeyInput').value = settings.apiKey;
-  $('#geminiKeyInput').value = store.get('geminiKey', '');
+  renderSecretFields();
   $('#modelInput').value = store.get('model', '') || DEFAULT_MODEL;
   $('#defaultTaxFree').checked = settings.taxFree;
   $('#saveLocationToggle').checked = settings.saveLocation;
@@ -3090,8 +3086,8 @@ function openSettings() {
   $('#buzzToggle').checked = settings.buzz;
   $('#serverUrlInput').value = settings.serverUrl;
   $('#ntfyInput').value = settings.ntfyTopic;
-  $('#ntfyTokenInput').value = settings.ntfyToken;
-  $('#tgTokenInput').value = settings.telegram?.token || '';
+  $('#tgTokenInput').value = '';
+  $('#backupStatus').textContent = '';
   renderTelegramStatus();
   $('#serverTestResult').textContent = '';
   // Finished setup folds away; only what still needs doing starts open.
@@ -3103,9 +3099,8 @@ function openSettings() {
   $('#settingsDialog').showModal();
 }
 
-$('#settingsForm').addEventListener('submit', () => {
-  store.set('apiKey', $('#apiKeyInput').value.trim());
-  store.set('geminiKey', $('#geminiKeyInput').value.trim());
+$('#saveSettingsBtn').addEventListener('click', () => {
+  saveSecretFields();
   const model = $('#modelInput').value.trim();
   store.set('model', model && model !== DEFAULT_MODEL ? model : '');
   store.set('taxFree', $('#defaultTaxFree').checked);
@@ -3113,7 +3108,74 @@ $('#settingsForm').addEventListener('submit', () => {
   store.set('autoInfo', $('#autoInfoToggle').checked);
   store.set('buzz', $('#buzzToggle').checked);
   saveServerSettings();
+  $('#settingsDialog').close();
   route();
+});
+$('#geminiKeyRemove').addEventListener('click', () => {
+  store.set('geminiKey', '');
+  renderSecretFields();
+});
+
+// ---------- backup ----------
+// A home-screen app keeps its own storage, and removing it from the home screen wipes that storage.
+// Back up first (scans, photos, trips, settings, the scan server pairing), reinstall, then Restore.
+
+async function exportBackup() {
+  const data = {};
+  for (let i = 0; i < localStorage.length; i += 1) {
+    const k = localStorage.key(i);
+    if (k.startsWith('kc.')) data[k] = localStorage.getItem(k);
+  }
+  const images = {};
+  for (const k of (await imageDb.run('readonly', (st) => st.getAllKeys())) || []) images[k] = await imageDb.get(k);
+  const name = `kaimono-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  const blob = new Blob([JSON.stringify({ app: 'kaimono', version: 1, at: Date.now(), data, images })], { type: 'application/json' });
+  const file = new File([blob], name, { type: 'application/json' });
+  const mb = (blob.size / 1e6).toFixed(1);
+  if (navigator.canShare?.({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file] });
+      return `Backed up (${mb} MB). Keep the file in Files.`;
+    } catch (e) {
+      if (e.name === 'AbortError') return '';
+    }
+  }
+  const a = el('a', { href: URL.createObjectURL(blob), download: name });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  return `Backed up (${mb} MB).`;
+}
+
+async function importBackup(file) {
+  const backup = JSON.parse(await file.text());
+  if (backup?.app !== 'kaimono' || !backup.data) throw new Error("That file isn't a Kaimono backup.");
+  const scans = (() => { try { return JSON.parse(backup.data['kc.history'] || '[]').length; } catch { return 0; } })();
+  if (!confirm(`Replace everything in the app with this backup (${scans} scans)?`)) return false;
+  for (const k of Object.keys(localStorage)) if (k.startsWith('kc.')) localStorage.removeItem(k);
+  for (const [k, v] of Object.entries(backup.data)) if (k.startsWith('kc.')) localStorage.setItem(k, v);
+  await imageDb.clear();
+  for (const [k, v] of Object.entries(backup.images || {})) await imageDb.put(k, v);
+  return true;
+}
+
+$('#backupBtn').addEventListener('click', async () => {
+  $('#backupStatus').textContent = 'Preparing…';
+  try {
+    $('#backupStatus').textContent = await exportBackup();
+  } catch (e) {
+    $('#backupStatus').textContent = `Backup failed: ${e.message}`;
+  }
+});
+$('#restoreInput').addEventListener('change', async (e) => {
+  const file = e.target.files?.[0];
+  e.target.value = '';
+  if (!file) return;
+  try {
+    if (await importBackup(file)) location.reload();
+  } catch (err) {
+    $('#backupStatus').textContent = err instanceof SyntaxError ? "That file isn't a Kaimono backup." : err.message;
+  }
 });
 
 $('#clearHistoryBtn').addEventListener('click', () => {
@@ -3327,11 +3389,6 @@ $('#backBtn').addEventListener('click', () => {
   if (/^#\/(history|trip)/.test(location.hash) || navStack.length < 2) location.hash = '#/';
   else history.back();
 });
-$('#notesInput').addEventListener('input', (e) => {
-  if (!current) return;
-  current.notes = e.target.value;
-  saveEntry(current);
-});
 $('#fixNameBtn').addEventListener('click', () => {
   if (!current) return;
   $('#fixName').hidden = !$('#fixName').hidden;
@@ -3351,6 +3408,10 @@ $('#fullCheckBtn').addEventListener('click', () => {
   saveEntry(current);
   rescan(current.id);
 });
+$('#worthBtn').addEventListener('click', () => current && loadInfo(current.id));
+for (const b of document.querySelectorAll('#askPanel [data-ask]')) {
+  b.addEventListener('click', () => current && askQuestion(current.id, b.dataset.ask));
+}
 $('#askForm').addEventListener('submit', (e) => {
   e.preventDefault();
   const q = $('#askInput').value.trim();
@@ -3444,7 +3505,7 @@ document.addEventListener('visibilitychange', () => {
 function saveServerSettings() {
   store.set('serverUrl', $('#serverUrlInput').value.trim());
   store.set('ntfyTopic', $('#ntfyInput').value.trim());
-  store.set('ntfyToken', $('#ntfyTokenInput').value.trim());
+  if ($('#ntfyTokenInput').value.trim()) store.set('ntfyToken', $('#ntfyTokenInput').value.trim());
 }
 
 function renderTelegramStatus() {
