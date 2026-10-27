@@ -95,6 +95,10 @@ Repo **Settings → Pages → Build and deployment → Deploy from a branch → 
 - **Refresh prices:** on the Favourites list (home or History), one tap re-checks the Malaysian prices for every favourite.
 - **Select:** in History tap **Select** to pick scans, then favourite, mark as bought, delete (with Undo) or compare 2 to 3 of them.
 
+### Where each price comes from
+
+Tap **MY new**, **MY used** or **JP used** to see the listings behind that figure: platform, the listing title exactly as posted, its price and a link to open it. Each listing is marked **Same model**, or **Check model** when its title names a different variant (e.g. "Reloaded" when you're looking at the original) or Gemini wasn't sure. The box itself says "check model" when any listing behind it is flagged. If no listings came back, the figure is an estimate, and **Search … yourself** opens the search.
+
 ### Exact model check
 
 Gemini reads edition words off the box (Reloaded, Pro, Lite, OLED, V2…) and the result shows the exact model it found and how it knew. When it isn't sure, the box turns amber and lists lookalikes with how to tell them apart; tap **It's …** to re-price the scan as that model. Price matching (CeX, same item at other stores) treats lookalike variants as different products.

@@ -3,7 +3,7 @@
 // lives in localStorage on the user's device only.
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.10.27-13';
+const APP_VERSION = '2026.10.27-14';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -499,6 +499,7 @@ Tasks:
    Only use Malaysian listings priced in RM. Exclude accessories, cases, spare parts and listings for a lookalike variant: they are a different product, even if most of the name matches. Never invent listings, prices or URLs; if you cannot find any, use null or an empty list.
    Also check CeX Malaysia (my.webuy.com), which sells graded used stock: search my.webuy.com for the exact model. Its product pages show "WeSell for" (its selling price), "WeBuy for cash" and "WeBuy for voucher" prices in RM.
    Also search Japan's second-hand market for the same item in comparable condition: Mercari Japan (jp.mercari.com) and Yahoo! Auctions Japan (auctions.yahoo.co.jp), prices in yen.
+   SOURCES: the shopper checks every figure against its listings, so in "listings" give the actual listings behind my_new, my_used and jp_used_yen (up to 3 for each), with the listing title copied exactly as shown, its price and its URL. Base each figure only on listings that are the exact same model and variant. If you include a listing you are not sure is the exact model, set "exact_model": false and leave it out of the figure. Do not report a figure with no listing behind it; use null instead.
 4. Read any condition information on the tag or label: the shop's condition grade or rank and what it means on that shop's scale (second-hand chains such as 2nd Street, Hard Off, Book Off, Geo, Sofmap and Surugaya each have their own scale; explain it plainly rather than just saying "good"). If the tag or shelf shows more than one grade (for example separate A and B units of the same item at different prices, or a printed grade legend), list every grade with its price and meaning, and say which one applies to the item photographed if you can tell. Also read every issue, defect or caveat mentioned (e.g. ジャンク, 動作未確認, 通電のみ, 欠品, キズ, 箱なし, 返品不可, 保証なし). Translate each into plain English and rate it: "high" = may not work, sold as-is, no returns or no warranty; "medium" = missing parts, visible damage or heavy wear; "low" = minor cosmetic. List stated positives (e.g. 動作確認済, 美品, 付属品完備) with severity "good". Ignore marketing claims on new-product packaging (e.g. 傷つきにくい means scratch-resistant, not scratched).
 5. Check whether it will work properly in Malaysia: 240V 50Hz mains and Type G three-pin plugs (Japan is 100V with Type A two-pin plugs). Cover only what applies to this product:
    - Power: does it accept 240V? Many chargers and adapters are 100-240V and only need a plug adapter; 100V-only appliances (rice cookers, hair dryers, some kitchen and beauty gear) need a step-down transformer.
@@ -529,7 +530,7 @@ Reply with only a JSON object inside a \`\`\`json code block, with exactly these
   "jp_used_yen": { "low": 0, "high": 0, "typical": 0 },
   "cex_my": { "sell_rm": 0, "buy_cash_rm": 0, "buy_voucher_rm": 0, "grade": "CeX grade if shown (A, B, C) or null", "url": "CeX product URL or null" },
   "listings": [
-    { "platform": "Shopee | Carousell | Lazada | Mercari JP | Yahoo Auctions | Other", "condition": "new | used", "title": "listing title", "price_rm": 0, "price_yen": 0, "url": "listing URL or null" }
+    { "platform": "Shopee | Carousell | Lazada | Mercari JP | Yahoo Auctions | Other", "condition": "new | used", "title": "listing title exactly as shown", "price_rm": 0, "price_yen": 0, "url": "listing URL or null", "exact_model": true }
   ],
   "my_compat": [
     { "topic": "Power | Region | Language | Warranty | Other", "status": "ok | warn | bad", "note": "short plain-English explanation" }
@@ -2558,34 +2559,79 @@ function renderPlace(entry) {
   }));
 }
 
-function renderListings(entry) {
-  const listings = Array.isArray(entry.ai?.listings) ? entry.ai.listings : [];
-  const isJapan = (l) => /mercari|yahoo/i.test(l.platform || '') || (toNum(l.price_yen) && !toNum(l.price_rm));
-  const groups = [['new', 'New in Malaysia'], ['used', 'Second-hand in Malaysia'], ['jp', 'Second-hand in Japan']].map(([cond, title]) => {
-    const items = listings.filter((l) => (cond === 'jp'
-      ? isJapan(l)
-      : !isJapan(l) && (l.condition || '').toLowerCase().startsWith(cond === 'new' ? 'new' : 'use')));
-    if (!items.length) return null;
-    return el('div', { class: 'listing-group' },
-      el('h3', {}, title),
-      items.map((l) => {
-        const href = safeUrl(l.url);
-        const label = l.title || 'Listing';
-        return el('div', { class: 'listing' },
-          el('div', {},
-            href ? el('a', { href, target: '_blank', rel: 'noopener' }, label) : el('span', { class: 'title' }, label),
-            el('span', { class: 'where' }, l.platform || ''),
-          ),
-          el('span', { class: 'price' }, cond === 'jp' ? (toNum(l.price_yen) ? yen(toNum(l.price_yen)) : '–') : rm(toNum(l.price_rm))),
-        );
-      }),
-    );
-  }).filter(Boolean);
+// ---------- where a price comes from ----------
+// Each MY new / MY used / JP used box opens the listings behind its figure, so the model can be checked.
 
-  const notes = [entry.ai?.notes, entry.ai?.confidence ? `Match confidence: ${entry.ai.confidence}.` : null].filter(Boolean).join(' ');
-  $('#listingsPanel').hidden = !entry.ai || (!groups.length && !notes);
-  $('#listings').replaceChildren(...groups);
-  $('#aiNotes').textContent = notes;
+const SOURCE_KINDS = {
+  new: { title: 'MY new', search: (q) => `https://shopee.com.my/search?keyword=${encodeURIComponent(q)}`, searchLabel: 'Search Shopee' },
+  used: { title: 'MY used', search: (q) => `https://www.carousell.com.my/search/${encodeURIComponent(q)}`, searchLabel: 'Search Carousell' },
+  jp: { title: 'JP used', search: (q) => `https://jp.mercari.com/search?keyword=${encodeURIComponent(q)}`, searchLabel: 'Search Mercari' },
+};
+
+function listingsFor(entry, kind) {
+  const listings = Array.isArray(entry.ai?.listings) ? entry.ai.listings.filter((l) => l && (l.title || l.url)) : [];
+  const isJapan = (l) => /mercari|yahoo/i.test(l.platform || '') || (toNum(l.price_yen) && !toNum(l.price_rm));
+  return listings.filter((l) => (kind === 'jp'
+    ? isJapan(l)
+    : !isJapan(l) && (l.condition || '').toLowerCase().startsWith(kind === 'new' ? 'new' : 'use')));
+}
+
+// "exact" when the listing names the same variant and none of the lookalikes' distinguishing words;
+// Japanese-only titles can't be checked word by word, so they rely on Gemini's own exact_model flag.
+function listingMatch(entry, l) {
+  if (l.exact_model === false) return 'check';
+  const ai = entry.ai || {};
+  const title = words(l.title);
+  if (!/[a-z]{2}/i.test(l.title || '')) return l.exact_model === true ? 'exact' : 'unknown';
+  const name = words(entry.override || ai.product_name);
+  const needed = [...words(entry.override ? '' : ai.variant)];
+  if (needed.some((w) => !title.has(w))) return 'check';
+  const lookalikeOnly = (Array.isArray(ai.lookalikes) ? ai.lookalikes : []).flatMap((lk) => [...words(lk?.name)].filter((w) => !name.has(w)));
+  if (lookalikeOnly.some((w) => title.has(w))) return 'check';
+  return 'exact';
+}
+
+function renderSourceLines(entry) {
+  for (const [kind, sel] of [['new', '#myNewSrc'], ['used', '#myUsedSrc'], ['jp', '#jpUsedSrc']]) {
+    const n = listingsFor(entry, kind).length;
+    const card = $(sel).closest('.price-card');
+    const show = Boolean(entry.ai);
+    card.classList.toggle('tappable', show);
+    card.tabIndex = show ? 0 : -1;
+    const flagged = listingsFor(entry, kind).some((l) => listingMatch(entry, l) === 'check');
+    $(sel).textContent = !show ? '' : n ? `${n} listing${n > 1 ? 's' : ''}${flagged ? ' · check model' : ''} ›` : 'Sources ›';
+    $(sel).classList.toggle('warn', flagged);
+  }
+}
+
+function openSources(kind) {
+  const entry = current;
+  if (!entry?.ai) return;
+  const k = SOURCE_KINDS[kind];
+  const items = listingsFor(entry, kind);
+  const value = kind === 'jp' ? jpUsedYen(entry) : rangeValue(entry.ai[kind === 'new' ? 'my_new' : 'my_used']);
+  $('#sourceTitle').textContent = `${k.title} · ${value ? (kind === 'jp' ? yen(value) : rm(value)) : 'none found'}`;
+  $('#sourceModel').textContent = `Looking for: ${entry.override || entry.ai.product_name || ''}`;
+  const badge = { exact: ['Same model', 'tag-buy'], check: ['Check model', 'tag-maybe'], unknown: ['Not verified', ''] };
+  $('#sourceList').replaceChildren(...items.map((l) => {
+    const href = safeUrl(l.url);
+    const [label, cls] = badge[listingMatch(entry, l)];
+    const price = kind === 'jp' ? (toNum(l.price_yen) ? yen(toNum(l.price_yen)) : '–') : rm(toNum(l.price_rm));
+    return el('li', { class: 'source-item' },
+      el('div', { class: 'source-top' },
+        el('span', { class: 'source-platform' }, l.platform || 'Listing'),
+        el('span', { class: `tag ${cls}` }, label),
+        el('span', { class: 'source-price' }, price),
+      ),
+      el('p', { class: 'source-name' }, l.title || 'Untitled listing'),
+      href ? el('a', { class: 'link small', href, target: '_blank', rel: 'noopener' }, 'Open listing ↗') : el('p', { class: 'muted small' }, 'No link given'),
+    );
+  }));
+  $('#sourceEmpty').hidden = items.length > 0;
+  $('#sourceNote').textContent = [entry.ai.notes, entry.ai.confidence ? `Match confidence: ${entry.ai.confidence}.` : null].filter(Boolean).join(' ');
+  $('#sourceSearch').href = k.search(kind === 'jp' ? entry.ai.search_query_ja || searchQuery(entry) : searchQuery(entry));
+  $('#sourceSearch').textContent = `${k.searchLabel} yourself ↗`;
+  $('#sourceSheet').showModal();
 }
 
 // ---------- follow-up questions ----------
@@ -2809,7 +2855,7 @@ function renderResult(entry) {
     : cexFor(entry).url || `https://my.webuy.com/search?stext=${encodeURIComponent(q)}`;
   $('#yahooLink').href = `https://auctions.yahoo.co.jp/search/search?p=${encodeURIComponent(qJa)}`;
 
-  renderListings(entry);
+  renderSourceLines(entry);
 
   const isRunning = running.has(entry.id);
   $('#rescanBtn').disabled = isRunning;
@@ -3409,6 +3455,12 @@ $('#fullCheckBtn').addEventListener('click', () => {
   rescan(current.id);
 });
 $('#worthBtn').addEventListener('click', () => current && loadInfo(current.id));
+for (const [sel, kind] of [['#myNewSrc', 'new'], ['#myUsedSrc', 'used'], ['#jpUsedSrc', 'jp']]) {
+  const card = $(sel).closest('.price-card');
+  card.addEventListener('click', () => card.classList.contains('tappable') && openSources(kind));
+  card.addEventListener('keydown', (e) => (e.key === 'Enter' || e.key === ' ') && card.classList.contains('tappable') && openSources(kind));
+}
+$('#sourceClose').addEventListener('click', () => $('#sourceSheet').close());
 for (const b of document.querySelectorAll('#askPanel [data-ask]')) {
   b.addEventListener('click', () => current && askQuestion(current.id, b.dataset.ask));
 }

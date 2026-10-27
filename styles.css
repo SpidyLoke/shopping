@@ -1264,3 +1264,21 @@ dialog.sheet[open] { animation: sheet-up 0.4s var(--ease) both; }
 #backupStatus:empty { display: none; }
 .place-row .link { text-decoration: none; }
 #locateBtn { color: var(--muted); font-weight: 500; }
+
+/* ---------- Price sources ---------- */
+
+.price-card.tappable { cursor: pointer; transition: transform 0.2s var(--ease); }
+.price-card.tappable:active { transform: scale(0.97); }
+.price-src { margin-top: 4px; font-size: 0.76rem; font-weight: 600; color: var(--accent); }
+.price-src:empty { display: none; }
+.price-src.warn { color: var(--warn); }
+dialog.sheet { max-height: 85dvh; overflow-y: auto; overscroll-behavior: contain; }
+.source-list { list-style: none; margin: 12px 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.source-item { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border-radius: var(--r-tile); background: var(--surface); box-shadow: var(--shadow); }
+.source-top { display: flex; align-items: center; gap: 8px; }
+.source-platform { font-size: 0.8rem; font-weight: 650; color: var(--muted); }
+.source-price { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; }
+.source-name { font-size: 0.92rem; overflow-wrap: anywhere; }
+.source-item .link { align-self: flex-start; padding: 2px 0; text-decoration: none; }
+#sourceNote:empty { display: none; }
+#sourceSearch { margin-top: 12px; }
