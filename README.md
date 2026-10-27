@@ -50,6 +50,26 @@ Repo **Settings → Pages → Build and deployment → Deploy from a branch → 
 - **Claim tourist tax refund:** knocks the 10% consumption tax off for purchases of ¥5,000 or more. Set it as the default in Settings.
 - **Shopee MY / Carousell MY** buttons open a live search for the product, for when you want to eyeball listings yourself.
 
+### Getting around
+
+- **Bottom bar:** Scan, History, Trip and Settings sit at the bottom for one-handed use; buttons are larger throughout.
+- **Zoom the photo:** tap the photo on a result or shelf to open it full screen, then pinch or double-tap to zoom and drag to pan. It uses the full-size photo, not the thumbnail.
+- **Buzz when ready:** the phone vibrates (Android) or chimes (iPhone, plus a haptic tap on iOS 18+) when a scan finishes, so you can keep browsing. Turn it off in Settings.
+
+### While scanning
+
+- **Quick scan** (switch on the home screen): only Shopee and Carousell are searched, for a faster, cheaper first look. **Run full check** on the result fills in Mercari, CeX (web), compatibility and the rest.
+- **✎ Fix name:** type the right product name if Gemini got it wrong, and the scan re-prices without a new photo.
+- **Ask about this item:** type any question ("works with PC?", "is this the 2025 model?") and get a short answer that knows the item, the tag and the prices. Answers are saved with the scan.
+- **Notes:** add your own notes to any scan (size, who it's for, "ask for discount").
+
+### Keeping track
+
+- **Trips:** name each trip in the Trip tab (e.g. "Osaka Nov 2026"). New scans go into the current trip; budget, spending, tax back and savings are per trip, and History can show one trip or all.
+- **Search:** History searches item names, brands, stores, areas, notes and translations.
+- **Refresh prices:** on the Favourites list (home or History), one tap re-checks the Malaysian prices for every favourite.
+- **Select:** in History tap **Select** to pick scans, then favourite, mark as bought, delete (with Undo) or compare 2 to 3 of them.
+
 ### Exact model check
 
 Gemini reads edition words off the box (Reloaded, Pro, Lite, OLED, V2…) and the result shows the exact model it found and how it knew. When it isn't sure, the box turns amber and lists lookalikes with how to tell them apart; tap **It's …** to re-price the scan as that model. Price matching (CeX, same item at other stores) treats lookalike variants as different products.

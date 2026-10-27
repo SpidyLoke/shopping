@@ -3,7 +3,7 @@
 // lives in localStorage on the user's device only.
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.10.27-1';
+const APP_VERSION = '2026.10.27-2';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -43,6 +43,8 @@ const settings = {
   get saveLocation() { return store.get('saveLocation', true); },
   get scanKind() { return store.get('scanKind', 'item'); },
   get autoInfo() { return store.get('autoInfo', false); },
+  get quick() { return store.get('quick', false); },
+  get buzz() { return store.get('buzz', true); },
 };
 
 // Full-size photos live in IndexedDB (localStorage is too small) so old scans can be re-read properly.
@@ -77,6 +79,47 @@ const imageDb = {
     await Promise.all(keys.filter((k) => !keepIds.has(k)).map((k) => this.del(k)));
   },
 };
+
+// ---------- trips ----------
+
+function loadTrips() {
+  const trips = store.get('trips', []);
+  return Array.isArray(trips) ? trips : [];
+}
+
+function ensureTrips() {
+  let trips = loadTrips();
+  if (!trips.length) {
+    // First run with trips: everything so far (and the old single budget) becomes the first trip.
+    trips = [{ id: 'trip1', name: 'My trip', createdAt: Date.now(), budget: toNum(store.get('budget', null)) }];
+    store.set('trips', trips);
+  }
+  if (!trips.some((t) => t.id === store.get('currentTrip'))) store.set('currentTrip', trips[0].id);
+  return trips;
+}
+
+function currentTrip() {
+  const trips = ensureTrips();
+  return trips.find((t) => t.id === store.get('currentTrip')) || trips[0];
+}
+
+// Scans from before trips existed belong to the first trip.
+function tripOf(entry) {
+  return entry.tripId || ensureTrips()[0].id;
+}
+
+function saveTrip(trip) {
+  store.set('trips', loadTrips().map((t) => (t.id === trip.id ? trip : t)));
+}
+
+function newTrip() {
+  const month = new Intl.DateTimeFormat('en-GB', { month: 'short', year: 'numeric' }).format(new Date());
+  const name = prompt('Name this trip', `Japan ${month}`);
+  if (!name?.trim()) return;
+  const trip = { id: uid(), name: name.trim(), createdAt: Date.now(), budget: null };
+  store.set('trips', [...loadTrips(), trip]);
+  store.set('currentTrip', trip.id);
+}
 
 function loadHistory() {
   const list = store.get('history', []);
@@ -403,7 +446,7 @@ async function translate(text) {
   return { translation: t.translatedText || '', sourceLang: t.detectedSourceLanguage || '' };
 }
 
-function buildPrompt({ ocrText, webGuess, secondHand, focus, override }) {
+function buildPrompt({ ocrText, webGuess, secondHand, focus, override, quick }) {
   return `You are helping a Malaysian shopper standing in a shop in Japan decide whether to buy an item here or back home in Malaysia.
 
 The attached photo shows a product, box, price tag or shelf label in a Japanese shop.
@@ -413,6 +456,7 @@ ${ocrText || '(none detected)'}
 """
 Google's visual best guess for the photo: "${webGuess || 'none'}"
 ${focus ? `\nThe photo shows a whole shelf with several products. Evaluate ONLY this one: "${focus.name}"${focus.yen ? `, priced ${yen(focus.yen)}` : ''}. Ignore every other product in the photo.\n` : ''}${override ? `\nThe shopper has checked the box and confirmed the exact product is: "${override}". Treat that as certain and price that exact model.\n` : ''}${secondHand ? '\nThe shopper is in a second-hand shop (e.g. Hard Off, 2nd Street, Book Off, Sofmap used), so this is a used item. When searching Malaysia, prioritise second-hand listings in similar condition.\n' : ''}
+${quick ? 'QUICK MODE: keep this fast. Only search Shopee and Carousell Malaysia. Skip CeX, Mercari, Yahoo Auctions and the Malaysia compatibility check, and return null or empty lists for cex_my, jp_used_yen and my_compat.\n' : ''}
 Tasks:
 1. Identify the exact product: brand, model, size or capacity, and above all the exact variant. Words like Reloaded, Pro, Lite, OLED, Slim, Edge, V2, Mk II, 2nd Gen, Digital Edition or a special edition usually mean a different product at a different price (e.g. "Victrix Pro BFG" and "Victrix Pro BFG Reloaded" are different controllers). Read these words from the box, tag or the product itself and say where you saw them. If the photo doesn't show enough to tell lookalike variants apart, say so and list them with how to tell them apart.
 2. Read the Japanese shop price in yen from the photo or OCR text. If both tax-inclusive (税込) and tax-exclusive (税抜) prices are shown, use the tax-inclusive one. Say whether the number you picked includes Japan's 10% consumption tax. Use null if no price is visible.
@@ -484,12 +528,12 @@ function parseJson(text) {
   return JSON.parse(body.slice(start, end + 1));
 }
 
-async function askGemini({ imageB64, ocrText, webGuess, secondHand, focus, override }) {
-  const { json, sources } = await callGemini(imageB64, buildPrompt({ ocrText, webGuess, secondHand, focus, override }));
+async function askGemini({ imageB64, ocrText, webGuess, secondHand, focus, override, quick }) {
+  const { json, sources } = await callGemini(imageB64, buildPrompt({ ocrText, webGuess, secondHand, focus, override, quick }));
   return { ai: json, sources };
 }
 
-async function callGemini(imageB64, prompt, { search = true } = {}) {
+async function callGemini(imageB64, prompt, { search = true, raw = false } = {}) {
   const parts = [];
   if (imageB64) parts.push({ inline_data: { mime_type: 'image/jpeg', data: imageB64 } });
   parts.push({ text: prompt });
@@ -512,7 +556,7 @@ async function callGemini(imageB64, prompt, { search = true } = {}) {
     .map((c) => c.web)
     .filter((w) => w && safeUrl(w.uri))
     .map((w) => ({ title: w.title || w.uri, url: w.uri }));
-  return { json: parseJson(text), sources };
+  return raw ? { text, sources } : { json: parseJson(text), sources };
 }
 
 // ---------- CeX Malaysia ----------
@@ -919,6 +963,8 @@ async function startScan(file) {
     taxIncluded: true,
     taxFree: settings.taxFree,
     secondHand: settings.secondHand,
+    quick: settings.quick,
+    tripId: currentTrip().id,
     place: null,
     rate: rate?.value || null,
     status: { vision: 'pending', translate: 'pending', search: 'pending' },
@@ -937,7 +983,7 @@ async function startScan(file) {
 }
 
 // Re-run a saved scan from its stored photo: redoes any failed step and refreshes the prices.
-async function rescan(id) {
+async function rescan(id, { quiet = false } = {}) {
   if (running.has(id)) return;
   const entry = findEntry(id);
   if (!entry) return;
@@ -946,7 +992,7 @@ async function rescan(id) {
     return;
   }
   const image = (current?.id === id && currentImageB64) || (await imageDb.get(entry.imageId || id)) || entry.thumb.split(',')[1];
-  await runScan(entry, image);
+  await runScan(entry, image, { quiet });
 }
 
 function refresh(entry) {
@@ -956,7 +1002,7 @@ function refresh(entry) {
   else if (!hash.startsWith('#/scan/')) route(true);
 }
 
-async function runScan(entry, imageB64) {
+async function runScan(entry, imageB64, { quiet = false } = {}) {
   running.set(entry.id, entry);
   entry.errors = [];
   const update = () => refresh(entry);
@@ -994,6 +1040,62 @@ async function runScan(entry, imageB64) {
   if (!entry.rate && rate) entry.rate = rate.value;
   running.delete(entry.id);
   update();
+  if (!quiet) notifyDone();
+}
+
+// ---------- "it's ready" buzz ----------
+// Android vibrates. iPhone web apps can't call vibration, so play a short chime and, on iOS 18+,
+// toggle a hidden native switch, which gives a haptic tick. Audio has to be unlocked by a tap first.
+
+let audioCtx = null;
+
+function unlockAudio() {
+  try {
+    audioCtx ||= new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state !== 'running') audioCtx.resume();
+  } catch {
+    // no Web Audio: vibration/haptic only
+  }
+}
+
+function chime() {
+  if (!audioCtx) return;
+  audioCtx.resume?.();
+  const t = audioCtx.currentTime;
+  [880, 1318.5].forEach((freq, i) => {
+    const start = t + i * 0.13;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0.0001, start);
+    gain.gain.exponentialRampToValueAtTime(0.22, start + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.28);
+    osc.connect(gain).connect(audioCtx.destination);
+    osc.start(start);
+    osc.stop(start + 0.3);
+  });
+}
+
+let hapticLabel = null;
+
+function notifyDone() {
+  if (!settings.buzz) return;
+  if (navigator.vibrate) {
+    navigator.vibrate([70, 50, 70]);
+  } else {
+    try {
+      if (!hapticLabel) {
+        hapticLabel = el('label', { 'aria-hidden': 'true', style: 'position:fixed;opacity:0;pointer-events:none' },
+          el('input', { type: 'checkbox', switch: true, tabindex: '-1' }));
+        document.body.append(hapticLabel);
+      }
+      hapticLabel.click();
+    } catch {
+      // no haptics available
+    }
+  }
+  chime();
 }
 
 async function searchPrices(entry, imageB64, update) {
@@ -1008,6 +1110,7 @@ async function searchPrices(entry, imageB64, update) {
       secondHand: entry.secondHand,
       focus: entry.focus,
       override: entry.override,
+      quick: entry.quick,
     });
     entry.ai = ai;
     entry.sources = sources;
@@ -1086,6 +1189,7 @@ async function startShelf(file) {
     shelfStore: null,
     taxFree: settings.taxFree,
     secondHand: settings.secondHand,
+    tripId: currentTrip().id,
     place: null,
     rate: rate?.value || null,
     status: { vision: 'pending', list: 'pending' },
@@ -1148,6 +1252,7 @@ async function runShelf(shelf, b64) {
   }
   running.delete(shelf.id);
   update();
+  notifyDone();
 }
 
 // Small per-item thumbnails cut from the shelf photo using Gemini's boxes.
@@ -1184,9 +1289,9 @@ async function cropThumbs(b64, items) {
 }
 
 // Price-check one shelf item as a normal scan focused on that product.
-async function checkShelfItem(shelf, item, image) {
+async function checkShelfItem(shelf, item, image, quiet = false) {
   if (item.childId && findEntry(item.childId)) {
-    await rescan(item.childId);
+    await rescan(item.childId, { quiet });
     return;
   }
   const child = {
@@ -1207,6 +1312,8 @@ async function checkShelfItem(shelf, item, image) {
     taxIncluded: item.taxIncluded,
     taxFree: shelf.taxFree,
     secondHand: shelf.secondHand,
+    quick: settings.quick,
+    tripId: shelf.tripId,
     place: shelf.place ? { ...shelf.place } : null,
     shelfStore: shelf.shelfStore,
     rate: rate?.value || null,
@@ -1220,7 +1327,7 @@ async function checkShelfItem(shelf, item, image) {
   if (stored) stored.childId = child.id;
   saveEntry(latest);
   saveEntry(child);
-  await runScan(child, image || (await imageDb.get(shelf.id)) || shelf.thumb.split(',')[1]);
+  await runScan(child, image || (await imageDb.get(shelf.id)) || shelf.thumb.split(',')[1], { quiet });
 }
 
 async function checkAllShelf(id) {
@@ -1243,12 +1350,13 @@ async function checkAllShelf(id) {
     while (next < todo.length) {
       const item = todo[next];
       next += 1;
-      await checkShelfItem(shelf, item, image);
+      await checkShelfItem(shelf, item, image, true);
     }
   };
   await Promise.all([worker(), worker()]);
   shelfChecking.delete(id);
   route(true);
+  notifyDone();
 }
 
 function shelfItemPrice(shelf, item) {
@@ -1323,7 +1431,7 @@ function renderShelf(shelf) {
 
   $('#shelfView').replaceChildren(...[
     el('div', { class: 'result-top' },
-      el('img', { class: 'result-photo', src: shelf.thumb, alt: '' }),
+      el('img', { class: 'result-photo zoomable', src: shelf.thumb, alt: 'Shelf photo, tap to zoom', onclick: () => openPhoto(shelf.id, shelf.thumb) }),
       el('div', { class: 'result-title' },
         el('p', { class: 'eyebrow' }, 'Whole shelf'),
         el('h1', {}, storeName(shelf) || `${shelf.items.length} item${shelf.items.length === 1 ? '' : 's'}`),
@@ -1371,8 +1479,8 @@ function toggleFlag(id, flag) {
 }
 
 let historyFilter = 'all';
-let compareMode = false;
-let compareSel = [];
+let selectMode = false;
+let selection = [];
 
 function scanFailed(entry) {
   return !running.has(entry.id) && Object.values(entry.status).some((st) => st === 'failed' || st === 'active');
@@ -1397,20 +1505,21 @@ function historyItem(entry, opts = {}) {
   ].filter(Boolean).join(' · ');
   const dist = distanceFromHere(entry);
   const where = [storeName(entry) || entry.place?.area, dist !== null ? fmtAway(dist) : null].filter(Boolean).join(' · ');
-  const selecting = compareMode && location.hash.startsWith('#/history');
-  const selected = selecting && compareSel.includes(entry.id);
+  const selecting = selectMode && location.hash.startsWith('#/history');
+  const selected = selecting && selection.includes(entry.id);
   return swipeRow(entry, el('div', { class: 'history-row' },
     el('button', {
       class: `history-item${selected ? ' selected' : ''}`,
       type: 'button',
       'aria-pressed': selecting ? String(selected) : null,
-      onclick: () => (selecting ? toggleCompareSel(entry.id) : (location.hash = `#/scan/${entry.id}`)),
+      onclick: () => (selecting ? toggleSelect(entry.id) : (location.hash = `#/scan/${entry.id}`)),
     },
       el('img', { src: entry.thumb, alt: '' }),
       el('div', { class: 'history-body' },
         el('p', { class: 'history-name' }, entry.ai?.product_name || entry.webGuess || 'Unidentified item'),
         el('p', { class: 'history-meta' }, meta),
         where ? el('p', { class: 'history-where' }, where) : null,
+        entry.notes ? el('p', { class: 'history-note' }, entry.notes) : null,
         Number.isFinite(opts.saved)
           ? el('p', { class: `history-saved${opts.saved < 0 ? ' neg' : ''}` }, opts.saved >= 0 ? `Saved ${rm(opts.saved)}` : `${rm(-opts.saved)} more than MY`)
           : null,
@@ -1444,7 +1553,7 @@ function attachSwipe(li, row, id) {
   };
 
   row.addEventListener('pointerdown', (e) => {
-    if ((e.pointerType === 'mouse' && e.button !== 0) || compareMode || running.has(id)) return;
+    if ((e.pointerType === 'mouse' && e.button !== 0) || selectMode || running.has(id)) return;
     startX = e.clientX;
     startY = e.clientY;
     dx = 0;
@@ -1496,12 +1605,18 @@ function attachSwipe(li, row, id) {
 let pendingDelete = null;
 
 function removeWithUndo(id) {
-  const entry = findEntry(id);
-  if (!entry || running.has(id)) return;
+  removeManyWithUndo([id]);
+}
+
+function removeManyWithUndo(ids) {
+  const entries = ids.map((id) => findEntry(id)).filter((e) => e && !running.has(e.id));
+  if (!entries.length) return;
   finishPendingDelete();
-  store.set('history', loadHistory().filter((e) => e.id !== id));
-  pendingDelete = { entry, timer: setTimeout(finishPendingDelete, 5000) };
-  const name = entry.kind === 'shelf' ? 'shelf scan' : entry.ai?.product_name || 'scan';
+  const gone = new Set(entries.map((e) => e.id));
+  store.set('history', loadHistory().filter((e) => !gone.has(e.id)));
+  pendingDelete = { entries, timer: setTimeout(finishPendingDelete, 5000) };
+  const first = entries[0];
+  const name = entries.length > 1 ? `${entries.length} scans` : first.kind === 'shelf' ? 'shelf scan' : first.ai?.product_name || 'scan';
   $('#undoText').textContent = `Deleted ${name.length > 32 ? `${name.slice(0, 30)}…` : name}`;
   $('#undoToast').hidden = false;
   route(true);
@@ -1511,7 +1626,7 @@ function removeWithUndo(id) {
 function finishPendingDelete() {
   if (!pendingDelete) return;
   clearTimeout(pendingDelete.timer);
-  dropImageIfUnused(pendingDelete.entry);
+  for (const e of pendingDelete.entries) dropImageIfUnused(e);
   pendingDelete = null;
   $('#undoToast').hidden = true;
 }
@@ -1541,6 +1656,8 @@ function renderHome() {
   renderMode();
   const all = historyEntries();
   const favs = all.filter((e) => e.fav).slice(0, 3);
+  $('#quickToggle').checked = settings.quick;
+  renderRefreshButtons();
   $('#favWrap').hidden = favs.length === 0;
   $('#favList').replaceChildren(...favs.map(historyItem));
   const list = all.slice(0, 3);
@@ -1567,19 +1684,41 @@ function renderMode() {
 
 let historySort = 'recent';
 
+// Everything a search should match on, in one lower-case string.
+function searchText(e) {
+  return [e.ai?.product_name, e.ai?.brand, e.ai?.variant, e.override, e.webGuess, storeName(e), e.place?.area, e.notes, e.translation,
+    ...(e.items || []).map((i) => i.name)].filter(Boolean).join(' ').toLowerCase();
+}
+
+let historySearch = '';
+let historyTrip = null; // null = the current trip
+
 function renderHistory() {
   let list = historyEntries();
+  const trips = ensureTrips();
+  const tripFilter = historyTrip || currentTrip().id;
+  $('#historyTrip').replaceChildren(
+    el('option', { value: 'all' }, 'All trips'),
+    ...trips.map((t) => el('option', { value: t.id }, t.name)),
+  );
+  $('#historyTrip').value = tripFilter;
+  if (tripFilter !== 'all') list = list.filter((e) => tripOf(e) === tripFilter);
   if (historyFilter === 'fav') list = list.filter((e) => e.fav);
   if (historyFilter === 'bought') list = list.filter((e) => e.bought);
-  if (compareMode) list = list.filter((e) => e.kind !== 'shelf');
+  const terms = historySearch.toLowerCase().split(/\s+/).filter(Boolean);
+  if (terms.length) list = list.filter((e) => terms.every((t) => searchText(e).includes(t)));
+  if (selectMode) list = list.filter((e) => e.kind !== 'shelf');
   for (const b of document.querySelectorAll('#historyFilter [data-filter]')) {
     b.setAttribute('aria-checked', String(b.dataset.filter === historyFilter));
   }
-  $('#compareToggle').textContent = compareMode ? 'Cancel' : 'Compare';
-  $('#compareBar').hidden = !compareMode;
-  $('#compareCount').textContent = `${compareSel.length} of 3 picked`;
-  $('#compareGo').disabled = compareSel.length < 2;
-  $('#historyEmpty').textContent = { fav: 'No favourites yet. Tap ♥ on a scan.', bought: 'Nothing marked as bought yet.' }[historyFilter] || 'No scans yet.';
+  $('#selectToggle').textContent = selectMode ? 'Done' : 'Select';
+  $('#selectBar').hidden = !selectMode;
+  $('#selectCount').textContent = `${selection.length} selected`;
+  for (const id of ['#selFav', '#selBought', '#selDelete']) $(id).disabled = selection.length === 0;
+  $('#selCompare').disabled = selection.length < 2 || selection.length > 3;
+  $('#refreshFavsHistory').hidden = historyFilter !== 'fav';
+  renderRefreshButtons();
+  $('#historyEmpty').textContent = terms.length ? 'Nothing matches that search.' : { fav: 'No favourites yet. Tap ♥ on a scan.', bought: 'Nothing marked as bought yet.' }[historyFilter] || 'No scans yet.';
   if (historySort === 'nearest' && herePos) {
     const d = (e) => distanceFromHere(e) ?? Infinity;
     list = list.sort((a, b) => d(a) - d(b));
@@ -1591,10 +1730,66 @@ function renderHistory() {
   $('#historyList').replaceChildren(...list.map(historyItem));
 }
 
-function toggleCompareSel(id) {
-  if (compareSel.includes(id)) compareSel = compareSel.filter((x) => x !== id);
-  else if (compareSel.length < 3) compareSel.push(id);
+function toggleSelect(id) {
+  if (selection.includes(id)) selection = selection.filter((x) => x !== id);
+  else selection.push(id);
   renderHistory();
+}
+
+function endSelect() {
+  selectMode = false;
+  selection = [];
+}
+
+// Set a flag on every selected scan; if they all have it already, clear it instead.
+function bulkFlag(flag) {
+  const entries = selection.map((id) => findEntry(id)).filter(Boolean);
+  const value = !entries.every((e) => e[flag]);
+  for (const e of entries) {
+    e[flag] = value;
+    if (flag === 'bought') e.boughtAt = value ? e.boughtAt || Date.now() : null;
+    saveEntry(e);
+  }
+  endSelect();
+  route(true);
+}
+
+// ---------- refresh favourites ----------
+
+let refreshingFavs = null;
+
+async function refreshFavourites() {
+  if (refreshingFavs) return;
+  if (!settings.apiKey) {
+    openSettings();
+    return;
+  }
+  const ids = historyEntries().filter((e) => e.fav && e.kind !== 'shelf' && !running.has(e.id)).map((e) => e.id);
+  if (!ids.length) return;
+  refreshingFavs = { done: 0, total: ids.length };
+  route(true);
+  let next = 0;
+  const worker = async () => {
+    while (next < ids.length) {
+      const id = ids[next];
+      next += 1;
+      await rescan(id, { quiet: true });
+      refreshingFavs.done += 1;
+      renderRefreshButtons();
+    }
+  };
+  await Promise.all([worker(), worker()]);
+  refreshingFavs = null;
+  route(true);
+  notifyDone();
+}
+
+function renderRefreshButtons() {
+  for (const id of ['#refreshFavsHome', '#refreshFavsHistory']) {
+    const b = $(id);
+    b.disabled = Boolean(refreshingFavs);
+    b.textContent = refreshingFavs ? `Refreshing ${refreshingFavs.done}/${refreshingFavs.total}…` : '↻ Refresh prices';
+  }
 }
 
 function renderSteps(entry) {
@@ -2002,9 +2197,149 @@ function renderListings(entry) {
   $('#aiNotes').textContent = notes;
 }
 
+// ---------- follow-up questions ----------
+
+const asking = new Set();
+
+function askPrompt(entry, question) {
+  const ai = entry.ai || {};
+  const earlier = (entry.qa || []).filter((x) => x.a).slice(-3).map((x) => `Q: ${x.q}\nA: ${x.a}`).join('\n');
+  return `A Malaysian shopper in a Japanese shop is looking at the item in the photo: "${entry.override || ai.product_name || entry.webGuess || 'unknown item'}"${ai.variant ? ` (${ai.variant})` : ''}.
+Tag text: """${(entry.ocrText || entry.contextText || '').slice(0, 1500)}"""
+Price here: ${toNum(entry.yen) ? yen(entry.yen) : 'unknown'}. In Malaysia: ${rm(rangeValue(ai.my_new))} new, ${rm(rangeValue(ai.my_used))} second-hand.
+${earlier ? `Earlier questions:\n${earlier}\n` : ''}
+Their question: "${question}"
+Answer in plain English in two to four short sentences, specific to this exact model. Use Google Search when you need facts. If you aren't sure, say so. No preamble and no markdown.`;
+}
+
+async function askQuestion(id, question) {
+  const entry = findEntry(id);
+  if (!entry || !question || asking.has(id)) return;
+  if (!settings.apiKey) {
+    openSettings();
+    return;
+  }
+  asking.add(id);
+  const qa = { q: question, a: null, at: Date.now() };
+  entry.qa = [...(entry.qa || []), qa];
+  refresh(entry);
+  try {
+    const image = (await imageDb.get(entry.imageId || entry.id)) || entry.thumb.split(',')[1];
+    const { text } = await callGemini(image, askPrompt(entry, question), { raw: true });
+    qa.a = text.trim() || 'No answer came back. Try rephrasing.';
+  } catch (e) {
+    qa.error = e.message;
+  }
+  asking.delete(id);
+  refresh(entry);
+}
+
+function renderAsk(entry) {
+  $('#askPanel').hidden = !['done', 'failed'].includes(entry.status.vision);
+  $('#askBtn').disabled = asking.has(entry.id);
+  $('#askBtn').textContent = asking.has(entry.id) ? 'Asking…' : 'Ask';
+  $('#qaList').replaceChildren(...(entry.qa || []).map((x) => el('li', {},
+    el('p', { class: 'qa-q' }, x.q),
+    el('p', { class: `qa-a${x.error ? ' error-text' : ''}` }, x.a || x.error || 'Thinking…'),
+  )));
+}
+
+// ---------- photo viewer ----------
+
+const zoom = { scale: 1, x: 0, y: 0 };
+
+async function openPhoto(imageId, thumb) {
+  const img = $('#viewerImg');
+  img.src = thumb;
+  resetZoom();
+  $('#photoViewer').showModal();
+  const full = imageId ? await imageDb.get(imageId) : null;
+  if (full && $('#photoViewer').open) img.src = `data:image/jpeg;base64,${full}`;
+}
+
+function applyZoom() {
+  $('#viewerImg').style.transform = `translate(${zoom.x}px, ${zoom.y}px) scale(${zoom.scale})`;
+}
+
+function resetZoom() {
+  Object.assign(zoom, { scale: 1, x: 0, y: 0 });
+  applyZoom();
+}
+
+// Zoom to `scale` keeping the point under the finger (offset p from the stage centre) where it is.
+function zoomTo(scale, p, from = zoom) {
+  const s = Math.min(6, Math.max(1, scale));
+  zoom.x = p.x - (s / from.scale) * (p.x - from.x);
+  zoom.y = p.y - (s / from.scale) * (p.y - from.y);
+  zoom.scale = s;
+  if (s === 1) resetZoom();
+  else applyZoom();
+}
+
+function setupViewer() {
+  const stage = $('#viewerStage');
+  const pts = new Map();
+  let pinch = null;
+  let pan = null;
+  let lastTap = 0;
+  const fromCentre = (x, y) => {
+    const r = stage.getBoundingClientRect();
+    return { x: x - r.left - r.width / 2, y: y - r.top - r.height / 2 };
+  };
+  stage.addEventListener('pointerdown', (e) => {
+    stage.setPointerCapture?.(e.pointerId);
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pts.size === 2) {
+      const [a, b] = [...pts.values()];
+      pinch = { dist: Math.hypot(a.x - b.x, a.y - b.y), centre: fromCentre((a.x + b.x) / 2, (a.y + b.y) / 2), from: { ...zoom } };
+      pan = null;
+    } else if (pts.size === 1) {
+      pan = { x: e.clientX - zoom.x, y: e.clientY - zoom.y };
+      const now = Date.now();
+      if (now - lastTap < 300) {
+        zoomTo(zoom.scale > 1 ? 1 : 2.5, fromCentre(e.clientX, e.clientY));
+        lastTap = 0;
+      } else {
+        lastTap = now;
+      }
+    }
+  });
+  stage.addEventListener('pointermove', (e) => {
+    if (!pts.has(e.pointerId)) return;
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pts.size === 2 && pinch) {
+      const [a, b] = [...pts.values()];
+      const centre = fromCentre((a.x + b.x) / 2, (a.y + b.y) / 2);
+      zoomTo(pinch.from.scale * (Math.hypot(a.x - b.x, a.y - b.y) / pinch.dist), pinch.centre, pinch.from);
+      zoom.x += centre.x - pinch.centre.x;
+      zoom.y += centre.y - pinch.centre.y;
+      applyZoom();
+    } else if (pts.size === 1 && pan && zoom.scale > 1) {
+      zoom.x = e.clientX - pan.x;
+      zoom.y = e.clientY - pan.y;
+      applyZoom();
+    }
+  });
+  const end = (e) => {
+    pts.delete(e.pointerId);
+    if (pts.size < 2) pinch = null;
+    if (pts.size === 1) {
+      const [p] = [...pts.values()];
+      pan = { x: p.x - zoom.x, y: p.y - zoom.y };
+    }
+    if (zoom.scale <= 1.02) resetZoom();
+  };
+  stage.addEventListener('pointerup', end);
+  stage.addEventListener('pointercancel', end);
+  $('#viewerClose').addEventListener('click', () => $('#photoViewer').close());
+}
+
 function renderResult(entry) {
   current = entry;
   $('#resPhoto').src = entry.thumb;
+  if (document.activeElement !== $('#notesInput')) $('#notesInput').value = entry.notes || '';
+  $('#quickBanner').hidden = !(entry.quick && entry.ai && !running.has(entry.id));
+  renderAsk(entry);
   $('#resName').textContent = entry.ai?.product_name || entry.webGuess || (running.has(entry.id) ? 'Reading…' : 'Unidentified item');
   $('#resBrand').textContent = entry.ai?.brand || '';
   $('#resTime').textContent = dateFmt.format(entry.createdAt);
@@ -2069,7 +2404,8 @@ function paidYen(e) {
 
 // Tax-free needs ¥5,000 at one store on one day, so group bought items that way.
 function tripSummary() {
-  const bought = historyEntries().filter((e) => e.bought && e.kind !== 'shelf');
+  const tripId = currentTrip().id;
+  const bought = historyEntries().filter((e) => e.bought && e.kind !== 'shelf' && tripOf(e) === tripId);
   const groups = new Map();
   for (const e of bought) {
     const when = e.boughtAt || e.createdAt;
@@ -2111,7 +2447,13 @@ function tripSummary() {
 
 function renderTrip() {
   const t = tripSummary();
-  const budget = toNum(store.get('budget', null));
+  const trip = currentTrip();
+  $('#tripSelect').replaceChildren(
+    ...ensureTrips().map((tr) => el('option', { value: tr.id }, tr.name)),
+    el('option', { value: '__new' }, '＋ New trip…'),
+  );
+  $('#tripSelect').value = trip.id;
+  const budget = toNum(trip.budget);
   const input = $('#budgetInput');
   if (document.activeElement !== input) input.value = budget ?? '';
   const net = t.spentRm - t.refundRm;
@@ -2223,11 +2565,21 @@ function renderCompare(ids) {
 // ---------- routing ----------
 
 // keepScroll: re-render the current view in place (e.g. after tapping ♥) without jumping to the top.
+function renderNav(hash) {
+  const active = hash.startsWith('#/history') || hash.startsWith('#/compare') ? 'history' : hash.startsWith('#/trip') ? 'trip' : 'home';
+  for (const b of document.querySelectorAll('.bottom-nav [data-nav]')) {
+    if (b.dataset.nav === active) b.setAttribute('aria-current', 'page');
+    else b.removeAttribute('aria-current');
+  }
+}
+
 function route(keepScroll = false) {
   const hash = location.hash || '#/';
-  if (!hash.startsWith('#/history') && compareMode) {
-    compareMode = false;
-    compareSel = [];
+  renderNav(hash);
+  $('#tripLine').textContent = `Trip: ${currentTrip().name}`;
+  if (!hash.startsWith('#/history') && selectMode) {
+    selectMode = false;
+    selection = [];
   }
   const scan = hash.match(/^#\/scan\/([\w-]+)/);
   if (scan) {
@@ -2274,6 +2626,7 @@ function openSettings() {
   $('#defaultTaxFree').checked = settings.taxFree;
   $('#saveLocationToggle').checked = settings.saveLocation;
   $('#autoInfoToggle').checked = settings.autoInfo;
+  $('#buzzToggle').checked = settings.buzz;
   $('#settingsDialog').showModal();
 }
 
@@ -2285,6 +2638,7 @@ $('#settingsForm').addEventListener('submit', () => {
   store.set('taxFree', $('#defaultTaxFree').checked);
   store.set('saveLocation', $('#saveLocationToggle').checked);
   store.set('autoInfo', $('#autoInfoToggle').checked);
+  store.set('buzz', $('#buzzToggle').checked);
   route();
 });
 
@@ -2311,22 +2665,54 @@ $('#seeFavsBtn').addEventListener('click', () => {
 $('#favBtn').addEventListener('click', () => current && toggleFlag(current.id, 'fav'));
 $('#boughtBtn').addEventListener('click', () => current && toggleFlag(current.id, 'bought'));
 $('#budgetInput').addEventListener('input', (e) => {
-  store.set('budget', toNum(e.target.value));
+  saveTrip({ ...currentTrip(), budget: toNum(e.target.value) });
   renderTrip();
 });
+$('#tripSelect').addEventListener('change', (e) => {
+  if (e.target.value === '__new') newTrip();
+  else store.set('currentTrip', e.target.value);
+  historyTrip = null;
+  route(true);
+});
+$('#tripRename').addEventListener('click', () => {
+  const trip = currentTrip();
+  const name = prompt('Rename trip', trip.name);
+  if (name?.trim()) saveTrip({ ...trip, name: name.trim() });
+  route(true);
+});
+$('#historySearch').addEventListener('input', (e) => {
+  historySearch = e.target.value;
+  renderHistory();
+});
+$('#historyTrip').addEventListener('change', (e) => {
+  historyTrip = e.target.value;
+  renderHistory();
+});
+$('#refreshFavsHome').addEventListener('click', refreshFavourites);
+$('#refreshFavsHistory').addEventListener('click', refreshFavourites);
+$('#quickToggle').addEventListener('change', (e) => store.set('quick', e.target.checked));
+document.addEventListener('pointerdown', unlockAudio, { passive: true });
 for (const b of document.querySelectorAll('#historyFilter [data-filter]')) {
   b.addEventListener('click', () => {
     historyFilter = b.dataset.filter;
     renderHistory();
   });
 }
-$('#compareToggle').addEventListener('click', () => {
-  compareMode = !compareMode;
-  compareSel = [];
+$('#selectToggle').addEventListener('click', () => {
+  const on = !selectMode;
+  endSelect();
+  selectMode = on;
   renderHistory();
 });
-$('#compareGo').addEventListener('click', () => {
-  if (compareSel.length >= 2) location.hash = `#/compare/${compareSel.join(',')}`;
+$('#selCompare').addEventListener('click', () => {
+  if (selection.length >= 2 && selection.length <= 3) location.hash = `#/compare/${selection.join(',')}`;
+});
+$('#selFav').addEventListener('click', () => bulkFlag('fav'));
+$('#selBought').addEventListener('click', () => bulkFlag('bought'));
+$('#selDelete').addEventListener('click', () => {
+  const ids = [...selection];
+  endSelect();
+  removeManyWithUndo(ids);
 });
 $('#seeAllBtn').addEventListener('click', () => {
   historyFilter = 'all';
@@ -2375,6 +2761,40 @@ for (const b of document.querySelectorAll('#kindSwitch [data-kind]')) {
 }
 
 $('#rescanBtn').addEventListener('click', () => current && rescan(current.id));
+$('#navHome').addEventListener('click', () => { location.hash = '#/'; });
+$('#resPhoto').addEventListener('click', () => current && openPhoto(current.imageId || current.id, current.thumb));
+$('#notesInput').addEventListener('input', (e) => {
+  if (!current) return;
+  current.notes = e.target.value;
+  saveEntry(current);
+});
+$('#fixNameBtn').addEventListener('click', () => {
+  if (!current) return;
+  $('#fixName').hidden = !$('#fixName').hidden;
+  $('#fixNameInput').value = current.override || current.ai?.product_name || current.webGuess || '';
+  if (!$('#fixName').hidden) $('#fixNameInput').focus();
+});
+$('#fixName').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const name = $('#fixNameInput').value.trim();
+  if (!current || !name) return;
+  $('#fixName').hidden = true;
+  setOverride(current.id, name);
+});
+$('#fullCheckBtn').addEventListener('click', () => {
+  if (!current || running.has(current.id)) return;
+  current.quick = false;
+  saveEntry(current);
+  rescan(current.id);
+});
+$('#askForm').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const q = $('#askInput').value.trim();
+  if (!current || !q) return;
+  $('#askInput').value = '';
+  askQuestion(current.id, q);
+});
+setupViewer();
 
 $('#storeInput').addEventListener('input', (e) => {
   if (!current) return;
@@ -2438,7 +2858,7 @@ async function checkForUpdate() {
 $('#undoBtn').addEventListener('click', () => {
   if (!pendingDelete) return;
   clearTimeout(pendingDelete.timer);
-  saveEntry(pendingDelete.entry);
+  for (const e of pendingDelete.entries) saveEntry(e);
   pendingDelete = null;
   $('#undoToast').hidden = true;
   route(true);

@@ -20,18 +20,27 @@
       <span class="brand-mark" aria-hidden="true">買</span>
       <span class="brand-name">Kaimono Check</span>
     </button>
-    <div class="topbar-actions">
-      <button class="icon-btn" id="tripBtn" type="button" aria-label="Trip spending">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5 7.5h13l-1 12.5h-11l-1-12.5zM9 7.5V6a3 3 0 0 1 6 0v1.5"/></svg>
-      </button>
-      <button class="icon-btn" id="historyBtn" type="button" aria-label="Scan history">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7v5l3 2M3.5 12a8.5 8.5 0 1 0 2.5-6M3 4v4h4"/></svg>
-      </button>
-      <button class="icon-btn" id="settingsBtn" type="button" aria-label="Settings">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
-      </button>
-    </div>
+    <a class="trip-line" id="tripLine" href="#/trip"></a>
   </header>
+
+  <nav class="bottom-nav" aria-label="Main">
+      <button id="navHome" type="button" data-nav="home">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/></svg>
+        <span>Scan</span>
+      </button>
+      <button id="historyBtn" type="button" data-nav="history">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7v5l3 2M3.5 12a8.5 8.5 0 1 0 2.5-6M3 4v4h4"/></svg>
+        <span>History</span>
+      </button>
+      <button id="tripBtn" type="button" data-nav="trip">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5 7.5h13l-1 12.5h-11l-1-12.5zM9 7.5V6a3 3 0 0 1 6 0v1.5"/></svg>
+        <span>Trip</span>
+      </button>
+      <button id="settingsBtn" type="button" data-nav="settings">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+        <span>Settings</span>
+      </button>
+  </nav>
 
   <main>
     <!-- Home -->
@@ -59,6 +68,10 @@
           </div>
         </div>
         <p class="muted small" id="modeHint"></p>
+        <label class="switch">
+          <input type="checkbox" id="quickToggle">
+          <span>Quick scan: Shopee and Carousell only, the rest on tap (faster, cheaper)</span>
+        </label>
       </div>
 
       <label class="capture" for="cameraInput">
@@ -75,6 +88,7 @@
       <div class="recent" id="favWrap" hidden>
         <div class="section-head">
           <h2>Favourites</h2>
+          <button class="link" type="button" id="refreshFavsHome">↻ Refresh prices</button>
           <button class="link" type="button" id="seeFavsBtn">See all</button>
         </div>
         <ul class="history-list" id="favList"></ul>
@@ -92,7 +106,7 @@
     <!-- Result -->
     <section class="view" id="resultView" hidden>
       <div class="result-top">
-        <img class="result-photo" id="resPhoto" alt="">
+        <img class="result-photo zoomable" id="resPhoto" alt="Scan photo, tap to zoom">
         <div class="result-title">
           <p class="eyebrow" id="resBrand"></p>
           <h1 id="resName">Reading…</h1>
@@ -106,7 +120,14 @@
       <div class="chip-row">
         <button class="chip" id="favBtn" type="button" aria-pressed="false">♡ Favourite</button>
         <button class="chip" id="boughtBtn" type="button" aria-pressed="false">Mark as bought</button>
+        <button class="chip" id="fixNameBtn" type="button">✎ Fix name</button>
       </div>
+
+      <form class="fix-name" id="fixName" hidden>
+        <label class="visually-hidden" for="fixNameInput">Correct product name</label>
+        <input id="fixNameInput" type="text" autocomplete="off" placeholder="e.g. Victrix Pro BFG Reloaded">
+        <button class="btn btn-small btn-primary" type="submit">Re-price</button>
+      </form>
 
       <div class="variant-box" id="variantBox" hidden>
         <p class="variant-line" id="variantLine"></p>
@@ -127,6 +148,11 @@
       <div class="verdict" id="verdict" hidden>
         <p class="verdict-label" id="verdictLabel"></p>
         <p class="verdict-detail" id="verdictDetail"></p>
+      </div>
+
+      <div class="quick-banner" id="quickBanner" hidden>
+        <span>Quick scan: CeX via web, Mercari and compatibility were skipped.</span>
+        <button class="btn btn-small" type="button" id="fullCheckBtn">Run full check</button>
       </div>
 
       <div class="prices" id="prices" hidden>
@@ -188,6 +214,20 @@
       <details class="panel info" id="infoPanel" hidden open>
         <summary id="infoSummary">Is it worth it?</summary>
         <div class="info-body" id="infoBody"></div>
+      </details>
+
+      <details class="panel" id="askPanel" hidden open>
+        <summary>Ask about this item</summary>
+        <ul class="qa-list" id="qaList"></ul>
+        <form class="ask-form" id="askForm">
+          <input id="askInput" type="text" autocomplete="off" placeholder="Works with PC? Is this the 2025 model?" aria-label="Your question">
+          <button class="btn btn-small btn-primary" type="submit" id="askBtn">Ask</button>
+        </form>
+      </details>
+
+      <details class="panel" id="notesPanel" open>
+        <summary>Notes</summary>
+        <textarea class="notes-input" id="notesInput" rows="2" placeholder="e.g. size M, ask for discount, for Amir" aria-label="Notes"></textarea>
       </details>
 
       <details class="panel place" id="placePanel" open>
@@ -258,7 +298,11 @@
     <section class="view" id="historyView" hidden>
       <div class="section-head">
         <h1>Scan history</h1>
-        <button class="link" type="button" id="compareToggle">Compare</button>
+        <button class="link" type="button" id="selectToggle">Select</button>
+      </div>
+      <div class="history-tools">
+        <input class="search-input" id="historySearch" type="search" placeholder="Search items, stores, notes" aria-label="Search scans">
+        <select class="trip-select" id="historyTrip" aria-label="Trip"></select>
       </div>
       <div class="segmented seg-3" id="historyFilter" role="radiogroup" aria-label="Show">
         <button type="button" role="radio" data-filter="all" aria-checked="true">All</button>
@@ -270,11 +314,17 @@
         <button type="button" role="radio" data-sort="nearest" aria-checked="false">Nearest</button>
       </div>
       <p class="muted small" id="historyHint" hidden></p>
+      <button class="btn btn-small" type="button" id="refreshFavsHistory" hidden>↻ Refresh prices</button>
       <p class="muted" id="historyEmpty">No scans yet.</p>
       <ul class="history-list" id="historyList"></ul>
-      <div class="compare-bar" id="compareBar" hidden>
-        <span id="compareCount">0 of 3 picked</span>
-        <button class="btn btn-small btn-primary" type="button" id="compareGo" disabled>Compare</button>
+      <div class="compare-bar select-bar" id="selectBar" hidden>
+        <span id="selectCount">0 selected</span>
+        <div class="select-actions">
+          <button class="btn btn-small" type="button" id="selCompare" disabled title="Pick 2 or 3">Compare</button>
+          <button class="btn btn-small" type="button" id="selFav" aria-label="Favourite">♥</button>
+          <button class="btn btn-small" type="button" id="selBought">✓ Bought</button>
+          <button class="btn btn-small btn-primary" type="button" id="selDelete">Delete</button>
+        </div>
       </div>
     </section>
 
@@ -283,6 +333,11 @@
       <div class="section-head">
         <h1>Trip spending</h1>
       </div>
+      <div class="trip-picker">
+        <select class="trip-select" id="tripSelect" aria-label="Trip"></select>
+        <button class="btn btn-small btn-ghost" type="button" id="tripRename">Rename</button>
+      </div>
+      <p class="muted small">New scans are saved to this trip.</p>
       <div class="trip-card">
         <label class="budget-field">
           <span>Trip budget</span>
@@ -352,11 +407,21 @@
         <input type="checkbox" id="autoInfoToggle">
         <span>Load product info (worth it?, alternatives) on every scan. Costs an extra Gemini search per scan.</span>
       </label>
+      <label class="switch">
+        <input type="checkbox" id="buzzToggle">
+        <span>Buzz and chime when a scan finishes (iPhone: chime, plus a haptic tap on iOS 18+)</span>
+      </label>
       <div class="dialog-actions">
         <button class="btn btn-ghost btn-danger" type="button" id="clearHistoryBtn">Clear history</button>
         <button class="btn btn-primary" value="save" id="saveSettingsBtn">Save</button>
       </div>
     </form>
+  </dialog>
+
+  <dialog class="viewer" id="photoViewer" aria-label="Photo">
+    <div class="viewer-stage" id="viewerStage"><img id="viewerImg" alt="Scan photo"></div>
+    <button class="viewer-close" id="viewerClose" type="button" aria-label="Close">✕</button>
+    <p class="viewer-hint">Pinch or double-tap to zoom</p>
   </dialog>
 
   <div class="update-bar" id="undoToast" role="status" hidden>
