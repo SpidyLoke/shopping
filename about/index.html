@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Kaimono Check</title>
+  <meta name="description" content="Snap a price tag in Japan and see straight away whether it is cheaper than buying in Malaysia.">
+  <meta name="theme-color" content="#09090b">
+  <link rel="icon" href="../icons/icon.svg" type="image/svg+xml">
+  <link rel="preload" href="../fonts/Geist-Variable.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="about.css">
+</head>
+<body>
+  <nav class="nav" aria-label="Main">
+    <a class="nav-brand" href="#top"><span class="mark">買</span>Kaimono</a>
+    <div class="nav-links">
+      <a href="#checks">What it checks</a>
+      <a href="#how">How it works</a>
+    </div>
+    <a class="nav-cta" href="../">Open app</a>
+  </nav>
+
+  <main class="page" id="top">
+    <header class="hero">
+      <div class="hero-copy">
+        <h1>Is it really cheaper <span class="inline-img" style="background-image:url('img/tag.webp')" role="img" aria-label="A Japanese price tag"></span> than back home?</h1>
+        <p class="lede">Snap a price tag in Japan. Kaimono reads it, turns yen into ringgit and checks Shopee, Carousell and CeX Malaysia before you reach the till.</p>
+        <div class="hero-ctas">
+          <a class="btn btn-red" href="../">Open the app <span class="btn-orb" aria-hidden="true"><svg viewBox="0 0 256 256"><path d="M198,64V168a6,6,0,0,1-12,0V78.48L68.24,196.24a6,6,0,0,1-8.48-8.48L177.52,70H88a6,6,0,0,1,0-12H192A6,6,0,0,1,198,64Z"/></svg></span></a>
+          <a class="btn btn-ghost" href="#how">How it works</a>
+        </div>
+      </div>
+      <figure class="hero-phone reveal-img">
+        <img src="img/result.webp" width="780" height="1688" alt="Kaimono showing a verdict and Malaysian prices for Sony headphones">
+      </figure>
+    </header>
+
+    <section class="marquee" aria-label="Where it looks">
+      <div class="marquee-track">
+        <span>Shopee</span><span>Carousell</span><span>CeX Malaysia</span><span>Mercari</span><span>Yahoo Auctions</span><span>Bic Camera</span><span>Yodobashi</span><span>Hard Off</span><span>Book Off</span><span>Don Quijote</span>
+        <span aria-hidden="true">Shopee</span><span aria-hidden="true">Carousell</span><span aria-hidden="true">CeX Malaysia</span><span aria-hidden="true">Mercari</span><span aria-hidden="true">Yahoo Auctions</span><span aria-hidden="true">Bic Camera</span><span aria-hidden="true">Yodobashi</span><span aria-hidden="true">Hard Off</span><span aria-hidden="true">Book Off</span><span aria-hidden="true">Don Quijote</span>
+      </div>
+    </section>
+
+    <section class="chapter" id="checks">
+      <h2 class="chapter-title">Everything you would check, <em>before the queue.</em></h2>
+      <div class="bento">
+        <article class="card card-verdict">
+          <div class="card-text">
+            <h3>A verdict, not a spreadsheet</h3>
+            <p>Buy, maybe or skip, with the ringgit difference against new and used prices at home.</p>
+          </div>
+          <div class="card-shot"><img class="reveal-img" src="img/result-dark.webp" width="780" height="1688" alt="Scan result in dark mode" loading="lazy"></div>
+        </article>
+        <article class="card card-used">
+          <h3>Reads second-hand grades</h3>
+          <p>Shop grades and flaws on the tag are translated, then priced against Malaysian second-hand.</p>
+          <div class="grades" aria-hidden="true"><span>A</span><span>B</span><span>C</span><span>ジャンク</span></div>
+        </article>
+        <article class="card card-volt">
+          <span class="big">100V</span>
+          <h3>Works in Malaysia?</h3>
+          <p>Voltage, region locks and warranty, flagged.</p>
+        </article>
+        <article class="card card-tax">
+          <span class="big">¥5,000+</span>
+          <h3>Tax-free maths</h3>
+          <p>Refunds counted per store.</p>
+        </article>
+        <article class="card card-trip">
+          <div>
+            <span class="huge">RM 894</span>
+            <h3>saved on this trip</h3>
+          </div>
+          <p>Set a budget, track what you bought at each store and see what you saved against buying at home.</p>
+          <div class="meter" aria-hidden="true"><span></span></div>
+        </article>
+      </div>
+    </section>
+
+    <section class="chapter scrub-wrap">
+      <p class="scrub">Every tag gets translated, priced in ringgit, checked against new and used prices at home, and judged. You just point the camera.</p>
+    </section>
+
+    <section class="chapter" id="how">
+      <h2 class="chapter-title">Four taps from tag <em>to answer.</em></h2>
+      <div class="accordion">
+        <button class="slice is-open" type="button" aria-expanded="true">
+          <span class="slice-title">Snap</span>
+          <span class="slice-body">
+            <img src="img/home.webp" width="780" height="1688" alt="" loading="lazy">
+            <span class="slice-text">Photograph a tag, a box or a whole shelf. Switch to Used in second-hand shops.</span>
+          </span>
+        </button>
+        <button class="slice" type="button" aria-expanded="false">
+          <span class="slice-title">Read</span>
+          <span class="slice-body">
+            <img src="img/tag.webp" width="480" height="400" alt="" loading="lazy">
+            <span class="slice-text">Japanese is read and translated, and the exact model is pinned down, so a Pro is never priced as a Pro Reloaded.</span>
+          </span>
+        </button>
+        <button class="slice" type="button" aria-expanded="false">
+          <span class="slice-title">Compare</span>
+          <span class="slice-body">
+            <img src="img/history.webp" width="780" height="1688" alt="" loading="lazy">
+            <span class="slice-text">Shopee, Carousell, CeX Malaysia and Japanese resale prices, side by side, with stores you passed sorted by distance.</span>
+          </span>
+        </button>
+        <button class="slice" type="button" aria-expanded="false">
+          <span class="slice-title">Decide</span>
+          <span class="slice-body">
+            <img src="img/trip.webp" width="780" height="1688" alt="" loading="lazy">
+            <span class="slice-text">Mark it bought and it lands in your trip, against your budget. Close the app mid-scan and Telegram tells you when it is done.</span>
+          </span>
+        </button>
+      </div>
+    </section>
+
+    <section class="chapter showcase">
+      <h2 class="chapter-title">Built for a whole trip, <em>not one tag.</em></h2>
+      <div class="phones">
+        <img class="reveal-img" src="img/history.webp" width="780" height="1688" alt="History of scans" loading="lazy">
+        <img class="reveal-img" src="img/home-dark.webp" width="780" height="1688" alt="Home screen in dark mode" loading="lazy">
+        <img class="reveal-img" src="img/trip.webp" width="780" height="1688" alt="Trip budget and savings" loading="lazy">
+      </div>
+    </section>
+
+    <section class="action">
+      <h2>Next tag you see, <em>point and know.</em></h2>
+      <a class="btn btn-red btn-xl" href="../">Open Kaimono <span class="btn-orb" aria-hidden="true"><svg viewBox="0 0 256 256"><path d="M198,64V168a6,6,0,0,1-12,0V78.48L68.24,196.24a6,6,0,0,1-8.48-8.48L177.52,70H88a6,6,0,0,1,0-12H192A6,6,0,0,1,198,64Z"/></svg></span></a>
+      <p class="fine">Add it to your home screen from Safari's Share menu. It runs on your own Google API keys, and your scans stay on your phone.</p>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <span>Kaimono Check</span>
+    <nav aria-label="Footer">
+      <a href="../">App</a>
+      <a href="https://github.com/SpidyLoke/shopping#readme">Setup guide</a>
+      <a href="https://github.com/SpidyLoke/shopping">Source</a>
+    </nav>
+  </footer>
+
+  <script src="vendor/gsap.min.js"></script>
+  <script src="vendor/ScrollTrigger.min.js"></script>
+  <script src="about.js"></script>
+</body>
+</html>

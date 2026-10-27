@@ -1,6 +1,7 @@
 # Kaimono Check
 
 **Live app:** https://spidyloke.github.io/shopping/
+**About page:** https://spidyloke.github.io/shopping/about/ (also linked at the bottom of Settings)
 
 Phone web app for shopping in Japan. Snap a box, price tag or shelf label and it:
 
