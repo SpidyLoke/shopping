@@ -3,7 +3,7 @@
 // lives in localStorage on the user's device only.
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.10.27-14';
+const APP_VERSION = '2026.10.28-1';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -2967,10 +2967,106 @@ function renderTrip() {
 
 // ---------- side-by-side compare ----------
 
-function renderCompare(ids) {
+// ---------- which one to get ----------
+// Gemini weighs the scans against each other (specs, compatibility, value at these prices) and picks one.
+// Answers are kept per set of scans, so reopening the comparison shows the last pick.
+
+const picking = new Set();
+const pickKey = (items) => items.map((e) => e.id).sort().join(',');
+
+function pickPrompt(items, need) {
+  const describe = (e, i) => {
+    const ai = e.ai || {};
+    const issues = seriousIssues(e).map((x) => x.en).join('; ');
+    const compat = compatFor(e).filter((c) => c.status !== 'ok').map((c) => `${c.topic}: ${c.note}`).join('; ');
+    return `${i + 1}. "${e.override || ai.product_name || e.webGuess || 'unknown item'}"${ai.brand ? ` by ${ai.brand}` : ''}${ai.variant ? ` (${ai.variant})` : ''}${e.secondHand ? ', second-hand' : ''}
+   Price here: ${toNum(e.yen) ? `${yen(paidYen(e))} (about ${rm(japanPrice(e).rm)})` : 'unknown'}${storeName(e) ? ` at ${storeName(e)}` : ''}
+   Malaysia: ${rm(rangeValue(ai.my_new))} new, ${rm(rangeValue(ai.my_used))} second-hand${issues ? `\n   Issues on the tag: ${issues}` : ''}${compat ? `\n   Malaysia caveats: ${compat}` : ''}`;
+  };
+  return `A Malaysian shopper in Japan is choosing between these ${items.length} products (photos attached in the same order):
+${items.map(describe).join('\n')}
+${need ? `What matters to them: "${need}"\n` : ''}
+Use Google Search for specs and reviews. Decide which one is more worth buying for them, considering what each does, compatibility (phones, platforms, regions, 240V), build and reviews, and value at these prices compared with buying in Malaysia. If the right choice depends on something you don't know (e.g. iPhone or Android), say so and say which to get in each case.
+
+Reply with only a JSON object inside a \`\`\`json code block:
+{
+  "pick": 1,
+  "headline": "short answer naming the products, e.g. 'The iPhone card if you use an iPhone, the E40 if Android'",
+  "reason": "one or two sentences",
+  "depends_on": "the deciding question, or null",
+  "differences": [{ "aspect": "short label", "values": ["for product 1", "for product 2"] }],
+  "best_for": ["who product 1 suits", "who product 2 suits"]
+}
+"pick" is the 1-based number of the better choice, or null if it truly depends. Up to 5 differences that actually matter, one short value per product in order. Keep every string short.`;
+}
+
+async function pickBest(ids, need) {
   const items = ids.map(findEntry).filter(Boolean).slice(0, 3);
+  const key = pickKey(items);
+  if (items.length < 2 || picking.has(key)) return;
+  if (!settings.apiKey) {
+    openSettings();
+    return;
+  }
+  picking.add(key);
+  const picks = store.get('picks', {});
+  delete picks[key]?.error;
+  route(true);
+  try {
+    const thumbs = items.map((e) => e.thumb.split(',')[1]).filter(Boolean);
+    const { json } = await callGemini(thumbs, pickPrompt(items, need));
+    picks[key] = { ...json, need, order: items.map((e) => e.id), at: Date.now() };
+  } catch (e) {
+    picks[key] = { ...(picks[key] || {}), error: e.message };
+  }
+  // Keep the 30 most recent picks.
+  const recent = Object.entries(picks).sort((a, b) => (b[1].at || 0) - (a[1].at || 0)).slice(0, 30);
+  store.set('picks', Object.fromEntries(recent));
+  picking.delete(key);
+  if (location.hash.startsWith('#/compare/')) route(true);
+}
+
+function renderPick(items) {
+  const key = pickKey(items);
+  const pick = store.get('picks', {})[key];
+  const busy = picking.has(key);
+  $('#pickCard').hidden = items.length < 2;
+  $('#pickBtn').disabled = busy;
+  $('#pickBtn').textContent = busy ? 'Comparing…' : pick?.headline ? 'Ask again' : 'Which should I get?';
+  if (document.activeElement !== $('#pickNeed')) $('#pickNeed').value = pick?.need || '';
+  const name = (i) => items[i]?.ai?.product_name || `Item ${i + 1}`;
+  const winner = Number.isInteger(pick?.pick) && pick.pick >= 1 && pick.pick <= items.length ? pick.pick - 1 : null;
+  const list = (x) => (Array.isArray(x) ? x.filter(Boolean) : []);
+  $('#pickResult').replaceChildren(...[
+    pick?.error ? el('p', { class: 'error' }, pick.error) : null,
+    pick?.headline ? el('div', { class: 'pick-answer' },
+      el('p', { class: 'pick-headline' }, pick.headline),
+      winner !== null ? el('p', { class: 'pick-winner' }, `Pick: ${name(winner)}`) : null,
+      pick.reason ? el('p', { class: 'pick-reason' }, pick.reason) : null,
+      pick.depends_on ? el('p', { class: 'pick-depends' }, `Depends on: ${pick.depends_on}`) : null,
+      list(pick.differences).length ? el('div', { class: 'cmp pick-diffs', style: `--cols: ${items.length}` },
+        list(pick.differences).map((d) => el('div', { class: 'cmp-row' },
+          el('p', { class: 'cmp-label' }, d.aspect),
+          el('div', { class: 'cmp-cells' }, items.map((_, i) => el('div', { class: `cmp-cell${i === winner ? ' best' : ''}` }, list(d.values)[i] || '–'))),
+        ))) : null,
+      list(pick.best_for).length ? el('div', { class: 'cmp pick-diffs', style: `--cols: ${items.length}` },
+        el('div', { class: 'cmp-row' },
+          el('p', { class: 'cmp-label' }, 'Best for'),
+          el('div', { class: 'cmp-cells' }, items.map((_, i) => el('div', { class: 'cmp-cell' }, list(pick.best_for)[i] || '–'))),
+        )) : null,
+    ) : null,
+  ].filter(Boolean));
+  return winner;
+}
+
+function renderCompare(ids) {
+  let items = ids.map(findEntry).filter(Boolean).slice(0, 3);
+  // A saved pick numbers the products in the order they were asked about; show them in that order.
+  const order = store.get('picks', {})[pickKey(items)]?.order;
+  if (Array.isArray(order)) items = [...items].sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
   const wrap = $('#cmpTable');
   wrap.style.setProperty('--cols', items.length || 1);
+  const winner = renderPick(items);
   if (items.length < 2) {
     wrap.replaceChildren(el('p', { class: 'muted' }, 'Pick at least two scans in History to compare.'));
     return;
@@ -3016,8 +3112,9 @@ function renderCompare(ids) {
     }, (e) => distanceFromHere(e)]);
   }
 
-  const head = el('div', { class: 'cmp-head' }, items.map((e) => el('a', { class: 'cmp-item', href: `#/scan/${e.id}` },
+  const head = el('div', { class: 'cmp-head' }, items.map((e, i) => el('a', { class: `cmp-item${i === winner ? ' picked' : ''}`, href: `#/scan/${e.id}` },
     el('img', { src: e.thumb, alt: '' }),
+    i === winner ? el('span', { class: 'tag tag-buy pick-badge' }, 'Pick') : null,
     el('span', {}, e.ai?.product_name || e.webGuess || 'Unidentified item'),
   )));
   const body = rows.map(([label, cell, score]) => {
@@ -3455,6 +3552,11 @@ $('#fullCheckBtn').addEventListener('click', () => {
   rescan(current.id);
 });
 $('#worthBtn').addEventListener('click', () => current && loadInfo(current.id));
+$('#pickForm').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const m = location.hash.match(/^#\/compare\/([\w,-]+)/);
+  if (m) pickBest(m[1].split(','), $('#pickNeed').value.trim());
+});
 for (const [sel, kind] of [['#myNewSrc', 'new'], ['#myUsedSrc', 'used'], ['#jpUsedSrc', 'jp']]) {
   const card = $(sel).closest('.price-card');
   card.addEventListener('click', () => card.classList.contains('tappable') && openSources(kind));

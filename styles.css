@@ -1282,3 +1282,21 @@ dialog.sheet { max-height: 85dvh; overflow-y: auto; overscroll-behavior: contain
 .source-item .link { align-self: flex-start; padding: 2px 0; text-decoration: none; }
 #sourceNote:empty { display: none; }
 #sourceSearch { margin-top: 12px; }
+
+/* ---------- Compare: which one to get ---------- */
+
+.pick-card { display: flex; flex-direction: column; gap: 10px; }
+.pick-form { display: flex; flex-direction: column; gap: 8px; }
+.pick-form input { min-height: 46px; padding: 0 14px; border: 0; border-radius: var(--r-input); background: var(--surface); box-shadow: var(--shadow); color: var(--text); }
+.pick-form input:focus { outline: 2px solid var(--accent); outline-offset: -2px; }
+.pick-answer { display: flex; flex-direction: column; gap: 6px; padding: 16px 18px; border-radius: var(--r-card); background: var(--accent-soft); }
+.pick-headline { font-size: 1.15rem; font-weight: 700; letter-spacing: -0.015em; line-height: 1.25; }
+.pick-winner { font-weight: 650; color: var(--good); }
+.pick-reason { font-size: 0.92rem; color: var(--muted); }
+.pick-depends { font-size: 0.88rem; font-weight: 600; color: var(--warn); }
+.pick-diffs { margin-top: 4px; }
+.pick-diffs .cmp-row { padding: 6px 0; }
+.pick-diffs .cmp-cell { padding: 4px 6px; font-weight: 500; font-size: 0.86rem; }
+.cmp-item { position: relative; }
+.cmp-item.picked img { box-shadow: 0 0 0 3px var(--good); }
+.pick-badge { position: absolute; top: 8px; left: 8px; }

@@ -150,6 +150,8 @@ Switch the home screen to **Shelf** and photograph a whole shelf or display case
 
 In History tap **Compare**, pick 2 or 3 scans, then **Compare**. Price, Malaysian prices, Japan resale, saving, verdict, condition, compatibility and distance line up in columns with the best value highlighted. The "Same item at other stores" list on a result has a shortcut to it.
 
+For two different products (e.g. two versions of a tracker), tap **Which should I get?** at the top. Optionally say what matters to you first ("I use Android", "for travel"). Gemini looks up specs and reviews and answers with a pick, the reason, what it depends on if it can't know, and the differences that matter side by side. The pick is marked on its column and saved, so reopening the comparison shows it; **Ask again** re-checks.
+
 ### Rescan
 
 Every scan in **Recent scans** and **History** has a ↻ button beside it, and the same button sits at the top of each result. It reruns whatever failed (red outline means something did) and refreshes the Malaysian prices, using the full-size photo saved on your phone.
