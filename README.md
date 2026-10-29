@@ -191,7 +191,7 @@ Under Buy / Maybe / Skip, short labels say where the Japan price sits against wh
 | **RM X over CeX** | Above CeX's used price, though still under the Malaysian second-hand price |
 | **Cheaper on Mercari** | Japan's own second-hand market has it at least 15% cheaper |
 
-Labels that mean you could make money back show first, and in green on History rows. The **Resale profit** chip in History lists only those. Compare shows them in a **Deal** row.
+Labels that mean you could make money back show first. On History, Home and Trip rows the badge itself carries the short form (**CeX +RM 115**, **Resell +RM 137**, **Under CeX**, **RM 100 off new**, **Dearer here**, **Over CeX**, **Mercari cheaper**), with any second label under the price. A problem comes before any deal: **Power issue** (or Region, Warranty…) when it won't work properly in Malaysia, **Check condition** for junk or as-is tags. Buy / Maybe / Skip only shows when there are no prices to compare. The **Resale profit** chip in History lists only those. Compare shows them in a **Deal** row.
 
 ### Verdict rules
 

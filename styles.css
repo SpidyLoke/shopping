@@ -1640,3 +1640,7 @@ dialog.camera::backdrop { background: #000; }
 /* the dark theme's green is light, so dark text on it */
 :root[data-theme="dark"] .deal-profit { color: #0d1020; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .deal-profit { color: #0d1020; } }
+.tag-profit { background: var(--good); color: #fff; }
+:root[data-theme="dark"] .tag-profit { color: #0d1020; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .tag-profit { color: #0d1020; } }
+.history-item > .tag { max-width: 46%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
