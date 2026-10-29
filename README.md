@@ -188,10 +188,27 @@ A built-in keyword check flags issues the moment the text is read, so you still 
 
 Shipping, luggage allowance and warranty aren't factored in. Gemini flags Japan-only variants, voltage or region-lock issues in the notes.
 
+### Gestures and shortcuts
+
+- **Long-press a scan** (Home, History, Trip) for quick actions: open, favourite, mark bought, rescan, compare with others, delete.
+- **Swipe a scan right** to favourite it; swipe left to delete.
+- **Swipe in from the left edge** of the screen to go back.
+- **Pull down** on a result to re-check its prices, or on Home, History or Trip to refresh the exchange rate, favourites and any scans that failed.
+- **Undo** appears for a few seconds after favouriting, marking bought, deleting and every rescan (Undo after a rescan, a new photo or a corrected name puts the previous result back).
+- **Filter chips** in History: Buy, Maybe, Skip, Used, Clothes and your most-visited stores.
+- **Built-in camera:** tapping Take a photo opens a viewfinder inside the app. Item and Shelf scan the moment you press the shutter; Clothes lets you take several shots, then **Check**. The torch button appears where the phone allows it. iPhone may ask for camera permission again after the app has been closed for a while; turn Built-in camera off in Settings to use the iPhone camera instead.
+- While a scan is loading, the result's layout shows straight away with placeholders that fill in as each price arrives.
+
 ## Settings
 
 - **Gemini model:** defaults to `gemini-flash-latest`, Google's alias for the current Flash model, so it keeps working when versions retire. Pin a specific model ID here if you prefer.
 - **Back up / Restore:** saves everything (scans, photos, trips, keys and the scan server pairing) to one file you keep in Files, and puts it back. A home-screen app's data is deleted when you remove it from the home screen, so back up first if you reinstall (for example to pick up a new app icon).
+- **Layout and look** (applies straight away):
+  - **Lists:** List, Compact (smaller rows, more on screen) or Grid (big photo tiles).
+  - **Results:** Page, or Sheet (your photo fills the top and the result slides up over it).
+  - **Theme** Auto, Light or Dark; **Text** Small, Default or Large; **Colour** indigo, green, red or black; **Show first** RM or ¥.
+  - **One-hand mode:** bigger buttons, the content on Home sits lower, Back moves just above the tab bar and Settings opens from the bottom with Save at the bottom.
+  - **Built-in camera** on or off.
 - **Clear history:** deletes all saved scans from the phone.
 - **API keys** and **Background scanning** fold away once set up. Saved keys and tokens are never shown or refilled; the box shows a hint like "Saved · AIza…x9Q2", and leaving it empty keeps what's saved. With no password-style fields and no form, iPhone doesn't offer to save a password. The × at the top closes Settings without saving.
 

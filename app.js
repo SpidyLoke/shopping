@@ -3,7 +3,7 @@
 // lives in localStorage on the user's device only.
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.10.28-1';
+const APP_VERSION = '2026.10.29-1';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -49,7 +49,51 @@ const settings = {
   get ntfyTopic() { return store.get('ntfyTopic', ''); },
   get ntfyToken() { return store.get('ntfyToken', ''); },
   get telegram() { return store.get('telegram', null); }, // { token, chatId, bot }
+  // Layout and look (Settings, applied straight away)
+  get listStyle() { return store.get('listStyle', 'list'); }, // list | compact | grid
+  get resultStyle() { return store.get('resultStyle', 'page'); }, // page | sheet
+  get oneHand() { return store.get('oneHand', false); },
+  get liveCamera() { return store.get('liveCamera', true); },
+  get theme() { return store.get('theme', 'auto'); }, // auto | light | dark
+  get textSize() { return store.get('textSize', 'default'); },
+  get accent() { return store.get('accent', 'indigo'); },
+  get priceFirst() { return store.get('priceFirst', 'rm'); }, // rm | yen
 };
+
+// Accent colours: [text/icon colour, filled-button colour, text on filled buttons], light then dark.
+const ACCENTS = {
+  indigo: null, // the stylesheet's own colours
+  green: [['#17704a', '#1d7a50', '#ffffff'], ['#6fdca6', '#2a8a5c', '#ffffff']],
+  red: [['#c41e3a', '#c41e3a', '#ffffff'], ['#ff7b8c', '#d33a50', '#ffffff']],
+  black: [['#161830', '#161830', '#ffffff'], ['#eef0f7', '#eef0f7', '#0d1020']],
+};
+const darkQuery = window.matchMedia('(prefers-color-scheme: dark)');
+
+function isDark() {
+  return settings.theme === 'dark' || (settings.theme === 'auto' && darkQuery.matches);
+}
+
+// Puts the layout and look settings on <html> as data attributes the stylesheet reads.
+function applyLook() {
+  const html = document.documentElement;
+  if (settings.theme === 'auto') delete html.dataset.theme;
+  else html.dataset.theme = settings.theme;
+  html.dataset.text = settings.textSize;
+  html.dataset.list = settings.listStyle;
+  html.dataset.result = settings.resultStyle;
+  html.dataset.price = settings.priceFirst;
+  html.toggleAttribute('data-onehand', settings.oneHand);
+  const accent = ACCENTS[settings.accent]?.[isDark() ? 1 : 0];
+  for (const [i, prop] of ['--accent', '--accent-bg', '--accent-ink'].entries()) {
+    if (accent) html.style.setProperty(prop, accent[i]);
+    else html.style.removeProperty(prop);
+  }
+  if (accent) html.style.setProperty('--accent-soft', `color-mix(in srgb, ${accent[0]} ${isDark() ? 14 : 9}%, transparent)`);
+  else html.style.removeProperty('--accent-soft');
+  const bg = getComputedStyle(html).getPropertyValue('--bg').trim();
+  for (const m of document.querySelectorAll('meta[name="theme-color"]')) m.content = bg;
+}
+darkQuery.addEventListener?.('change', () => applyLook());
 
 // Full-size photos live in IndexedDB (localStorage is too small) so old scans can be re-read properly.
 const imageDb = {
@@ -293,9 +337,9 @@ function toJpeg(src, maxSide, quality) {
 
 let rate = null;
 
-async function fetchRate() {
+async function fetchRate(force = false) {
   const cached = store.get('rate');
-  if (cached && Date.now() - cached.fetchedAt < RATE_TTL_MS) {
+  if (!force && cached && Date.now() - cached.fetchedAt < RATE_TTL_MS) {
     rate = cached;
     return rate;
   }
@@ -1041,7 +1085,9 @@ async function startScanPhotos(photos) {
 }
 
 // Re-run a saved scan from its stored photo: redoes any failed step and refreshes the prices.
-async function rescan(id, { quiet = false } = {}) {
+// `before`: a copy of the scan from before the change that led to this rescan (a new photo, a corrected
+// name); Undo goes back to it. Quiet rescans (refreshing favourites) don't offer Undo.
+async function rescan(id, { quiet = false, before = null, undone = null } = {}) {
   if (running.has(id)) return;
   const entry = findEntry(id);
   if (!entry) return;
@@ -1049,8 +1095,17 @@ async function rescan(id, { quiet = false } = {}) {
     openSettings();
     return;
   }
+  const snapshot = before || JSON.parse(JSON.stringify(entry));
   const image = (current?.id === id && currentImageB64) || (await imageDb.get(entry.imageId || id)) || entry.thumb.split(',')[1];
   await runScan(entry, image, { quiet });
+  if (quiet || running.has(id)) return;
+  showUndo('Scan updated', () => {
+    const restored = { ...snapshot };
+    saveEntry(restored);
+    if (current?.id === id) current = restored;
+    undone?.();
+    route(true);
+  });
 }
 
 // More photos of a scanned item (the label, another angle): read everything again with them included.
@@ -1071,6 +1126,7 @@ async function addPhotos(id, files) {
     }
   }
   if (!photos.length) return;
+  const before = JSON.parse(JSON.stringify(entry));
   const stamp = Date.now().toString(36);
   const added = photos.map((p, i) => ({ id: `${id}-${stamp}${i}`, thumb: p.thumb }));
   await Promise.all(photos.map((p, i) => imageDb.put(added[i].id, p.b64)));
@@ -1079,7 +1135,7 @@ async function addPhotos(id, files) {
   entry.status = { vision: 'pending', translate: 'pending', search: 'pending' };
   if (!entry.yenEdited) entry.yen = null;
   saveEntry(entry);
-  await rescan(id);
+  await rescan(id, { before, undone: () => added.forEach((a) => imageDb.del(a.id)) });
 }
 
 function refresh(entry) {
@@ -1865,13 +1921,28 @@ function show(viewId, keepScroll = false) {
   if (changed && !keepScroll) window.scrollTo(0, 0);
 }
 
+function setFlag(entry, flag, value) {
+  entry[flag] = value;
+  if (flag === 'bought') entry.boughtAt = value ? entry.boughtAt || Date.now() : null;
+  saveEntry(entry);
+}
+
+const FLAG_TEXT = { fav: ['Added to favourites', 'Removed from favourites'], bought: ['Marked as bought', 'No longer marked as bought'] };
+
 function toggleFlag(id, flag) {
   const entry = findEntry(id);
   if (!entry) return;
-  entry[flag] = !entry[flag];
-  if (flag === 'bought') entry.boughtAt = entry.bought ? Date.now() : null;
-  saveEntry(entry);
+  const before = { value: Boolean(entry[flag]), boughtAt: entry.boughtAt };
+  setFlag(entry, flag, !before.value);
   route(true);
+  showUndo(FLAG_TEXT[flag][entry[flag] ? 0 : 1], () => {
+    const e = findEntry(id);
+    if (!e) return;
+    setFlag(e, flag, before.value);
+    e.boughtAt = before.boughtAt;
+    saveEntry(e);
+    route(true);
+  });
 }
 
 let historyFilter = 'all';
@@ -1893,7 +1964,7 @@ function historyItem(entry, opts = {}) {
   // One line under the name: price, then where and when (distance instead of date when sorting by Near).
   const dist = distanceFromHere(entry);
   const meta = [
-    jp ? rm(jp) : null,
+    settings.priceFirst === 'yen' && toNum(entry.yen) ? yen(paidYen(entry)) : jp ? rm(jp) : null,
     entry.bought ? 'Bought' : null,
     storeName(entry) || entry.place?.area,
     historySort === 'nearest' && dist !== null ? fmtAway(dist) : shortDate.format(entry.createdAt),
@@ -1921,54 +1992,83 @@ function historyItem(entry, opts = {}) {
   ));
 }
 
-// ---------- swipe to delete ----------
+// ---------- swipe, long-press and undo ----------
 
 function swipeRow(entry, row) {
-  const li = el('li', { class: 'swipe' }, el('div', { class: 'swipe-bg', 'aria-hidden': 'true' }, 'Delete'), row);
+  const li = el('li', { class: 'swipe' },
+    el('div', { class: 'swipe-bg', 'aria-hidden': 'true' }, 'Delete'),
+    el('div', { class: 'swipe-fav', 'aria-hidden': 'true' }, entry.fav ? 'Unfavourite' : 'Favourite'),
+    row);
   attachSwipe(li, row, entry.id);
   return li;
 }
 
-// Left swipe past ~a third of the row deletes (with Undo). Vertical drags are left to the page scroll.
+const EDGE_ZONE = 24; // px from the left edge reserved for swipe-to-go-back
+
+// Left swipe past ~a third deletes (with Undo); right swipe past a quarter toggles favourite.
+// Holding still for half a second opens the quick-actions menu. Vertical drags are left to the page.
 function attachSwipe(li, row, id) {
   let startX = 0;
   let startY = 0;
   let dx = 0;
   let state = 'idle';
   let suppressClickUntil = 0;
-  const threshold = () => Math.max(90, li.offsetWidth * 0.35);
+  let pressTimer = null;
+  const leftAt = () => Math.max(90, li.offsetWidth * 0.35);
+  const rightAt = () => Math.max(70, li.offsetWidth * 0.25);
+  const cancelPress = () => {
+    clearTimeout(pressTimer);
+    pressTimer = null;
+  };
   const reset = () => {
+    cancelPress();
     state = 'idle';
     row.style.transform = '';
-    li.classList.remove('swiping', 'armed');
+    li.classList.remove('swiping', 'armed', 'to-left', 'to-right');
   };
 
   row.addEventListener('pointerdown', (e) => {
-    if ((e.pointerType === 'mouse' && e.button !== 0) || selectMode || running.has(id)) return;
+    if ((e.pointerType === 'mouse' && e.button !== 0) || selectMode || e.clientX < EDGE_ZONE) return;
     startX = e.clientX;
     startY = e.clientY;
     dx = 0;
     state = 'pending';
+    pressTimer = setTimeout(() => {
+      if (state !== 'pending') return;
+      state = 'idle';
+      suppressClickUntil = Date.now() + 700;
+      navigator.vibrate?.(15);
+      openRowMenu(id);
+    }, 500);
   });
   row.addEventListener('pointermove', (e) => {
     if (state === 'idle') return;
     const mx = e.clientX - startX;
     const my = e.clientY - startY;
     if (state === 'pending') {
+      if (Math.abs(mx) > 8 || Math.abs(my) > 8) cancelPress();
       if (Math.abs(my) > 10 && Math.abs(my) >= Math.abs(mx)) {
         state = 'idle';
         return;
       }
-      if (mx > -10 || Math.abs(mx) < Math.abs(my)) return;
+      if (Math.abs(mx) < 10 || Math.abs(mx) < Math.abs(my)) return;
+      // The grid has no room to slide; a running scan can't be deleted.
+      if (settings.listStyle === 'grid' || (mx < 0 && running.has(id))) {
+        state = 'idle';
+        return;
+      }
       state = 'swiping';
       row.setPointerCapture?.(e.pointerId);
       li.classList.add('swiping');
     }
-    dx = Math.min(0, mx);
+    dx = mx;
     row.style.transform = `translateX(${dx}px)`;
-    li.classList.toggle('armed', -dx > threshold());
+    li.classList.toggle('to-left', dx < 0);
+    li.classList.toggle('to-right', dx > 0);
+    li.classList.toggle('armed', dx < 0 ? -dx > leftAt() : dx > rightAt());
   });
   row.addEventListener('pointerup', () => {
+    cancelPress();
     if (state !== 'swiping') {
       state = 'idle';
       return;
@@ -1976,24 +2076,47 @@ function attachSwipe(li, row, id) {
     suppressClickUntil = Date.now() + 400;
     li.classList.remove('swiping');
     state = 'idle';
-    if (-dx > threshold()) {
+    if (dx < 0 && -dx > leftAt()) {
       row.style.transform = `translateX(-${li.offsetWidth + 20}px)`;
       setTimeout(() => removeWithUndo(id), 180);
+    } else if (dx > 0 && dx > rightAt()) {
+      navigator.vibrate?.(15);
+      reset();
+      toggleFlag(id, 'fav');
     } else {
       reset();
     }
   });
   row.addEventListener('pointercancel', reset);
-  // A swipe ends with a click on whatever was under the finger; don't let it open the scan.
+  // A swipe or long-press ends with a click on whatever was under the finger; don't let it open the scan.
   row.addEventListener('click', (e) => {
     if (Date.now() < suppressClickUntil) {
       e.stopPropagation();
       e.preventDefault();
     }
   }, true);
+  row.addEventListener('contextmenu', (e) => e.preventDefault());
 }
 
-let pendingDelete = null;
+// One Undo bar for everything: the last action can be undone for a few seconds; `commit` runs
+// once it no longer can (e.g. deleting the photo of a deleted scan).
+let undoState = null;
+
+function showUndo(text, undo, commit = null, ms = 5000) {
+  finishUndo();
+  undoState = { undo, commit, timer: setTimeout(finishUndo, ms) };
+  $('#undoText').textContent = text.length > 40 ? `${text.slice(0, 38)}…` : text;
+  $('#undoToast').hidden = false;
+}
+
+function finishUndo() {
+  if (!undoState) return;
+  clearTimeout(undoState.timer);
+  const { commit } = undoState;
+  undoState = null;
+  $('#undoToast').hidden = true;
+  commit?.();
+}
 
 function removeWithUndo(id) {
   removeManyWithUndo([id]);
@@ -2002,24 +2125,46 @@ function removeWithUndo(id) {
 function removeManyWithUndo(ids) {
   const entries = ids.map((id) => findEntry(id)).filter((e) => e && !running.has(e.id));
   if (!entries.length) return;
-  finishPendingDelete();
+  finishUndo();
   const gone = new Set(entries.map((e) => e.id));
   store.set('history', loadHistory().filter((e) => !gone.has(e.id)));
-  pendingDelete = { entries, timer: setTimeout(finishPendingDelete, 5000) };
   const first = entries[0];
   const name = entries.length > 1 ? `${entries.length} scans` : first.kind === 'shelf' ? 'shelf scan' : first.ai?.product_name || 'scan';
-  $('#undoText').textContent = `Deleted ${name.length > 32 ? `${name.slice(0, 30)}…` : name}`;
-  $('#undoToast').hidden = false;
   route(true);
+  showUndo(`Deleted ${name}`, () => {
+    for (const e of entries) saveEntry(e);
+    route(true);
+  }, () => {
+    // The photo is only removed once Undo is no longer possible.
+    for (const e of entries) dropImageIfUnused(e);
+  });
 }
 
-// The photo is only removed once Undo is no longer possible.
-function finishPendingDelete() {
-  if (!pendingDelete) return;
-  clearTimeout(pendingDelete.timer);
-  for (const e of pendingDelete.entries) dropImageIfUnused(e);
-  pendingDelete = null;
-  $('#undoToast').hidden = true;
+// ---------- quick actions (long-press a scan) ----------
+
+let menuFor = null;
+
+function openRowMenu(id) {
+  const entry = findEntry(id);
+  if (!entry) return;
+  menuFor = id;
+  const shelf = entry.kind === 'shelf';
+  $('#menuThumb').src = entry.thumb;
+  $('#menuName').textContent = shelf ? `Shelf · ${storeName(entry) || entry.place?.area || ''}` : entry.ai?.product_name || entry.webGuess || 'Unidentified item';
+  $('#menuMeta').textContent = [rm(japanPrice(entry).rm), storeName(entry), shortDate.format(entry.createdAt)].filter((x) => x && x !== '–').join(' · ');
+  $('#menuFav').textContent = entry.fav ? 'Remove from favourites' : 'Add to favourites';
+  $('#menuBought').textContent = entry.bought ? 'Not bought' : 'Mark as bought';
+  $('#menuBought').hidden = shelf;
+  $('#menuCompare').hidden = shelf;
+  $('#menuRescan').disabled = running.has(id);
+  $('#menuDelete').disabled = running.has(id);
+  $('#rowMenu').showModal();
+}
+
+function menuAction(fn) {
+  const id = menuFor;
+  $('#rowMenu').close();
+  if (id && findEntry(id)) fn(findEntry(id));
 }
 
 function rowActions(entry, isRunning, failed) {
@@ -2077,6 +2222,50 @@ function renderMode() {
 
 let historySort = 'recent';
 
+// ---------- History filter chips ----------
+// Verdict chips and store chips each match any of those picked; Used and Clothes narrow further.
+
+const historyChips = new Set();
+
+function historyChipDefs(list) {
+  const items = list.filter((e) => e.kind !== 'shelf');
+  const defs = [];
+  for (const [cls, label] of [['buy', 'Buy'], ['maybe', 'Maybe'], ['skip', 'Skip']]) {
+    if (items.some((e) => verdictFor(e)?.cls === cls)) defs.push({ key: `v:${cls}`, label });
+  }
+  if (items.some((e) => e.secondHand)) defs.push({ key: 'used', label: 'Used' });
+  if (items.some((e) => e.kind === 'clothes')) defs.push({ key: 'clothes', label: 'Clothes' });
+  const stores = new Map();
+  for (const e of list) if (storeName(e)) stores.set(storeName(e), (stores.get(storeName(e)) || 0) + 1);
+  for (const [name] of [...stores].sort((a, b) => b[1] - a[1]).slice(0, 4)) defs.push({ key: `s:${name}`, label: name });
+  return defs;
+}
+
+function chipMatch(e) {
+  const on = [...historyChips];
+  const verdicts = on.filter((k) => k.startsWith('v:')).map((k) => k.slice(2));
+  const stores = on.filter((k) => k.startsWith('s:')).map((k) => k.slice(2));
+  if (verdicts.length && !verdicts.includes(verdictFor(e)?.cls)) return false;
+  if (stores.length && !stores.includes(storeName(e))) return false;
+  if (historyChips.has('used') && !e.secondHand) return false;
+  if (historyChips.has('clothes') && e.kind !== 'clothes') return false;
+  return true;
+}
+
+function renderHistoryChips(defs) {
+  $('#historyChips').hidden = defs.length < 2;
+  $('#historyChips').replaceChildren(...defs.map((d) => el('button', {
+    class: 'chip-pill filter-chip',
+    type: 'button',
+    'aria-pressed': String(historyChips.has(d.key)),
+    onclick: () => {
+      if (historyChips.has(d.key)) historyChips.delete(d.key);
+      else historyChips.add(d.key);
+      renderHistory();
+    },
+  }, d.label)));
+}
+
 // Everything a search should match on, in one lower-case string.
 function searchText(e) {
   return [e.ai?.product_name, e.ai?.brand, e.ai?.variant, e.override, e.webGuess, storeName(e), e.place?.area, e.notes, e.translation,
@@ -2098,6 +2287,10 @@ function renderHistory() {
   if (tripFilter !== 'all') list = list.filter((e) => tripOf(e) === tripFilter);
   if (historyFilter === 'fav') list = list.filter((e) => e.fav);
   if (historyFilter === 'bought') list = list.filter((e) => e.bought);
+  const chipDefs = historyChipDefs(list);
+  for (const k of [...historyChips]) if (!chipDefs.some((c) => c.key === k)) historyChips.delete(k);
+  list = list.filter(chipMatch);
+  renderHistoryChips(chipDefs);
   const terms = historySearch.toLowerCase().split(/\s+/).filter(Boolean);
   if (terms.length) list = list.filter((e) => terms.every((t) => searchText(e).includes(t)));
   if (selectMode) list = list.filter((e) => e.kind !== 'shelf');
@@ -2138,13 +2331,20 @@ function endSelect() {
 function bulkFlag(flag) {
   const entries = selection.map((id) => findEntry(id)).filter(Boolean);
   const value = !entries.every((e) => e[flag]);
-  for (const e of entries) {
-    e[flag] = value;
-    if (flag === 'bought') e.boughtAt = value ? e.boughtAt || Date.now() : null;
-    saveEntry(e);
-  }
+  const before = entries.map((e) => [e.id, Boolean(e[flag]), e.boughtAt]);
+  for (const e of entries) setFlag(e, flag, value);
   endSelect();
   route(true);
+  showUndo(`${FLAG_TEXT[flag][value ? 0 : 1]} (${entries.length})`, () => {
+    for (const [id, was, boughtAt] of before) {
+      const e = findEntry(id);
+      if (!e) continue;
+      setFlag(e, flag, was);
+      e.boughtAt = boughtAt;
+      saveEntry(e);
+    }
+    route(true);
+  });
 }
 
 // ---------- refresh favourites ----------
@@ -2241,6 +2441,10 @@ function renderPrices(entry) {
   // Live results take CeX's best offer across grades, so it's a ceiling, not a quote.
   $('#cexCash').textContent = cex.cash ? `${cex.source === 'live' ? 'up to ' : ''}${rm(cex.cash)} cash` : pending ? '…' : '–';
   $('#cexVoucher').textContent = cex.voucher ? `${rm(cex.voucher)} voucher` : '';
+  for (const sel of ['#jpRm', '#myNew', '#myUsed', '#jpUsed', '#cexSell', '#cexCash']) {
+    const waiting = $(sel).textContent === '…' || (sel === '#jpRm' && running.has(entry.id) && !toNum(entry.yen));
+    $(sel).classList.toggle('skel', waiting);
+  }
   // Fewer boxes: once the search is in, drop the ones that found nothing.
   const settled = Boolean(entry.ai) || entry.status.search === 'failed';
   const clothes = entry.kind === 'clothes';
@@ -2363,11 +2567,12 @@ function renderVariant(entry) {
 async function setOverride(id, name) {
   const entry = findEntry(id);
   if (!entry || running.has(id)) return;
+  const before = JSON.parse(JSON.stringify(entry));
   entry.override = name;
   entry.info = null;
   entry.cex = null;
   saveEntry(entry);
-  await rescan(id);
+  await rescan(id, { before });
 }
 
 // ---------- product info ----------
@@ -2805,8 +3010,23 @@ function clothingLine(entry) {
   return [size, c.material, c.colour].filter(Boolean).join(' · ');
 }
 
+// Sheet result style: the full-size photo fills the top of the page.
+let heroFor = null;
+
+async function renderHero(entry) {
+  const extra = entry.extra?.length || 0;
+  $('#heroCount').hidden = !extra;
+  $('#heroCount').textContent = `+${extra}`;
+  if (settings.resultStyle !== 'sheet' || heroFor === entry.id) return;
+  heroFor = entry.id;
+  $('#resHeroImg').src = entry.thumb;
+  const full = (current?.id === entry.id && currentImageB64) || (await imageDb.get(entry.imageId || entry.id));
+  if (full && heroFor === entry.id) $('#resHeroImg').src = `data:image/jpeg;base64,${full}`;
+}
+
 function renderResult(entry) {
   current = entry;
+  renderHero(entry);
   $('#resPhoto').src = entry.thumb;
   const extra = entry.extra?.length || 0;
   $('#photoCount').hidden = !extra;
@@ -2831,8 +3051,12 @@ function renderResult(entry) {
   $('#resError').textContent = entry.errors.join('\n');
 
   const visionDone = entry.status.vision === 'done' || entry.status.vision === 'failed';
-  $('#prices').hidden = !visionDone;
+  // While the first read is running, the result's shape shows straight away with placeholders.
+  const loading = running.has(entry.id) && !entry.ai;
+  $('#prices').hidden = !visionDone && !loading;
   $('#toggles').hidden = !visionDone;
+  $('#verdictSkel').hidden = !loading;
+  $('#resName').classList.toggle('skel-text', loading && !entry.webGuess);
   renderChips(entry);
   renderPrices(entry);
   renderCondition(entry);
@@ -3222,6 +3446,7 @@ function saveSecretFields() {
 
 function openSettings() {
   renderSecretFields();
+  renderLookControls();
   $('#modelInput').value = store.get('model', '') || DEFAULT_MODEL;
   $('#defaultTaxFree').checked = settings.taxFree;
   $('#saveLocationToggle').checked = settings.saveLocation;
@@ -3444,13 +3669,40 @@ for (const b of document.querySelectorAll('#kindSwitch [data-kind]')) {
 
 $('#rescanBtn').addEventListener('click', () => current && rescan(current.id));
 $('#navHome').addEventListener('click', () => { location.hash = '#/'; });
-$('#resPhotoBtn').addEventListener('click', () => current && openPhotos(photoIds(current), [current.thumb, ...(current.extra || []).map((p) => p.thumb)]));
+const openCurrentPhotos = () => current && openPhotos(photoIds(current), [current.thumb, ...(current.extra || []).map((p) => p.thumb)]);
+$('#resPhotoBtn').addEventListener('click', openCurrentPhotos);
+$('#resHero').addEventListener('click', openCurrentPhotos);
 $('#addPhotoInput').addEventListener('change', (e) => {
   const files = [...(e.target.files || [])];
   e.target.value = '';
   if (current && files.length) addPhotos(current.id, files);
 });
 $('#settingsClose').addEventListener('click', () => $('#settingsDialog').close());
+
+function renderLookControls() {
+  for (const group of document.querySelectorAll('[data-setting]')) {
+    for (const b of group.querySelectorAll('[data-value]')) b.setAttribute('aria-checked', String(settings[group.dataset.setting] === b.dataset.value));
+  }
+  for (const t of document.querySelectorAll('[data-setting-toggle]')) t.checked = Boolean(settings[t.dataset.settingToggle]);
+}
+for (const group of document.querySelectorAll('[data-setting]')) {
+  for (const b of group.querySelectorAll('[data-value]')) {
+    b.addEventListener('click', () => {
+      store.set(group.dataset.setting, b.dataset.value);
+      heroFor = null;
+      applyLook();
+      renderLookControls();
+      route(true);
+    });
+  }
+}
+for (const t of document.querySelectorAll('[data-setting-toggle]')) {
+  t.addEventListener('change', () => {
+    store.set(t.dataset.settingToggle, t.checked);
+    applyLook();
+    route(true);
+  });
+}
 $('#verdict').addEventListener('click', () => {
   if (!current) return;
   verdictOpen = verdictOpen === current.id ? null : current.id;
@@ -3611,8 +3863,217 @@ $('#deleteBtn').addEventListener('click', () => {
 
 window.addEventListener('hashchange', route);
 
+// ---------- built-in camera ----------
+// A viewfinder inside the app (getUserMedia). Item and shelf scan on the shutter; clothes collect
+// photos first. If the camera can't start, the iPhone camera is one tap away.
+
+let camStream = null;
+let camPhotos = [];
+
+const canLiveCamera = () => settings.liveCamera && Boolean(navigator.mediaDevices?.getUserMedia);
+
+async function startCameraStream() {
+  stopCameraStream();
+  $('#camMsg').hidden = true;
+  try {
+    camStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1440 } },
+      audio: false,
+    });
+    $('#camVideo').srcObject = camStream;
+    await $('#camVideo').play().catch(() => {});
+    const track = camStream.getVideoTracks()[0];
+    $('#camTorch').hidden = !track?.getCapabilities?.().torch;
+    $('#camTorch').setAttribute('aria-pressed', 'false');
+  } catch (e) {
+    $('#camMsgText').textContent = e.name === 'NotAllowedError'
+      ? 'Camera access is off for this app. Allow it in Settings, or use the iPhone camera.'
+      : "The camera couldn't start here.";
+    $('#camMsg').hidden = false;
+  }
+}
+
+function stopCameraStream() {
+  for (const t of camStream?.getTracks() || []) t.stop();
+  camStream = null;
+  $('#camVideo').srcObject = null;
+}
+
+function renderCameraStrip() {
+  const clothes = settings.scanKind === 'clothes';
+  $('#camStrip').replaceChildren(...camPhotos.map((p) => el('img', { src: p.url, alt: '' })));
+  $('#camDone').hidden = !camPhotos.length;
+  $('#camDone').textContent = `Check · ${camPhotos.length}`;
+  $('#camHint').textContent = clothes
+    ? (camPhotos.length ? 'Now the brand label and price tag' : 'Whole piece first')
+    : settings.scanKind === 'shelf' ? 'Fit the whole shelf in' : 'Price tag, box or label';
+}
+
+function openCamera() {
+  camPhotos = [];
+  $('#camMode').textContent = { item: 'Item', clothes: 'Clothes', shelf: 'Shelf' }[settings.scanKind] || 'Item';
+  renderCameraStrip();
+  $('#cameraView').showModal();
+  startCameraStream();
+}
+
+function closeCamera() {
+  stopCameraStream();
+  for (const p of camPhotos) URL.revokeObjectURL(p.url);
+  camPhotos = [];
+  if ($('#cameraView').open) $('#cameraView').close();
+}
+
+async function takePhoto() {
+  const video = $('#camVideo');
+  if (!camStream || !video.videoWidth) return;
+  const canvas = document.createElement('canvas');
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  canvas.getContext('2d').drawImage(video, 0, 0);
+  $('#camFlash').classList.remove('go');
+  void $('#camFlash').offsetWidth;
+  $('#camFlash').classList.add('go');
+  navigator.vibrate?.(10);
+  const blob = await new Promise((res) => canvas.toBlob(res, 'image/jpeg', 0.92));
+  if (!blob) return;
+  const file = new File([blob], `photo-${Date.now()}.jpg`, { type: 'image/jpeg' });
+  if (settings.scanKind !== 'clothes') {
+    closeCamera();
+    startScan([file]);
+    return;
+  }
+  camPhotos.push({ file, url: URL.createObjectURL(blob) });
+  if (camPhotos.length >= MAX_PHOTOS) {
+    finishCamera();
+    return;
+  }
+  renderCameraStrip();
+}
+
+function finishCamera() {
+  const files = camPhotos.map((p) => p.file);
+  closeCamera();
+  if (files.length) startScan(files);
+}
+
+// Every "take a photo" control opens the built-in camera when it's on.
+document.addEventListener('click', (e) => {
+  const label = e.target.closest('label[for="cameraInput"]');
+  if (!label || label.id === 'camFallback' || !canLiveCamera()) return;
+  e.preventDefault();
+  openCamera();
+}, true);
+$('#camShutter').addEventListener('click', takePhoto);
+$('#camDone').addEventListener('click', finishCamera);
+$('#camClose').addEventListener('click', closeCamera);
+$('#cameraView').addEventListener('cancel', () => stopCameraStream());
+$('#camFallback').addEventListener('click', () => closeCamera());
+$('#camLibrary').addEventListener('click', () => closeCamera());
+$('#camTorch').addEventListener('click', async () => {
+  const track = camStream?.getVideoTracks()[0];
+  if (!track) return;
+  const on = $('#camTorch').getAttribute('aria-pressed') !== 'true';
+  try {
+    await track.applyConstraints({ advanced: [{ torch: on }] });
+    $('#camTorch').setAttribute('aria-pressed', String(on));
+  } catch {
+    $('#camTorch').hidden = true;
+  }
+});
+// iOS stops the camera when the app goes to the background; start it again on return.
+document.addEventListener('visibilitychange', () => {
+  if (!$('#cameraView').open) return;
+  if (document.visibilityState === 'visible') startCameraStream();
+  else stopCameraStream();
+});
+
+// ---------- edge swipe back, pull to refresh ----------
+// iPhone home-screen apps have neither, so both are done here with touch events.
+
+function setupPageGestures() {
+  const edge = $('#edgeBack');
+  const ptr = $('#pullRefresh');
+  let g = null;
+  const busy = () => document.querySelector('dialog[open]');
+  document.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1 || busy()) return;
+    const t = e.touches[0];
+    if (t.clientX < EDGE_ZONE && !$('#backBtn').hidden) g = { kind: 'edge', x: t.clientX, y: t.clientY, d: 0 };
+    else if (window.scrollY <= 0 && pullTarget()) g = { kind: 'pull', x: t.clientX, y: t.clientY, d: 0 };
+    else g = null;
+  }, { passive: true });
+  document.addEventListener('touchmove', (e) => {
+    if (!g) return;
+    const t = e.touches[0];
+    const dx = t.clientX - g.x;
+    const dy = t.clientY - g.y;
+    if (!g.active) {
+      const along = g.kind === 'edge' ? dx : dy;
+      const across = g.kind === 'edge' ? dy : dx;
+      if (Math.abs(across) > 12 && Math.abs(across) > along) {
+        g = null;
+        return;
+      }
+      if (along < 12) return;
+      g.active = true;
+    }
+    if (g.kind === 'edge') {
+      g.d = Math.max(0, dx);
+      edge.hidden = false;
+      edge.style.transform = `translate(${Math.min(g.d, 110) - 48}px, -50%)`;
+      edge.classList.toggle('armed', g.d > 90);
+    } else {
+      g.d = Math.max(0, dy);
+      ptr.hidden = false;
+      ptr.style.transform = `translate(-50%, ${Math.min(g.d * 0.5, 70)}px)`;
+      ptr.classList.toggle('armed', g.d > 110);
+      $('#pullText').textContent = g.d > 110 ? 'Release to re-check' : 'Pull to re-check prices';
+    }
+  }, { passive: true });
+  const end = () => {
+    if (!g) return;
+    const done = g.active && (g.kind === 'edge' ? g.d > 90 : g.d > 110);
+    const { kind } = g;
+    g = null;
+    edge.hidden = true;
+    ptr.hidden = true;
+    edge.classList.remove('armed');
+    ptr.classList.remove('armed');
+    if (!done) return;
+    navigator.vibrate?.(15);
+    if (kind === 'edge') $('#backBtn').click();
+    else pullRefresh();
+  };
+  document.addEventListener('touchend', end);
+  document.addEventListener('touchcancel', end);
+}
+
+// What a pull re-checks: the open scan, or (Home, History, Trip) favourites and scans that failed.
+function pullTarget() {
+  const hash = location.hash || '#/';
+  if (hash.startsWith('#/scan/')) return current && !running.has(current.id) ? 'scan' : null;
+  return /^#\/(history|trip)?$/.test(hash) || hash === '#/' ? 'list' : null;
+}
+
+async function pullRefresh() {
+  const target = pullTarget();
+  if (target === 'scan') {
+    rescan(current.id);
+    return;
+  }
+  if (target !== 'list') return;
+  fetchRate(true).then(renderRate);
+  const failed = historyEntries().filter((e) => e.kind !== 'shelf' && !e.fav && scanFailed(e)).slice(0, 5);
+  for (const e of failed) rescan(e.id, { quiet: true });
+  await refreshFavourites();
+}
+
+setupPageGestures();
+
 // ---------- boot ----------
 
+applyLook();
 route();
 fetchRate().then(() => {
   renderRate();
@@ -3635,13 +4096,26 @@ async function checkForUpdate() {
 }
 
 $('#undoBtn').addEventListener('click', () => {
-  if (!pendingDelete) return;
-  clearTimeout(pendingDelete.timer);
-  for (const e of pendingDelete.entries) saveEntry(e);
-  pendingDelete = null;
+  if (!undoState) return;
+  clearTimeout(undoState.timer);
+  const { undo } = undoState;
+  undoState = null;
   $('#undoToast').hidden = true;
-  route(true);
+  undo();
 });
+
+$('#menuOpen').addEventListener('click', () => menuAction((e) => { location.hash = e.kind === 'shelf' ? `#/shelf/${e.id}` : `#/scan/${e.id}`; }));
+$('#menuFav').addEventListener('click', () => menuAction((e) => toggleFlag(e.id, 'fav')));
+$('#menuBought').addEventListener('click', () => menuAction((e) => toggleFlag(e.id, 'bought')));
+$('#menuRescan').addEventListener('click', () => menuAction((e) => (e.kind === 'shelf' ? rescanShelf(e.id) : rescan(e.id))));
+$('#menuCompare').addEventListener('click', () => menuAction((e) => {
+  selectMode = true;
+  selection = [e.id];
+  if (location.hash.startsWith('#/history')) renderHistory();
+  else location.hash = '#/history';
+}));
+$('#menuDelete').addEventListener('click', () => menuAction((e) => removeWithUndo(e.id)));
+$('#menuCancel').addEventListener('click', () => $('#rowMenu').close());
 
 $('#updateBtn').addEventListener('click', () => {
   if (running.size && !confirm('A scan is still running. Reload anyway?')) return;
