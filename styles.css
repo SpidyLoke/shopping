@@ -1623,3 +1623,20 @@ dialog.camera::backdrop { background: #000; }
 @media (prefers-reduced-motion: reduce) {
   .skel, .skel-text, .skel-line { animation: none; }
 }
+
+/* ---------- Deal labels (on top of Buy / Maybe / Skip) ---------- */
+
+.deal-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.deal-tags:empty { display: none; }
+.deal { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 999px; font-size: 0.8rem; font-weight: 650; white-space: nowrap; background: var(--surface); color: var(--text); }
+.deal-profit { background: var(--good); color: #fff; }
+.deal-good { color: var(--good); }
+.deal-warn { color: var(--warn); }
+.deal-plain { color: var(--muted); }
+.cmp-cell .deal { margin: 2px 4px 2px 0; white-space: normal; }
+.history-deal { font-size: 0.78rem; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.deal-text-profit, .deal-text-good { color: var(--good); }
+.deal-text-warn { color: var(--warn); }
+/* the dark theme's green is light, so dark text on it */
+:root[data-theme="dark"] .deal-profit { color: #0d1020; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .deal-profit { color: #0d1020; } }

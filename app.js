@@ -3,7 +3,7 @@
 // lives in localStorage on the user's device only.
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.10.29-1';
+const APP_VERSION = '2026.10.29-2';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -932,6 +932,46 @@ function verdictFor(entry) {
   if (cex.sell && jp && cex.sell < jp) v.detail += ` CeX Malaysia sells it used for ${rm(cex.sell)}.`;
   if (cex.cash) v.detail += ` CeX would buy it back for ${rm(cex.cash)} cash.`;
   return v;
+}
+
+// Short "deal" labels on top of Buy / Maybe / Skip: where the Japan price sits on the ladder of
+// Malaysian prices (lowest rung first), plus a note when Japan's own second-hand market is cheaper.
+// tone: profit (you could sell it on for more), good, plain, warn.
+function dealTags(entry) {
+  const jp = japanPrice(entry).rm;
+  if (!jp || !entry.ai) return [];
+  const cex = cexFor(entry);
+  const myUsed = rangeValue(entry.ai.my_used);
+  const myNew = rangeValue(entry.ai.my_new);
+  const whole = (x) => `RM ${Math.round(x).toLocaleString('en-GB')}`;
+  const more = (x) => whole(x - jp);
+  const ladder = [
+    [cex.cash, () => ({ key: 'cex-flip', tone: 'profit', label: `CeX pays ${more(cex.cash)} more`, detail: `CeX Malaysia buys it for ${rm(cex.cash)} cash, more than the ${rm(jp)} you'd pay here.` })],
+    [cex.voucher, () => ({ key: 'cex-voucher', tone: 'profit', label: `CeX voucher ${more(cex.voucher)} more`, detail: `CeX Malaysia gives ${rm(cex.voucher)} in voucher for it.` })],
+    [myUsed, () => ({ key: 'resell', tone: 'profit', label: `Resells for ${more(myUsed)} more`, detail: `It goes for about ${rm(myUsed)} second-hand in Malaysia, above the ${rm(jp)} price here.` })],
+    [cex.sell, () => ({ key: 'under-cex', tone: 'good', label: `${more(cex.sell)} under CeX`, detail: `CeX Malaysia sells it used for ${rm(cex.sell)}.` })],
+    [myNew, () => ({ key: 'under-new', tone: 'plain', label: `${more(myNew)} under MY new`, detail: `New in Malaysia it's about ${rm(myNew)}.` })],
+  ];
+  const tags = [];
+  // The lowest price that's still above the Japan price is the one that matters.
+  const hit = ladder.filter(([price]) => price && price > jp).sort((a, b) => a[0] - b[0])[0];
+  if (hit) tags.push(hit[1]());
+  else if (myNew) tags.push({ key: 'over-new', tone: 'warn', label: `${whole(jp - myNew)} over MY new`, detail: `New in Malaysia it's about ${rm(myNew)}.` });
+  // Resale profit: a used price at home above what you pay here, on top of the ladder answer.
+  if (hit && hit[1]().key !== 'resell' && myUsed && myUsed > jp && !tags.some((t) => t.tone === 'profit')) {
+    tags.push({ key: 'resell', tone: 'profit', label: `Resells for ${more(myUsed)} more`, detail: `It goes for about ${rm(myUsed)} second-hand in Malaysia.` });
+  }
+  if (cex.sell && cex.sell < jp && myUsed && jp < myUsed) tags.push({ key: 'over-cex', tone: 'warn', label: `${whole(jp - cex.sell)} over CeX`, detail: `CeX Malaysia sells it used for ${rm(cex.sell)}.` });
+  const resale = jpUsedYen(entry);
+  if (resale && fx(entry) && resale * fx(entry) < jp * 0.85) {
+    tags.push({ key: 'mercari', tone: 'warn', label: 'Cheaper on Mercari', detail: `Japan second-hand: about ${yen(resale)} (${rm(resale * fx(entry))}).` });
+  }
+  // A way to make money back comes first.
+  return tags.sort((a, b) => (b.tone === 'profit') - (a.tone === 'profit'));
+}
+
+function dealChip(t) {
+  return el('span', { class: `deal deal-${t.tone}`, title: t.detail }, t.label);
 }
 
 function baseVerdict(entry) {
@@ -1982,6 +2022,10 @@ function historyItem(entry, opts = {}) {
       el('div', { class: 'history-body' },
         el('p', { class: 'history-name' }, entry.ai?.product_name || entry.webGuess || 'Unidentified item'),
         el('p', { class: 'history-meta' }, meta),
+        (() => {
+          const t = dealTags(entry)[0];
+          return t && t.tone !== 'plain' ? el('p', { class: `history-deal deal-text-${t.tone}` }, t.label) : null;
+        })(),
         Number.isFinite(opts.saved)
           ? el('p', { class: `history-saved${opts.saved < 0 ? ' neg' : ''}` }, opts.saved >= 0 ? `Saved ${rm(opts.saved)}` : `${rm(-opts.saved)} more than MY`)
           : null,
@@ -2233,6 +2277,7 @@ function historyChipDefs(list) {
   for (const [cls, label] of [['buy', 'Buy'], ['maybe', 'Maybe'], ['skip', 'Skip']]) {
     if (items.some((e) => verdictFor(e)?.cls === cls)) defs.push({ key: `v:${cls}`, label });
   }
+  if (items.some((e) => dealTags(e).some((t) => t.tone === 'profit'))) defs.push({ key: 'profit', label: 'Resale profit' });
   if (items.some((e) => e.secondHand)) defs.push({ key: 'used', label: 'Used' });
   if (items.some((e) => e.kind === 'clothes')) defs.push({ key: 'clothes', label: 'Clothes' });
   const stores = new Map();
@@ -2248,6 +2293,7 @@ function chipMatch(e) {
   if (verdicts.length && !verdicts.includes(verdictFor(e)?.cls)) return false;
   if (stores.length && !stores.includes(storeName(e))) return false;
   if (historyChips.has('used') && !e.secondHand) return false;
+  if (historyChips.has('profit') && !dealTags(e).some((t) => t.tone === 'profit')) return false;
   if (historyChips.has('clothes') && e.kind !== 'clothes') return false;
   return true;
 }
@@ -2458,6 +2504,7 @@ function renderPrices(entry) {
     // The reasoning shows two lines; tap the verdict for the rest.
     $('#verdict').className = `verdict ${v.cls}${verdictOpen === entry.id ? ' expanded' : ''}`;
     $('#verdictLabel').textContent = v.label;
+    $('#dealTags').replaceChildren(...dealTags(entry).map(dealChip));
     $('#verdictDetail').textContent = v.detail;
   }
 }
@@ -3317,6 +3364,10 @@ function renderCompare(ids) {
       const v = verdictFor(e);
       const cls = { buy: 'tag-buy', maybe: 'tag-maybe', skip: 'tag-skip' }[v?.cls] || '';
       return el('span', { class: `tag ${cls}` }, v?.label || '–');
+    }],
+    ['Deal', (e) => {
+      const tags = dealTags(e);
+      return tags.length ? tags.slice(0, 2).map(dealChip) : '–';
     }],
     ['Condition', (e) => {
       const n = seriousIssues(e).length;

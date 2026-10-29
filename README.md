@@ -177,6 +177,22 @@ Switch the home screen to **Second-hand shop** before scanning at Hard Off, 2nd 
 
 A built-in keyword check flags issues the moment the text is read, so you still get the warnings if Gemini is slow or fails. Gemini's fuller read replaces it when it arrives. The **Second-hand item** switch on any result flips the comparison after the fact.
 
+### Deal labels
+
+Under Buy / Maybe / Skip, short labels say where the Japan price sits against what the item fetches at home. The one nearest above the Japan price wins:
+
+| Label | Means |
+| --- | --- |
+| **CeX pays RM X more** | CeX Malaysia's cash (or voucher) buy price is above what you pay here, so you could sell it straight on |
+| **Resells for RM X more** | It goes for more than this second-hand in Malaysia (Carousell, used Shopee) |
+| **RM X under CeX** | Cheaper than CeX Malaysia's used price |
+| **RM X under MY new** | Only cheaper than buying new at home |
+| **RM X over MY new** | Dearer than new in Malaysia |
+| **RM X over CeX** | Above CeX's used price, though still under the Malaysian second-hand price |
+| **Cheaper on Mercari** | Japan's own second-hand market has it at least 15% cheaper |
+
+Labels that mean you could make money back show first, and in green on History rows. The **Resale profit** chip in History lists only those. Compare shows them in a **Deal** row.
+
 ### Verdict rules
 
 | Verdict | When |
