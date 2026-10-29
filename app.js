@@ -3,7 +3,7 @@
 // lives in localStorage on the user's device only.
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.10.29-3';
+const APP_VERSION = '2026.10.29-4';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -518,7 +518,8 @@ async function translate(text) {
 
 const CLOTHES_RULES = `CLOTHES: this is clothing, shoes, a bag or another fashion item. Identify it from the whole piece as much as from any text: logos, label and tag wording, product or style numbers (Uniqlo, GU and Muji print one on the tag), collaboration names, distinctive design or print, hardware such as zips and buttons, and fabric. Read the size from the size label or tag and give the rough Malaysian/UK equivalent (Japanese sizes often run a size smaller). Read the main material from the care label if shown.
 For Malaysian prices check the brand's own Malaysian online store if it has one (e.g. uniqlo.com/my), Zalora Malaysia (zalora.com.my), and official brand stores on Shopee and Lazada Malaysia for new; Carousell Malaysia for used. CeX does not sell clothes: return null for cex_my. For second-hand pieces list visible wear (stains, pilling, fading, holes, worn soles) as condition issues, and add a medium-severity issue if anything suggests it may not be genuine. In my_compat give one "Size" entry with the size conversion (status "warn" if it may fit small) instead of voltage or region checks.
-Add a "clothing" key to the JSON: { "size_on_tag": "size as printed or null", "size_my": "rough Malaysian/UK size or null", "material": "main fabric or null", "product_code": "product or style number or null", "colour": "colour in English or null" }.
+MATCHING CLOTHES: a listing is only the same item if it shows the same product or style code, or clearly the same design: the same model name, the same colourway, and the same prints, logos, embroidery and details. Brand plus garment type is NOT a match: an "adidas MA-1 bomber" in olive with a big ORIGINALS print is a different item from a plain navy one, and so is another season's version. Search by the product code first (e.g. "AY9150"), then brand + model name + colour. For each listing set "exact_model" true only when the code or the full design matches, and say how in "match_note". Base my_new and my_used only on exact matches; if you can only find similar items, list them with exact_model false, use them for the figures, and set "prices_are_similar": true in the clothing key. Put the product code in search_query when there is one.
+Add a "clothing" key to the JSON: { "size_on_tag": "size as printed or null", "size_my": "rough Malaysian/UK size or null", "material": "main fabric or null", "product_code": "product or style number or null", "colour": "colour in English or null", "prices_are_similar": false }.
 `;
 
 function buildPrompt({ ocrText, webGuess, secondHand, focus, override, quick, photos = 1, clothes = false }) {
@@ -543,7 +544,7 @@ Tasks:
    Only use Malaysian listings priced in RM. Exclude accessories, cases, spare parts and listings for a lookalike variant: they are a different product, even if most of the name matches. Never invent listings, prices or URLs; if you cannot find any, use null or an empty list.
    Also check CeX Malaysia (my.webuy.com), which sells graded used stock: search my.webuy.com for the exact model. Its product pages show "WeSell for" (its selling price), "WeBuy for cash" and "WeBuy for voucher" prices in RM.
    Also search Japan's second-hand market for the same item in comparable condition: Mercari Japan (jp.mercari.com) and Yahoo! Auctions Japan (auctions.yahoo.co.jp), prices in yen.
-   SOURCES: the shopper checks every figure against its listings, so in "listings" give the actual listings behind my_new, my_used and jp_used_yen (up to 3 for each), with the listing title copied exactly as shown, its price and its URL. Base each figure only on listings that are the exact same model and variant. If you include a listing you are not sure is the exact model, set "exact_model": false and leave it out of the figure. Do not report a figure with no listing behind it; use null instead.
+   SOURCES: mark a listing "sold": true when it is sold or no longer available (it still shows the going price). The shopper checks every figure against its listings, so in "listings" give the actual listings behind my_new, my_used and jp_used_yen (up to 3 for each), with the listing title copied exactly as shown, its price and its URL. Base each figure only on listings that are the exact same model and variant. If you include a listing you are not sure is the exact model, set "exact_model": false and leave it out of the figure. Do not report a figure with no listing behind it; use null instead.
 4. Read any condition information on the tag or label: the shop's condition grade or rank and what it means on that shop's scale (second-hand chains such as 2nd Street, Hard Off, Book Off, Geo, Sofmap and Surugaya each have their own scale; explain it plainly rather than just saying "good"). If the tag or shelf shows more than one grade (for example separate A and B units of the same item at different prices, or a printed grade legend), list every grade with its price and meaning, and say which one applies to the item photographed if you can tell. Also read every issue, defect or caveat mentioned (e.g. ジャンク, 動作未確認, 通電のみ, 欠品, キズ, 箱なし, 返品不可, 保証なし). Translate each into plain English and rate it: "high" = may not work, sold as-is, no returns or no warranty; "medium" = missing parts, visible damage or heavy wear; "low" = minor cosmetic. List stated positives (e.g. 動作確認済, 美品, 付属品完備) with severity "good". Ignore marketing claims on new-product packaging (e.g. 傷つきにくい means scratch-resistant, not scratched).
 5. Check whether it will work properly in Malaysia: 240V 50Hz mains and Type G three-pin plugs (Japan is 100V with Type A two-pin plugs). Cover only what applies to this product:
    - Power: does it accept 240V? Many chargers and adapters are 100-240V and only need a plug adapter; 100V-only appliances (rice cookers, hair dryers, some kitchen and beauty gear) need a step-down transformer.
@@ -574,7 +575,7 @@ Reply with only a JSON object inside a \`\`\`json code block, with exactly these
   "jp_used_yen": { "low": 0, "high": 0, "typical": 0 },
   "cex_my": { "sell_rm": 0, "buy_cash_rm": 0, "buy_voucher_rm": 0, "grade": "CeX grade if shown (A, B, C) or null", "url": "CeX product URL or null" },
   "listings": [
-    { "platform": "Shopee | Carousell | Lazada | Mercari JP | Yahoo Auctions | Other", "condition": "new | used", "title": "listing title exactly as shown", "price_rm": 0, "price_yen": 0, "url": "listing URL or null", "exact_model": true }
+    { "platform": "Shopee | Carousell | Lazada | Mercari JP | Yahoo Auctions | Other", "condition": "new | used", "title": "listing title exactly as shown", "price_rm": 0, "price_yen": 0, "url": "listing URL or null", "exact_model": true, "match_note": "how you know it's the same model, or what differs", "sold": false }
   ],
   "my_compat": [
     { "topic": "Power | Region | Language | Warranty | Other", "status": "ok | warn | bad", "note": "short plain-English explanation" }
@@ -918,6 +919,9 @@ function cexFor(entry) {
 function verdictFor(entry) {
   const v = baseVerdict(entry);
   if (!v || v.cls === 'none') return v;
+  if (pricesSimilar(entry)) {
+    return { cls: 'maybe', label: 'No exact match', detail: `Malaysian prices are for similar pieces, not this exact one, so they're only a rough guide. ${v.detail} Tap MY used or MY new to see them, or search the product code yourself.` };
+  }
   const bad = compatFor(entry).filter((c) => c.status === 'bad');
   if (bad.length) {
     if (v.cls === 'buy') Object.assign(v, { cls: 'maybe', label: 'Cheap, but check it works in Malaysia' });
@@ -940,6 +944,7 @@ function verdictFor(entry) {
 function dealTags(entry) {
   const jp = japanPrice(entry).rm;
   if (!jp || !entry.ai) return [];
+  if (pricesSimilar(entry)) return [{ key: 'similar', tone: 'plain', label: 'Only similar items found', short: 'No exact match', detail: 'Malaysian prices are for similar pieces, not this one.' }];
   const cex = cexFor(entry);
   const myUsed = rangeValue(entry.ai.my_used);
   const myNew = rangeValue(entry.ai.my_new);
@@ -2846,8 +2851,14 @@ function listingsFor(entry, kind) {
 // "exact" when the listing names the same variant and none of the lookalikes' distinguishing words;
 // Japanese-only titles can't be checked word by word, so they rely on Gemini's own exact_model flag.
 function listingMatch(entry, l) {
-  if (l.exact_model === false) return 'check';
   const ai = entry.ai || {};
+  if (entry.kind === 'clothes') {
+    const code = (ai.clothing?.product_code || '').replace(/[\s-]/g, '').toLowerCase();
+    const title = (l.title || '').replace(/[\s-]/g, '').toLowerCase();
+    if (code && code.length >= 4 && title.includes(code)) return 'exact';
+    return l.exact_model === true && l.match_note ? 'exact' : 'similar';
+  }
+  if (l.exact_model === false) return 'check';
   const title = words(l.title);
   if (!/[a-z]{2}/i.test(l.title || '')) return l.exact_model === true ? 'exact' : 'unknown';
   const name = words(entry.override || ai.product_name);
@@ -2858,6 +2869,16 @@ function listingMatch(entry, l) {
   return 'exact';
 }
 
+// Clothes priced only from similar pieces (another colourway or print): the figures are a rough guide.
+function pricesSimilar(entry) {
+  if (entry.kind !== 'clothes' || !entry.ai) return false;
+  if (entry.ai.clothing?.prices_are_similar === true) return true;
+  const mine = [...listingsFor(entry, 'new'), ...listingsFor(entry, 'used')];
+  // No listings at all means the figures are Gemini's own estimate.
+  if (!mine.length) return Boolean(rangeValue(entry.ai.my_new) || rangeValue(entry.ai.my_used));
+  return !mine.some((l) => listingMatch(entry, l) === 'exact');
+}
+
 function renderSourceLines(entry) {
   for (const [kind, sel] of [['new', '#myNewSrc'], ['used', '#myUsedSrc'], ['jp', '#jpUsedSrc']]) {
     const n = listingsFor(entry, kind).length;
@@ -2865,8 +2886,10 @@ function renderSourceLines(entry) {
     const show = Boolean(entry.ai);
     card.classList.toggle('tappable', show);
     card.tabIndex = show ? 0 : -1;
-    const flagged = listingsFor(entry, kind).some((l) => listingMatch(entry, l) === 'check');
-    $(sel).textContent = !show ? '' : n ? `${n} listing${n > 1 ? 's' : ''}${flagged ? ' · check model' : ''} ›` : 'Sources ›';
+    const matches = listingsFor(entry, kind).map((l) => listingMatch(entry, l));
+    const flagged = matches.some((m) => m === 'check' || m === 'similar');
+    const onlySimilar = n > 0 && matches.every((m) => m === 'similar');
+    $(sel).textContent = !show ? '' : onlySimilar ? 'Similar items only ›' : n ? `${n} listing${n > 1 ? 's' : ''}${flagged ? ' · check model' : ''} ›` : 'Sources ›';
     $(sel).classList.toggle('warn', flagged);
   }
 }
@@ -2879,7 +2902,7 @@ function openSources(kind) {
   const value = kind === 'jp' ? jpUsedYen(entry) : rangeValue(entry.ai[kind === 'new' ? 'my_new' : 'my_used']);
   $('#sourceTitle').textContent = `${k.title} · ${value ? (kind === 'jp' ? yen(value) : rm(value)) : 'none found'}`;
   $('#sourceModel').textContent = `Looking for: ${entry.override || entry.ai.product_name || ''}`;
-  const badge = { exact: ['Same model', 'tag-buy'], check: ['Check model', 'tag-maybe'], unknown: ['Not verified', ''] };
+  const badge = { exact: ['Same model', 'tag-buy'], check: ['Check model', 'tag-maybe'], similar: ['Similar item', 'tag-skip'], unknown: ['Not verified', ''] };
   $('#sourceList').replaceChildren(...items.map((l) => {
     const href = safeUrl(l.url);
     const [label, cls] = badge[listingMatch(entry, l)];
@@ -2888,9 +2911,11 @@ function openSources(kind) {
       el('div', { class: 'source-top' },
         el('span', { class: 'source-platform' }, l.platform || 'Listing'),
         el('span', { class: `tag ${cls}` }, label),
+        l.sold ? el('span', { class: 'tag' }, 'Sold') : null,
         el('span', { class: 'source-price' }, price),
       ),
       el('p', { class: 'source-name' }, l.title || 'Untitled listing'),
+      l.match_note ? el('p', { class: 'muted small' }, l.match_note) : null,
       href ? el('a', { class: 'link small', href, target: '_blank', rel: 'noopener' }, 'Open listing ↗') : el('p', { class: 'muted small' }, 'No link given'),
     );
   }));
