@@ -75,3 +75,36 @@ test('clothes priced only from a different design say No exact match', async ({ 
   await expect(page.locator('#verdictLabel')).not.toHaveText('No exact match');
   await expect(page.locator('#myUsedSrc')).toHaveText('1 listing ›');
 });
+
+test('a bought item keeps what the app said, then Sold for shows the real result', async ({ page }) => {
+  await mockApis(page, { rates: { JPY: 0.03 } });
+  await openApp(page, { history: [at300('Flip', { my_used: { typical: 400 }, my_new: { typical: 600 } })], settings: { fxFee: 0 } });
+  await page.goto('/#/scan/Flip');
+  await expect(page.locator('#soldRow')).toBeHidden();
+  await page.click('#boughtBtn');
+  await expect(page.locator('#soldRow')).toBeVisible();
+  // Costs changed after buying don't rewrite what the app said at the time
+  await page.evaluate(() => localStorage.setItem('kc.fxFee', '5'));
+  await page.fill('#soldInput', '420');
+  await expect(page.locator('#soldNote')).toHaveText('Made RM 120 · app said RM 100');
+  const saved = (await page.evaluate(() => JSON.parse(localStorage.getItem('kc.history'))))[0];
+  expect(saved.predicted).toMatchObject({ cost: 300, profit: 100 });
+  expect(saved.soldFor).toBe(420);
+  await page.goto('/#/history');
+  await expect(page.locator('#historyList .history-item .tag')).toHaveText('Made +RM 120');
+  await page.click('#historyChips button:has-text("Sold")');
+  await expect(page.locator('#historyList .history-name')).toHaveText(['Flip']);
+  await page.goto('/#/trip');
+  await expect(page.locator('#tripMadeValue')).toHaveText('RM 120 made');
+  await expect(page.locator('#tripMadeNote')).toHaveText('on 1 sold · app predicted RM 100');
+});
+
+test('Share this find makes a picture of the result', async ({ page }) => {
+  await mockApis(page, { rates: { JPY: 0.03 } });
+  await openApp(page, { history: [at300('Flip', { my_used: { typical: 400 }, my_new: { typical: 600 } })], settings: { fxFee: 0 } });
+  await page.goto('/#/scan/Flip');
+  const [download] = await Promise.all([page.waitForEvent('download'), page.click('#shareBtn')]);
+  expect(download.suggestedFilename()).toBe('kaimono-flip.jpg');
+  const size = require('fs').statSync(await download.path()).size;
+  expect(size).toBeGreaterThan(20000);
+});

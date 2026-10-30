@@ -1035,6 +1035,13 @@ div.history-item { cursor: default; }
 .trip-saved.neg { background: var(--bad-bg); color: var(--bad); }
 .trip-saved-value { font-size: 1.3rem; font-weight: 750; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
 .trip-saved-note { font-size: 0.82rem; color: var(--text); opacity: 0.7; }
+.trip-saved + .trip-saved { margin-top: 8px; }
+
+/* Sold for: what it actually went for, against what the app said */
+.sold-row { margin-top: 12px; padding: 10px 14px; border-radius: var(--r-tile); background: var(--surface); box-shadow: var(--shadow); }
+.sold-row small.made { color: var(--good); font-weight: 600; }
+.sold-row small.lost { color: var(--bad); font-weight: 600; }
+.share-btn { margin-top: 8px; padding: 0; }
 .saved-sum { font-weight: 700; color: var(--good); font-variant-numeric: tabular-nums; }
 .saved-sum.neg { color: var(--bad); }
 .store-list { list-style: none; margin: 0; padding: 4px 16px; border-radius: var(--r-card); background: var(--surface); box-shadow: var(--shadow); }

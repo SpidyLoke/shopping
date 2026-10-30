@@ -1092,9 +1092,9 @@ function dealTags(entry) {
   const costNote = extras.length ? ` It costs you ${whole(paid)} with the ${extras.join(' and ')}.` : '';
   const evidence = { sold: 'sold prices', asking: 'asking prices, sold ones usually go for less' }[usedEvidence(entry)] || 'asking prices';
   const ladder = [
-    [cex.cash, () => ({ key: 'cex-flip', tone: 'profit', label: `${more(cex.cash)} profit at CeX`, short: `CeX +${more(cex.cash)}`, detail: `CeX Malaysia's cash offer is ${rm(cex.cash)}, a firm price.${costNote}` })],
-    [cex.voucher, () => ({ key: 'cex-voucher', tone: 'profit', label: `${more(cex.voucher)} profit in CeX voucher`, short: `Voucher +${more(cex.voucher)}`, detail: `CeX Malaysia offers ${rm(cex.voucher)} in voucher.${costNote}` })],
-    [resale, () => ({ key: 'resell', tone: 'profit', label: `${more(resale)} profit reselling`, short: `Resell +${more(resale)}`, detail: `Used ones go for about ${rm(myUsed)} in Malaysia (${evidence})${settings.sellFee ? `, ${rm(resale)} after the ${settings.sellFee}% selling fee` : ''}.${costNote}` })],
+    [cex.cash, () => ({ key: 'cex-flip', tone: 'profit', amount: cex.cash - paid, label: `${more(cex.cash)} profit at CeX`, short: `CeX +${more(cex.cash)}`, detail: `CeX Malaysia's cash offer is ${rm(cex.cash)}, a firm price.${costNote}` })],
+    [cex.voucher, () => ({ key: 'cex-voucher', tone: 'profit', amount: cex.voucher - paid, label: `${more(cex.voucher)} profit in CeX voucher`, short: `Voucher +${more(cex.voucher)}`, detail: `CeX Malaysia offers ${rm(cex.voucher)} in voucher.${costNote}` })],
+    [resale, () => ({ key: 'resell', tone: 'profit', amount: resale - paid, label: `${more(resale)} profit reselling`, short: `Resell +${more(resale)}`, detail: `Used ones go for about ${rm(myUsed)} in Malaysia (${evidence})${settings.sellFee ? `, ${rm(resale)} after the ${settings.sellFee}% selling fee` : ''}.${costNote}` })],
     [cex.sell, () => ({ key: 'under-cex', tone: 'good', label: `${more(cex.sell)} under CeX`, short: 'Under CeX', detail: `CeX Malaysia sells it used for ${rm(cex.sell)}.${costNote}` })],
     [myNew, () => ({ key: 'under-new', tone: 'plain', label: `${more(myNew)} under MY new`, short: `${more(myNew)} off new`, detail: `New in Malaysia it's about ${rm(myNew)}.${costNote}` })],
   ];
@@ -1121,6 +1121,8 @@ function dealTags(entry) {
 function rowTag(entry) {
   if (scanFailed(entry)) return { text: 'Failed', cls: 'tag-skip' };
   if (running.has(entry.id) && !entry.ai) return { text: '…', cls: '' };
+  const made = realised(entry);
+  if (made != null) return { text: `${made >= 0 ? 'Made' : 'Lost'} ${made >= 0 ? '+' : ''}RM ${Math.abs(Math.round(made)).toLocaleString('en-GB')}`, cls: made >= 0 ? 'tag-profit' : 'tag-skip', title: `Sold for ${rm(entry.soldFor)}` };
   const bad = compatFor(entry).find((c) => c.status === 'bad');
   if (bad) return { text: `${bad.topic} issue`, cls: 'tag-skip', title: bad.note, problem: true };
   const high = seriousIssues(entry)[0];
@@ -2138,7 +2140,37 @@ function show(viewId, keepScroll = false) {
 function setFlag(entry, flag, value) {
   entry[flag] = value;
   if (flag === 'bought') entry.boughtAt = value ? entry.boughtAt || Date.now() : null;
+  if (flag === 'bought' && value && !entry.predicted) entry.predicted = prediction(entry);
   saveEntry(entry);
+}
+
+// ---------- sold for ----------
+// What the app said when you bought it, kept so a later sale can be checked against it.
+function prediction(entry) {
+  const price = japanPrice(entry).rm;
+  if (!price) return null;
+  const deal = dealTags(entry).find((t) => t.tone === 'profit');
+  return { cost: Math.round(landedCost(entry, price).total * 100) / 100, profit: deal ? Math.round(deal.amount) : null, label: deal?.short || null, at: Date.now() };
+}
+
+function realised(entry) {
+  if (entry.soldFor == null) return null;
+  const cost = entry.predicted?.cost ?? (japanPrice(entry).rm ? landedCost(entry, japanPrice(entry).rm).total : null);
+  return cost == null ? null : entry.soldFor - cost;
+}
+
+function renderSold(entry) {
+  $('#soldRow').hidden = !entry.bought || entry.kind === 'shelf';
+  if ($('#soldRow').hidden) return;
+  const input = $('#soldInput');
+  if (document.activeElement !== input) input.value = entry.soldFor ?? '';
+  const made = realised(entry);
+  const note = $('#soldNote');
+  note.className = made == null ? '' : made >= 0 ? 'made' : 'lost';
+  const said = entry.predicted?.profit;
+  note.textContent = made == null
+    ? 'Log it to see how the call held up'
+    : `${made >= 0 ? 'Made' : 'Lost'} ${rm(Math.abs(Math.round(made)))} · ${said != null ? `app said ${rm(said)}` : 'app saw no profit'}`;
 }
 
 const FLAG_TEXT = { fav: ['Added to favourites', 'Removed from favourites'], bought: ['Marked as bought', 'No longer marked as bought'] };
@@ -2373,9 +2405,147 @@ function openRowMenu(id) {
   $('#menuBought').textContent = entry.bought ? 'Not bought' : 'Mark as bought';
   $('#menuBought').hidden = shelf;
   $('#menuCompare').hidden = shelf;
+  $('#menuShare').hidden = shelf || !entry.ai;
   $('#menuRescan').disabled = running.has(id);
   $('#menuDelete').disabled = running.has(id);
   $('#rowMenu').showModal();
+}
+
+// ---------- share card ----------
+// One image for Stories or a chat: the photo, what it cost here and what it fetches at home.
+// No store, location or prices you haven't seen on the result.
+
+function shareFigures(entry) {
+  const paid = japanPrice(entry).rm;
+  const deal = dealTags(entry)[0];
+  const cex = cexFor(entry);
+  const made = realised(entry);
+  if (made != null) return { paid, right: ['Sold for', entry.soldFor], pill: `${made >= 0 ? '+' : '−'}RM ${Math.abs(Math.round(made)).toLocaleString('en-GB')} ${made >= 0 ? 'made' : 'lost'}`, good: made >= 0 };
+  const right = deal?.key === 'cex-flip' ? ['CeX pays', cex.cash]
+    : deal?.key === 'cex-voucher' ? ['CeX voucher', cex.voucher]
+      : rangeValue(entry.ai?.my_used) && deal?.key === 'resell' ? ['Sells used in MY', rangeValue(entry.ai.my_used)]
+        : rangeValue(entry.ai?.my_new) ? ['New in MY', rangeValue(entry.ai.my_new)] : null;
+  return { paid, right, pill: deal?.label || verdictFor(entry)?.label || null, good: deal ? deal.tone === 'profit' || deal.tone === 'good' : verdictFor(entry)?.cls === 'buy' };
+}
+
+function loadImg(src) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+}
+
+function wrapLines(ctx, text, width, max) {
+  const words = String(text).split(/\s+/);
+  const lines = [];
+  let line = '';
+  for (const w of words) {
+    const next = line ? `${line} ${w}` : w;
+    if (ctx.measureText(next).width > width && line) {
+      lines.push(line);
+      line = w;
+    } else line = next;
+  }
+  if (line) lines.push(line);
+  if (lines.length > max) {
+    lines.length = max;
+    lines[max - 1] = `${lines[max - 1].replace(/\s+\S*$/, '')}…`;
+  }
+  return lines;
+}
+
+async function shareCardBlob(entry) {
+  const W = 1080;
+  const H = 1350;
+  const canvas = document.createElement('canvas');
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  try { await document.fonts.load('700 60px Geist'); } catch { /* system font is fine */ }
+  const font = (w, px) => `${w} ${px}px Geist, -apple-system, system-ui, sans-serif`;
+  ctx.fillStyle = '#f4f3ef';
+  ctx.fillRect(0, 0, W, H);
+  // Photo, cropped to fill the top
+  const b64 = (await imageDb.get(entry.imageId || entry.id)) || entry.thumb?.split(',')[1];
+  const img = b64 ? await loadImg(`data:image/jpeg;base64,${b64}`) : null;
+  const ph = 720;
+  if (img) {
+    const scale = Math.max(W / img.width, ph / img.height);
+    const w = img.width * scale;
+    const h = img.height * scale;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, W, ph);
+    ctx.clip();
+    ctx.drawImage(img, (W - w) / 2, (ph - h) / 2, w, h);
+    ctx.restore();
+  } else {
+    ctx.fillStyle = '#e4e2da';
+    ctx.fillRect(0, 0, W, ph);
+  }
+  const f = shareFigures(entry);
+  let y = ph + 70;
+  ctx.fillStyle = '#676a7d';
+  ctx.font = font(600, 30);
+  if (entry.ai?.brand) ctx.fillText(entry.ai.brand.toUpperCase(), 64, y);
+  y += 66;
+  ctx.fillStyle = '#161830';
+  ctx.font = font(700, 58);
+  for (const line of wrapLines(ctx, entry.override || entry.ai?.product_name || entry.webGuess || 'Mystery find', W - 128, 2)) {
+    ctx.fillText(line, 64, y);
+    y += 68;
+  }
+  y += 30;
+  const stat = (x, label, value) => {
+    ctx.fillStyle = '#676a7d';
+    ctx.font = font(500, 30);
+    ctx.fillText(label, x, y);
+    ctx.fillStyle = '#161830';
+    ctx.font = font(700, 64);
+    ctx.fillText(value, x, y + 72);
+  };
+  if (f.paid) stat(64, 'Paid here', `RM ${Math.round(f.paid).toLocaleString('en-GB')}`);
+  if (f.right?.[1]) stat(W / 2 + 20, f.right[0], `RM ${Math.round(f.right[1]).toLocaleString('en-GB')}`);
+  y += 140;
+  if (f.pill) {
+    ctx.font = font(700, 38);
+    const tw = Math.min(ctx.measureText(f.pill).width, W - 200);
+    ctx.fillStyle = f.good ? '#1d7a50' : '#2b3a8c';
+    ctx.beginPath();
+    ctx.roundRect(64, y, tw + 64, 76, 38);
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(f.pill, 96, y + 51, W - 200);
+  }
+  ctx.fillStyle = '#2b3a8c';
+  ctx.font = font(700, 32);
+  ctx.fillText('Kaimono Check', 64, H - 60);
+  ctx.fillStyle = '#676a7d';
+  ctx.font = font(500, 28);
+  ctx.textAlign = 'right';
+  ctx.fillText('spidyloke.github.io/shopping', W - 64, H - 60);
+  return new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.9));
+}
+
+async function shareCard(entry) {
+  const blob = await shareCardBlob(entry);
+  if (!blob) return;
+  const name = `kaimono-${(entry.ai?.product_name || 'find').replace(/[^a-z0-9]+/gi, '-').toLowerCase().slice(0, 40)}.jpg`;
+  const file = new File([blob], name, { type: 'image/jpeg' });
+  if (navigator.canShare?.({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file] });
+      return;
+    } catch (e) {
+      if (e.name === 'AbortError') return;
+    }
+  }
+  const a = el('a', { href: URL.createObjectURL(blob), download: name });
+  document.body.append(a);
+  a.click();
+  a.remove();
 }
 
 function menuAction(fn) {
@@ -2451,6 +2621,7 @@ function historyChipDefs(list) {
     if (items.some((e) => verdictFor(e)?.cls === cls)) defs.push({ key: `v:${cls}`, label });
   }
   if (items.some((e) => !rowTag(e).problem && dealTags(e).some((t) => t.tone === 'profit'))) defs.push({ key: 'profit', label: 'Resale profit' });
+  if (items.some((e) => e.soldFor != null)) defs.push({ key: 'sold', label: 'Sold' });
   if (items.some((e) => e.secondHand)) defs.push({ key: 'used', label: 'Used' });
   if (items.some((e) => e.kind === 'clothes')) defs.push({ key: 'clothes', label: 'Clothes' });
   const stores = new Map();
@@ -2466,6 +2637,7 @@ function chipMatch(e) {
   if (verdicts.length && !verdicts.includes(verdictFor(e)?.cls)) return false;
   if (stores.length && !stores.includes(storeName(e))) return false;
   if (historyChips.has('used') && !e.secondHand) return false;
+  if (historyChips.has('sold') && e.soldFor == null) return false;
   if (historyChips.has('profit') && (rowTag(e).problem || !dealTags(e).some((t) => t.tone === 'profit'))) return false;
   if (historyChips.has('clothes') && e.kind !== 'clothes') return false;
   return true;
@@ -3310,6 +3482,7 @@ function renderResult(entry) {
   $('#verdictSkel').hidden = !loading;
   $('#resName').classList.toggle('skel-text', loading && !entry.webGuess);
   renderChips(entry);
+  renderSold(entry);
   renderPrices(entry);
   renderCondition(entry);
   renderCompat(entry);
@@ -3439,6 +3612,14 @@ function renderTrip() {
   $('#tripSavedNote').textContent = `${t.savedRm >= 0 ? 'vs' : 'than'} buying in Malaysia${counted < t.bought.length ? ` · ${counted} of ${t.bought.length} items had Malaysian prices` : ''}`;
   $('#boughtSaved').textContent = counted ? (t.savedRm >= 0 ? `${rm(t.savedRm)} saved` : `${rm(-t.savedRm)} more than MY`) : '';
   $('#boughtSaved').classList.toggle('neg', t.savedRm < 0);
+
+  const sold = t.bought.filter((e) => realised(e) != null);
+  const made = sold.reduce((sum, e) => sum + realised(e), 0);
+  const said = sold.filter((e) => e.predicted?.profit != null).reduce((sum, e) => sum + e.predicted.profit, 0);
+  $('#tripMade').hidden = !sold.length;
+  $('#tripMade').classList.toggle('neg', made < 0);
+  $('#tripMadeValue').textContent = `${rm(Math.abs(Math.round(made)))} ${made >= 0 ? 'made' : 'lost'}`;
+  $('#tripMadeNote').textContent = `on ${sold.length} sold · app predicted ${rm(said)}`;
 
   $('#tripEmpty').hidden = t.bought.length > 0;
   $('#boughtList').replaceChildren(...t.bought.map((e) => historyItem(e, { saved: t.savedById.get(e.id) })));
@@ -3856,6 +4037,17 @@ $('#seeFavsBtn').addEventListener('click', () => {
 });
 $('#favBtn').addEventListener('click', () => current && toggleFlag(current.id, 'fav'));
 $('#boughtBtn').addEventListener('click', () => current && toggleFlag(current.id, 'bought'));
+$('#soldInput').addEventListener('input', (e) => {
+  if (!current) return;
+  const v = toNum(e.target.value);
+  current.soldFor = v;
+  current.soldAt = v == null ? null : current.soldAt || Date.now();
+  if (v != null && !current.predicted) current.predicted = prediction(current);
+  saveEntry(current);
+  renderSold(current);
+});
+$('#shareBtn').addEventListener('click', () => current && shareCard(current));
+
 $('#budgetInput').addEventListener('input', (e) => {
   saveTrip({ ...currentTrip(), budget: toNum(e.target.value) });
   renderTrip();
@@ -4425,6 +4617,7 @@ $('#menuOpen').addEventListener('click', () => menuAction((e) => { location.hash
 $('#menuFav').addEventListener('click', () => menuAction((e) => toggleFlag(e.id, 'fav')));
 $('#menuBought').addEventListener('click', () => menuAction((e) => toggleFlag(e.id, 'bought')));
 $('#menuRescan').addEventListener('click', () => menuAction((e) => (e.kind === 'shelf' ? rescanShelf(e.id) : rescan(e.id))));
+$('#menuShare').addEventListener('click', () => menuAction((e) => shareCard(e)));
 $('#menuCompare').addEventListener('click', () => menuAction((e) => {
   selectMode = true;
   selection = [e.id];

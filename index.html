@@ -129,6 +129,11 @@
           <input id="addPhotoInput" type="file" accept="image/*" multiple hidden>
         </div>
 
+        <div class="sold-row" id="soldRow" hidden>
+          <label class="budget-field"><span>Sold for<small id="soldNote">Log it to see how the call held up</small></span>
+            <span class="rm-input"><span>RM</span><input id="soldInput" type="number" inputmode="decimal" min="0" placeholder="0"></span></label>
+        </div>
+
         <form class="fix-name" id="fixName" hidden>
           <label class="visually-hidden" for="fixNameInput">Correct product name</label>
           <input id="fixNameInput" type="text" autocomplete="off" placeholder="Exact product name">
@@ -152,6 +157,7 @@
           <p class="verdict-label" id="verdictLabel"></p>
           <div class="deal-tags" id="dealTags"></div>
           <p class="verdict-detail" id="verdictDetail"></p>
+          <button class="link small share-btn" type="button" id="shareBtn">Share this find</button>
         </div>
 
         <div class="variant-box" id="variantBox" hidden>
@@ -343,6 +349,10 @@
         <div class="trip-saved" id="tripSaved" hidden>
           <p class="trip-saved-value" id="tripSavedValue"></p>
           <p class="trip-saved-note" id="tripSavedNote"></p>
+        </div>
+        <div class="trip-saved" id="tripMade" hidden>
+          <p class="trip-saved-value" id="tripMadeValue"></p>
+          <p class="trip-saved-note" id="tripMadeNote"></p>
         </div>
       </div>
       <h2 id="storeHead" hidden>By store</h2>
@@ -579,6 +589,7 @@
       <button type="button" id="menuBought">Mark as bought</button>
       <button type="button" id="menuRescan">Rescan</button>
       <button type="button" id="menuCompare">Compare with…</button>
+      <button type="button" id="menuShare">Share</button>
       <button type="button" class="danger" id="menuDelete">Delete</button>
     </div>
     <button class="btn btn-block" type="button" id="menuCancel">Cancel</button>
