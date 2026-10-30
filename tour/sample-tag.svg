@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 800" width="600" height="800">
+  <!-- A sample second-hand shop price tag for the first-run walkthrough (not a real shop's design). -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2a2d3a"/>
+      <stop offset="1" stop-color="#14161f"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#000" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+  <rect width="600" height="800" fill="url(#bg)"/>
+  <g transform="rotate(-3 300 400)" filter="url(#shadow)">
+    <rect x="80" y="120" width="440" height="560" rx="18" fill="#fffdf4"/>
+    <rect x="80" y="120" width="440" height="96" rx="18" fill="#d7262e"/>
+    <rect x="80" y="190" width="440" height="26" fill="#d7262e"/>
+    <text x="112" y="186" font-family="Hiragino Sans, Noto Sans JP, sans-serif" font-size="52" font-weight="800" fill="#fff">中古</text>
+    <text x="232" y="182" font-family="Helvetica, Arial, sans-serif" font-size="30" font-weight="700" fill="#fff">USED · ランクA</text>
+    <text x="112" y="278" font-family="Helvetica, Arial, sans-serif" font-size="34" font-weight="800" fill="#161830">SONY</text>
+    <text x="112" y="330" font-family="Helvetica, Arial, sans-serif" font-size="44" font-weight="800" fill="#161830">WH-1000XM5</text>
+    <text x="112" y="372" font-family="Hiragino Sans, Noto Sans JP, sans-serif" font-size="26" fill="#3a3d52">ワイヤレスヘッドホン ブラック</text>
+    <rect x="112" y="392" width="150" height="38" rx="8" fill="#1d7a50"/>
+    <text x="126" y="420" font-family="Hiragino Sans, Noto Sans JP, sans-serif" font-size="24" font-weight="700" fill="#fff">動作確認済</text>
+    <text x="112" y="520" font-family="Helvetica, Arial, sans-serif" font-size="96" font-weight="800" fill="#d7262e">¥19,800</text>
+    <text x="400" y="556" font-family="Hiragino Sans, Noto Sans JP, sans-serif" font-size="24" font-weight="700" fill="#d7262e">(税込)</text>
+    <g fill="#161830">
+      <rect x="112" y="580" width="4" height="56"/><rect x="120" y="580" width="2" height="56"/><rect x="126" y="580" width="6" height="56"/><rect x="136" y="580" width="2" height="56"/>
+      <rect x="142" y="580" width="4" height="56"/><rect x="150" y="580" width="2" height="56"/><rect x="156" y="580" width="6" height="56"/><rect x="166" y="580" width="4" height="56"/>
+      <rect x="174" y="580" width="2" height="56"/><rect x="180" y="580" width="4" height="56"/><rect x="188" y="580" width="6" height="56"/><rect x="198" y="580" width="2" height="56"/>
+      <rect x="204" y="580" width="4" height="56"/><rect x="212" y="580" width="2" height="56"/><rect x="218" y="580" width="6" height="56"/><rect x="228" y="580" width="2" height="56"/>
+      <rect x="234" y="580" width="4" height="56"/><rect x="242" y="580" width="6" height="56"/><rect x="252" y="580" width="2" height="56"/><rect x="258" y="580" width="4" height="56"/>
+      <rect x="266" y="580" width="2" height="56"/><rect x="272" y="580" width="6" height="56"/><rect x="282" y="580" width="2" height="56"/><rect x="288" y="580" width="4" height="56"/>
+    </g>
+    <text x="112" y="662" font-family="Helvetica, Arial, sans-serif" font-size="22" letter-spacing="3" fill="#161830">4 548736 133730</text>
+    <text x="508" y="662" text-anchor="end" font-family="Helvetica, Arial, sans-serif" font-size="18" font-weight="700" letter-spacing="2" fill="#9a9cab">SAMPLE</text>
+  </g>
+</svg>

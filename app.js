@@ -6,7 +6,7 @@ import { buildPrompt, findBarcodes, gtinValid, MARKETS, marketFor } from './prom
 import { FIREBASE } from './firebase-config.js';
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.10.30-7';
+const APP_VERSION = '2026.10.30-8';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -4202,6 +4202,265 @@ $('#clearHistoryBtn').addEventListener('click', () => {
   route();
 });
 
+// ---------- install guide ----------
+// iPhones only install from Safari's own Share → Add to Home Screen, so the guide shows those
+// buttons as they look on this phone (Safari 26 moved Share into ⋯), and an arrow points at the real
+// one. /install opens the app with ?install; the query is dropped at once so the Home Screen icon
+// opens the app itself.
+
+const MOCK_ICONS = {
+  share: 'M216,112v96a16,16,0,0,1-16,16H56a16,16,0,0,1-16-16V112A16,16,0,0,1,56,96H80a8,8,0,0,1,0,16H56v96H200V112H176a8,8,0,0,1,0-16h24A16,16,0,0,1,216,112ZM93.66,69.66,120,43.31V136a8,8,0,0,0,16,0V43.31l26.34,26.35a8,8,0,0,0,11.32-11.32l-40-40a8,8,0,0,0-11.32,0l-40,40A8,8,0,0,0,93.66,69.66Z',
+  dots: 'M140,128a12,12,0,1,1-12-12A12,12,0,0,1,140,128ZM60,116a12,12,0,1,0,12,12A12,12,0,0,0,60,116Zm136,0a12,12,0,1,0,12,12A12,12,0,0,0,196,116Z',
+  plus: 'M208,32H48A16,16,0,0,0,32,48V208a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V48A16,16,0,0,0,208,32Zm0,176H48V48H208V208Zm-32-80a8,8,0,0,1-8,8H136v32a8,8,0,0,1-16,0V136H88a8,8,0,0,1,0-16h32V88a8,8,0,0,1,16,0v32h32A8,8,0,0,1,176,128Z',
+  back: 'M165.66,202.34a8,8,0,0,1-11.32,11.32l-80-80a8,8,0,0,1,0-11.32l80-80a8,8,0,0,1,11.32,11.32L91.31,128Z',
+  forward: 'M181.66,133.66l-80,80a8,8,0,0,1-11.32-11.32L164.69,128,90.34,53.66a8,8,0,0,1,11.32-11.32l80,80A8,8,0,0,1,181.66,133.66Z',
+  book: 'M224,48H160a40,40,0,0,0-32,16A40,40,0,0,0,96,48H32A16,16,0,0,0,16,64V192a16,16,0,0,0,16,16H96a24,24,0,0,1,24,24,8,8,0,0,0,16,0,24,24,0,0,1,24-24h64a16,16,0,0,0,16-16V64A16,16,0,0,0,224,48ZM96,192H32V64H96a24,24,0,0,1,24,24V200A39.81,39.81,0,0,0,96,192Zm128,0H160a39.81,39.81,0,0,0-24,8V88a24,24,0,0,1,24-24h64Z',
+  tabs: 'M216,40H72A16,16,0,0,0,56,56V72H40A16,16,0,0,0,24,88V200a16,16,0,0,0,16,16H184a16,16,0,0,0,16-16V184h16a16,16,0,0,0,16-16V56A16,16,0,0,0,216,40ZM184,200H40V88H184Zm32-32H200V88a16,16,0,0,0-16-16H72V56H216Z',
+};
+const mockIcon = (name, hot = false) => `<span class="mock-ico${hot ? ' hot' : ''}"><svg viewBox="0 0 256 256"><path d="${MOCK_ICONS[name]}"/></svg></span>`;
+const mockRow = (label, iconName, hot = false) => `<div class="mock-row${hot ? ' hot' : ''}"><span>${label}</span>${iconName ? `<svg viewBox="0 0 256 256"><path d="${MOCK_ICONS[iconName]}"/></svg>` : ''}</div>`;
+const INSTALL_LINK = 'https://spidyloke.github.io/shopping/install';
+
+function installContext() {
+  const ua = navigator.userAgent;
+  const ipad = /iPad/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+  const ios = /iPhone|iPod/.test(ua) || ipad;
+  return {
+    standalone: matchMedia('(display-mode: standalone)').matches || navigator.standalone === true,
+    ios,
+    ipad,
+    // Chrome, Firefox, Edge, Google and in-app browsers (Instagram, Facebook, LINE…) can't add web apps.
+    otherBrowser: ios && (/CriOS|FxiOS|EdgiOS|OPiOS|GSA\/|FBAN|FBAV|Instagram|Line\/|MicroMessenger|Snapchat|TikTok/.test(ua) || !/Safari\//.test(ua)),
+    safari26: Number((ua.match(/Version\/(\d+)/) || [])[1] || 0) >= 26,
+    android: /Android/.test(ua),
+  };
+}
+
+function installSteps(c) {
+  const step = (title, mock = '', note = '') => `<li><p>${title}</p>${mock}${note ? `<p class="note">${note}</p>` : ''}</li>`;
+  const app = `<div class="mock-app"><img src="icons/icon-192.png" alt=""><span><strong>Kaimono</strong><br><small>spidyloke.github.io</small></span></div>`;
+  const home = step('Open Kaimono from your Home Screen', '<div class="mock mock-home"><span><i class="other"></i>Photos</span><span><img src="icons/icon-192.png" alt="">Kaimono</span><span><i class="other"></i>Maps</span></div>', 'From then on it opens full screen, like any app.');
+  const copy = `<div class="copy-row"><input id="installLink" value="${INSTALL_LINK}" readonly aria-label="Link"><button class="btn btn-small" type="button" data-copy-install>Copy</button></div>`;
+  if (c.otherBrowser) {
+    return [
+      step('Open this page in Safari', copy, 'Only Safari can add apps to the Home Screen. Tap Copy, open Safari, paste the link into the address bar and go. (In Instagram or Facebook you can also tap ⋯ then Open in browser.)'),
+      step('Then follow the steps there', '', 'They show exactly which buttons to tap.'),
+    ];
+  }
+  if (c.ios && c.safari26 && !c.ipad) {
+    return [
+      step('Tap ⋯ at the bottom right', `<div class="mock mock-bar">${mockIcon('back')}<span class="url">spidyloke.github.io</span>${mockIcon('dots', true)}</div>`, 'Next to the address bar. If the bar is at the top of the screen, ⋯ is up there.'),
+      step('Tap Share', `<div class="mock mock-rows">${mockRow('Share', 'share', true)}${mockRow('Add Bookmark', 'book')}${mockRow('New Tab', 'tabs')}</div>`),
+      step('Tap Add to Home Screen', `<div class="mock mock-rows">${mockRow('Copy')}${mockRow('Add to Reading List')}${mockRow('Add Bookmark', 'book')}${mockRow('Add to Home Screen', 'plus', true)}</div>`, 'Not there? Swipe up on the list, or tap View More.'),
+      step('Keep "Open as Web App" on, then tap Add', `<div class="mock"><div class="mock-head"><span class="blue">Cancel</span><span>Add to Home Screen</span><span class="blue hot">Add</span></div>${app}<div class="mock-row"><span>Open as Web App</span><i class="mock-toggle"></i></div></div>`),
+      home,
+    ];
+  }
+  if (c.ios) {
+    return [
+      step(c.ipad ? 'Tap Share at the top right' : 'Tap Share at the bottom of the screen',
+        `<div class="mock mock-bar">${mockIcon('back')}${mockIcon('forward')}${mockIcon('share', true)}${mockIcon('book')}${mockIcon('tabs')}</div>`,
+        c.ipad ? 'The square with an arrow, next to the address bar.' : 'The square with an arrow pointing up. Can\'t see the bar? Scroll up a little.'),
+      step('Scroll down and tap Add to Home Screen', `<div class="mock mock-rows">${mockRow('Copy')}${mockRow('Add to Reading List')}${mockRow('Add Bookmark', 'book')}${mockRow('Add to Home Screen', 'plus', true)}</div>`),
+      step('Tap Add at the top right', `<div class="mock"><div class="mock-head"><span class="blue">Cancel</span><span>Add to Home Screen</span><span class="blue hot">Add</span></div>${app}</div>`),
+      home,
+    ];
+  }
+  if (c.android) {
+    return installPrompt
+      ? [step('Tap Install below', '', 'Chrome adds Kaimono to your Home Screen and app list.'), home]
+      : [step('Tap ⋮ at the top right of Chrome, then Install app', '', 'On some phones it says Add to Home screen.'), home];
+  }
+  return [step('Open this link on your phone', copy, 'Kaimono is made for phones: scan this link into your phone or send it to yourself.')];
+}
+
+function openInstallGuide() {
+  const c = installContext();
+  $('#installSteps').innerHTML = installSteps(c).join('');
+  $('#installGuideBtn').hidden = !(c.android && installPrompt);
+  const arrow = c.ios && !c.otherBrowser ? (c.ipad ? 'top-right' : c.safari26 ? 'bottom-right' : 'bottom-centre') : null;
+  $('#installArrow').hidden = !arrow;
+  $('#installArrow').className = `install-arrow ${arrow || ''}`;
+  if (!$('#installGuide').open) $('#installGuide').showModal();
+  $('#installGuide').scrollTop = 0;
+}
+
+$('#installSteps').addEventListener('click', async (e) => {
+  if (!e.target.closest('[data-copy-install]')) return;
+  const btn = e.target.closest('[data-copy-install]');
+  try {
+    await navigator.clipboard.writeText(INSTALL_LINK);
+  } catch {
+    $('#installLink').select();
+    document.execCommand?.('copy');
+  }
+  btn.textContent = 'Copied';
+});
+$('#installGuideClose').addEventListener('click', () => $('#installGuide').close());
+$('#installGuideBtn').addEventListener('click', () => $('#installBtn').click());
+$('#installHow').addEventListener('click', openInstallGuide);
+
+// ---------- first-run walkthrough ----------
+// Shows how a scan goes, with a sample tag (a very good deal) and no network or scans used: tap the
+// camera, take the "photo", watch it check, then a tour of the result. The sample is removed after.
+
+const TOUR_ID = 'tour-sample';
+let tourStep = -1;
+let coachRect = null; // where the step's target is (the ring animates there, so it can lag)
+
+function tourEntry() {
+  return {
+    id: TOUR_ID,
+    sample: true,
+    createdAt: Date.now(),
+    market: 'MY',
+    thumb: 'tour/sample-tag.svg',
+    yen: 19800,
+    currency: 'JPY',
+    taxIncluded: true,
+    secondHand: true,
+    rate: 0.0295, rateCur: 'JPY', rateTo: 'MYR',
+    status: { vision: 'done', translate: 'skipped', search: 'done' },
+    errors: [],
+    barcode: '4548736133730',
+    byBarcode: true,
+    ocrText: '中古 USED ランクA SONY WH-1000XM5 ワイヤレスヘッドホン ブラック 動作確認済 ¥19,800 (税込) 4 548736 133730',
+    ai: {
+      product_name: 'Sony WH-1000XM5 Wireless Headphones', brand: 'Sony', store_name: 'Second-hand shop (sample)',
+      search_query: 'Sony WH-1000XM5', barcode: '4548736133730', identified_by: 'barcode',
+      variant: 'WH-1000XM5 (black)', variant_evidence: 'tag says WH-1000XM5', variant_confidence: 'high', lookalikes: [],
+      price: 19800, currency: 'JPY', shop_country: 'JP', price_tax_included: true,
+      my_new: { low: 1299, high: 1499, typical: 1399 },
+      my_used: { low: 880, high: 1050, typical: 950 },
+      cex_my: { sell_rm: 1050, buy_cash_rm: 760, buy_voucher_rm: 900, grade: 'B', url: null },
+      listings: [
+        { platform: 'Shopee', condition: 'new', title: 'Sony WH-1000XM5 Wireless Noise Cancelling Headphones (Sony Malaysia warranty)', price_rm: 1399, url: null, exact_model: true, match_note: 'Same model (sample listing)' },
+        { platform: 'Carousell', condition: 'used', title: 'Sony WH-1000XM5 black, like new, full box', price_rm: 950, url: null, exact_model: true, match_note: 'Same model (sample listing)', sold: true },
+        { platform: 'Carousell', condition: 'used', title: 'WH-1000XM5 silver with case', price_rm: 980, url: null, exact_model: true, match_note: 'Same model, other colour (sample listing)', sold: true },
+      ],
+      my_compat: [{ topic: 'Power', status: 'ok', note: 'Charges over USB-C, so any charger in Malaysia works.' }],
+      condition: { is_used: true, grade: 'ランクA', grade_meaning: 'Rank A: lightly used, clean, works', grade_options: [], issues: [{ jp: '動作確認済', en: 'Tested and working', severity: 'good' }], missing: [] },
+      confidence: 'high',
+      notes: 'Sample result for the walkthrough.',
+    },
+  };
+}
+
+const TOUR_STEPS = [
+  { at: '#homeView .capture', text: 'Tap here to photograph a price tag. Let\'s try a sample one.', tap: () => tourCamera() },
+  { at: '#tourShutter', text: 'Point at the tag and tap the shutter.', tap: () => tourScan() },
+  { at: '#verdict', text: 'The verdict. Green means buy: here it costs far less than it fetches back home.' },
+  { at: '#dealTags', text: 'Your profit if you sell it on, after your card fee. Here CeX alone would pay this much more than the tag.' },
+  { at: '#prices', text: 'What it costs here in ringgit, and what it sells for new and used at home. Tap any price to see the exact listings behind it.' },
+  { at: '#boughtBtn', text: 'Buying it? Tap Bought. When it sells, type the price and Kaimono shows what you really made.' },
+  { at: '#judge', text: 'Wrong model or price? Tell us here. Every answer makes Kaimono more accurate.' },
+  { at: null, text: 'That\'s the lot. Now try a real tag: Item, Clothes or a whole Shelf, New or Used.', last: true },
+];
+
+function startTour() {
+  for (const d of document.querySelectorAll('dialog[open]')) d.close();
+  location.hash = '#/';
+  route();
+  tourStep = -1;
+  $('#coach').hidden = false;
+  nextTourStep();
+}
+
+function nextTourStep() {
+  tourStep += 1;
+  const step = TOUR_STEPS[tourStep];
+  if (!step) {
+    endTour();
+    return;
+  }
+  // Steps on the result wait for it to render; a Skip in the meantime wins.
+  const n = tourStep;
+  setTimeout(() => {
+    if (tourStep === n) placeCoach(step);
+  }, step.at && !$(step.at)?.offsetParent && step.at !== '#tourShutter' ? 400 : 60);
+}
+
+function placeCoach(step) {
+  const hole = $('#coachHole');
+  const tip = $('#coachTip');
+  const target = step.at ? $(step.at) : null;
+  hole.classList.toggle('none', !target);
+  hole.classList.toggle('tap', Boolean(step.tap));
+  tip.hidden = false;
+  $('#coach').hidden = false;
+  $('#coachText').textContent = step.text;
+  $('#coachCount').textContent = `${tourStep + 1} of ${TOUR_STEPS.length}`;
+  $('#coachNext').hidden = Boolean(step.tap);
+  $('#coachNext').textContent = step.last ? 'Start scanning' : 'Next';
+  $('#coachSkip').hidden = Boolean(step.last);
+  tip.style.top = '';
+  tip.style.bottom = '';
+  coachRect = null;
+  if (!target) {
+    tip.style.top = '38%';
+    return;
+  }
+  if (step.at !== '#tourShutter') target.scrollIntoView({ block: 'center' });
+  const r = target.getBoundingClientRect();
+  const pad = 6;
+  coachRect = { left: r.left - pad, right: r.right + pad, top: r.top - pad, bottom: r.bottom + pad };
+  Object.assign(hole.style, { left: `${r.left - pad}px`, top: `${r.top - pad}px`, width: `${r.width + pad * 2}px`, height: `${r.height + pad * 2}px` });
+  // The tip goes wherever there's more room.
+  if (r.top > innerHeight - r.bottom) tip.style.bottom = `${innerHeight - r.top + pad + 12}px`;
+  else tip.style.top = `${r.bottom + pad + 12}px`;
+}
+
+// Taps go to the walkthrough, not the app underneath: only the ringed spot, on steps that ask for it.
+$('#coach').addEventListener('click', (e) => {
+  const step = TOUR_STEPS[tourStep];
+  if (!step?.tap || e.target.closest('#coachTip')) return;
+  const r = coachRect;
+  if (r && e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) step.tap();
+});
+$('#coachNext').addEventListener('click', () => nextTourStep());
+$('#coachSkip').addEventListener('click', () => endTour());
+
+function tourCamera() {
+  $('#tourReading').hidden = true;
+  $('#tourShutter').hidden = false;
+  $('#tourCam').hidden = false;
+  nextTourStep();
+}
+
+async function tourScan() {
+  $('#coach').hidden = true; // back for the result
+  $('#coachTip').hidden = true;
+  $('#tourCam').classList.add('flash');
+  $('#tourShutter').hidden = true;
+  const lines = ['Reading the tag', 'Barcode 4548736133730', 'Searching Shopee and Carousell', 'Checking CeX', 'Working out the profit'];
+  $('#tourReadingList').replaceChildren(...lines.map((l) => el('li', {}, l)));
+  $('#tourReading').hidden = false;
+  for (const li of $('#tourReadingList').children) {
+    await new Promise((r) => setTimeout(r, 420));
+    li.classList.add('done');
+  }
+  await new Promise((r) => setTimeout(r, 300));
+  const others = loadHistory().filter((e) => e.id !== TOUR_ID);
+  store.set('history', [tourEntry(), ...others]);
+  $('#tourCam').hidden = true;
+  $('#tourCam').classList.remove('flash');
+  location.hash = `#/scan/${TOUR_ID}`;
+  route();
+  nextTourStep();
+}
+
+function endTour() {
+  tourStep = -1;
+  $('#coach').hidden = true;
+  $('#tourCam').hidden = true;
+  store.set('tourDone', true);
+  if (findEntry(TOUR_ID)) store.set('history', loadHistory().filter((e) => e.id !== TOUR_ID));
+  if (current?.id === TOUR_ID) current = null;
+  location.hash = '#/';
+  route();
+  if (!canScan()) openSettings();
+}
+
 // ---------- beta: error reports and feedback ----------
 // Crashes and failed scans go to the backend (no photos), so problems on testers' phones show up on
 // the owner's dashboard. The last 20 also stay on the phone (and in the test export).
@@ -4363,8 +4622,9 @@ function renderInstallTip() {
   const show = !standalone && !store.get('installDismissed') && (ios || installPrompt);
   $('#installTip').hidden = !show;
   if (!show) return;
-  $('#installText').textContent = ios ? 'Install it: tap Share, then Add to Home Screen. It opens like an app and works offline.' : 'Install Kaimono as an app for quicker scanning.';
+  $('#installText').textContent = ios ? 'Put Kaimono on your Home Screen: it opens like an app and works offline.' : 'Install Kaimono as an app for quicker scanning.';
   $('#installBtn').hidden = !installPrompt;
+  $('#installHow').hidden = !ios;
 }
 
 window.addEventListener('beforeinstallprompt', (e) => {
@@ -4601,13 +4861,16 @@ $('#homeMarketSelect').addEventListener('change', async (e) => {
 $('#introStart').addEventListener('click', () => {
   store.set('onboarded', true);
   $('#introSheet').close();
+  startTour();
+});
+$('#introSkip').addEventListener('click', () => {
+  store.set('onboarded', true);
+  store.set('tourDone', true);
+  $('#introSheet').close();
   if (!canScan()) openSettings();
 });
 $('#introSheet').addEventListener('cancel', () => store.set('onboarded', true));
-$('#introAgain').addEventListener('click', () => {
-  $('#settingsDialog').close();
-  $('#introSheet').showModal();
-});
+$('#introAgain').addEventListener('click', () => startTour());
 
 $('#settingsBtn').addEventListener('click', openSettings);
 document.querySelectorAll('[data-open-settings]').forEach((b) => b.addEventListener('click', openSettings));
@@ -5170,7 +5433,14 @@ applyLook();
 renderHomeSymbols();
 route();
 // First run: what the app does and that its prices are estimates. Not for anyone who already has scans.
-if (!store.get('onboarded') && !historyEntries().length) $('#introSheet').showModal();
+// /install (the link for testers) arrives as ?install: drop it from the address straight away, so
+// Add to Home Screen saves the app itself, then show the guide. Otherwise, first run: the intro.
+if (new URLSearchParams(location.search).has('install')) {
+  history.replaceState(null, '', location.pathname + location.hash);
+  if (!installContext().standalone) openInstallGuide();
+} else if (!store.get('onboarded') && !historyEntries().length) {
+  $('#introSheet').showModal();
+}
 fetchRate().then(() => {
   renderRate();
   if (current && location.hash.startsWith('#/scan/')) renderPrices(current);

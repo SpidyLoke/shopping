@@ -76,21 +76,62 @@ test('the testing export has scans and photos but no keys, server details or GPS
   expect(out.images).toEqual({ Kept: 'MAIN' });
 });
 
-test('first run: the intro explains it, says prices are estimates, links the terms, and only shows once', async ({ page }) => {
-  await mockApis(page);
+test('first run: the intro, then a walkthrough with a sample tag that uses no scans and leaves nothing behind', async ({ page }) => {
+  const calls = await mockApis(page);
   await page.goto('/');
   await expect(page.locator('#introSheet')).toBeVisible();
   await expect(page.locator('#introSheet')).toContainText('Prices are estimates');
   await expect(page.locator('#introSheet a[href="legal/terms.html"]')).toBeVisible();
   await page.click('#introStart');
-  await expect(page.locator('#introSheet')).toBeHidden();
+  // 1: the camera button, ringed; tapping elsewhere does nothing
+  await expect(page.locator('#coach')).toBeVisible();
+  await expect(page.locator('#coachText')).toContainText('photograph a price tag');
+  await expect(page.locator('#coachNext')).toBeHidden();
+  await page.mouse.click(20, 820);
+  await expect(page.locator('#coachCount')).toHaveText('1 of 8');
+  const cap = await page.locator('#homeView .capture').boundingBox();
+  await page.mouse.click(cap.x + cap.width / 2, cap.y + cap.height / 2);
+  // 2: the sample tag in a viewfinder; the shutter
+  await expect(page.locator('#tourCam')).toBeVisible();
+  await expect(page.locator('#coachCount')).toHaveText('2 of 8');
+  const shutter = await page.locator('#tourShutter').boundingBox();
+  await page.mouse.click(shutter.x + shutter.width / 2, shutter.y + shutter.height / 2);
+  await expect(page.locator('#tourReading')).toBeVisible();
+  // 3 onwards: the result, a very good deal
+  await expect(page.locator('#coachCount')).toHaveText('3 of 8', { timeout: 8000 });
+  await expect(page).toHaveURL(/#\/scan\/tour-sample$/);
+  await expect(page.locator('#resName')).toHaveText('Sony WH-1000XM5 Wireless Headphones');
+  await expect(page.locator('#verdictLabel')).toHaveText('Buy it here');
+  await expect(page.locator('#dealTags .deal').first()).toHaveText(/^RM \d+ profit at CeX$/);
+  await expect(page.locator('#resIdLine')).toBeVisible();
+  for (const n of [4, 5, 6, 7, 8]) {
+    await page.click('#coachNext');
+    await expect(page.locator('#coachCount')).toHaveText(`${n} of 8`);
+  }
+  await expect(page.locator('#coachNext')).toHaveText('Start scanning');
+  await page.click('#coachNext');
+  await expect(page.locator('#coach')).toBeHidden();
   await expect(page.locator('#settingsDialog')).toBeVisible(); // no keys yet
+  const left = await page.evaluate(() => ({ history: JSON.parse(localStorage.getItem('kc.history') || '[]').length, done: localStorage.getItem('kc.tourDone') }));
+  expect(left).toEqual({ history: 0, done: 'true' });
+  expect(calls.gemini).toHaveLength(0);
+  expect(calls.vision).toHaveLength(0);
   await page.reload();
   await expect(page.locator('#introSheet')).toBeHidden();
-  // and from Settings again
+  // How it works in Settings runs it again; Skip ends it
   await page.click('#settingsBtn');
   await page.click('#introAgain');
-  await expect(page.locator('#introSheet')).toBeVisible();
+  await page.click('#coachSkip'); // straight away, before the first step has placed itself
+  await page.waitForTimeout(600);
+  await expect(page.locator('#coach')).toBeHidden();
+});
+
+test('Skip on the intro goes straight to the app', async ({ page }) => {
+  await mockApis(page);
+  await page.goto('/');
+  await page.click('#introSkip');
+  await expect(page.locator('#coach')).toBeHidden();
+  expect(await page.evaluate(() => localStorage.getItem('kc.tourDone'))).toBe('true');
 });
 
 test('the privacy policy and terms pages load', async ({ page }) => {

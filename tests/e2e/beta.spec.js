@@ -91,7 +91,8 @@ test.describe('on an iPhone in Safari', () => {
     await mockApis(page);
     await openApp(page, { settings: { installDismissed: false } });
     await expect(page.locator('#installTip')).toBeVisible();
-    await expect(page.locator('#installText')).toContainText('Add to Home Screen');
+    await expect(page.locator('#installText')).toContainText('Home Screen');
+    await expect(page.locator('#installHow')).toBeVisible();
     await page.click('#installClose');
     await page.reload();
     await expect(page.locator('#installTip')).toBeHidden();

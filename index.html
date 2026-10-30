@@ -79,6 +79,7 @@
       <div class="install-tip" id="installTip" hidden>
         <span id="installText"></span>
         <button class="btn btn-small btn-primary" type="button" id="installBtn" hidden>Install</button>
+        <button class="btn btn-small" type="button" id="installHow" hidden>Show me</button>
         <button class="icon-btn" type="button" id="installClose" aria-label="Dismiss"><svg class="i" viewBox="0 0 256 256" aria-hidden="true"><path d="M204.24,195.76a6,6,0,1,1-8.48,8.48L128,136.49,60.24,204.24a6,6,0,0,1-8.48-8.48L119.51,128,51.76,60.24a6,6,0,0,1,8.48-8.48L128,119.51l67.76-67.75a6,6,0,0,1,8.48,8.48L136.49,128Z"/></svg></button>
       </div>
 
@@ -662,7 +663,8 @@
       <li><strong>Log what it sold for.</strong> Mark it bought, add the sale price later, and see how the call held up.</li>
     </ol>
     <p class="intro-note">Prices are estimates from AI and web search, and can be wrong. Tap any price to check the listings behind it before you buy.</p>
-    <button class="btn btn-primary intro-go" type="button" id="introStart">Start scanning</button>
+    <button class="btn btn-primary intro-go" type="button" id="introStart">Show me how (1 minute)</button>
+    <button class="link small intro-skip" type="button" id="introSkip">Skip, I'll figure it out</button>
     <p class="muted small intro-legal">By using Kaimono you agree to the <a href="legal/terms.html">Terms</a> and <a href="legal/privacy.html">Privacy policy</a>.</p>
   </dialog>
   <!-- Account: email and password, so a plan survives a new phone -->
@@ -713,6 +715,45 @@
     </div>
     <div id="statsBody"><p class="muted small">Loading…</p></div>
   </dialog>
+  <!-- Install guide: Safari's own Add to Home Screen, shown button by button (opened by /install) -->
+  <dialog class="install-guide" id="installGuide" aria-labelledby="installTitle">
+    <div class="install-head">
+      <img src="icons/icon.svg" alt="" width="56" height="56">
+      <h2 id="installTitle" tabindex="-1" autofocus>Put Kaimono on your Home Screen</h2>
+      <p class="muted small" id="installSub">It opens full screen like an app and works offline. Takes 10 seconds.</p>
+    </div>
+    <ol class="install-steps" id="installSteps"></ol>
+    <div class="install-foot">
+      <button class="btn btn-primary" type="button" id="installGuideBtn" hidden>Install</button>
+      <button class="link small" type="button" id="installGuideClose">Not now, use it in the browser</button>
+    </div>
+    <div class="install-arrow" id="installArrow" hidden aria-hidden="true"><svg viewBox="0 0 256 256"><path d="M205.66,149.66l-72,72a8,8,0,0,1-11.32,0l-72-72a8,8,0,0,1,11.32-11.32L120,196.69V40a8,8,0,0,1,16,0V196.69l58.34-58.35a8,8,0,0,1,11.32,11.32Z"/></svg></div>
+  </dialog>
+
+  <!-- First-run walkthrough: a sample tag, scanned without using a scan -->
+  <div class="tour-cam" id="tourCam" hidden>
+    <div class="tour-frame">
+      <img src="tour/sample-tag.svg" alt="A sample second-hand shop tag: Sony WH-1000XM5, used rank A, ¥19,800">
+      <span class="tour-corner tl"></span><span class="tour-corner tr"></span><span class="tour-corner bl"></span><span class="tour-corner br"></span>
+    </div>
+    <div class="tour-reading" id="tourReading" hidden>
+      <p class="tour-reading-title">Checking the price…</p>
+      <ul id="tourReadingList"></ul>
+    </div>
+    <button class="tour-shutter" type="button" id="tourShutter" aria-label="Take the photo"></button>
+  </div>
+  <div class="coach" id="coach" hidden>
+    <div class="coach-hole" id="coachHole"></div>
+    <div class="coach-tip" id="coachTip" role="dialog" aria-live="polite">
+      <p class="coach-text" id="coachText"></p>
+      <div class="coach-actions">
+        <button class="link small" type="button" id="coachSkip">Skip</button>
+        <span class="coach-count" id="coachCount"></span>
+        <button class="btn btn-small btn-primary" type="button" id="coachNext">Next</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Long-press a scan: quick actions -->
   <dialog class="sheet menu-sheet" id="rowMenu" aria-label="Quick actions">
     <div class="menu-head">

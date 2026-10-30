@@ -1736,3 +1736,88 @@ dialog.camera::backdrop { background: #000; }
 .stats-list { list-style: none; margin: 6px 0 14px; padding: 0; display: grid; gap: 6px; font-size: 0.85rem; }
 .stats-list li { padding: 8px 10px; border-radius: var(--r-tile); background: var(--surface); }
 .stats-list small { display: block; color: var(--muted); }
+
+/* ---------- install guide ---------- */
+dialog.install-guide {
+  width: 100%; max-width: 560px; height: 100dvh; max-height: 100dvh; margin: 0 auto; padding: max(24px, env(safe-area-inset-top)) 16px calc(96px + env(safe-area-inset-bottom));
+  border: 0; background: var(--bg); color: var(--text); overflow-y: auto;
+}
+dialog.install-guide::backdrop { background: var(--bg); }
+.install-head { text-align: center; margin-bottom: 18px; }
+.install-head img { border-radius: 14px; box-shadow: var(--shadow); }
+.install-head h2 { font-size: 1.45rem; letter-spacing: -0.02em; margin: 12px 0 4px; }
+.install-steps { list-style: none; counter-reset: step; margin: 0; padding: 0; display: grid; gap: 14px; }
+.install-steps > li { counter-increment: step; padding: 14px; border-radius: var(--r-card); background: var(--surface); box-shadow: var(--shadow); }
+.install-steps > li > p:first-child { margin: 0 0 10px; font-weight: 600; display: flex; gap: 10px; align-items: baseline; }
+.install-steps > li > p:first-child::before { content: counter(step); flex: none; width: 24px; height: 24px; border-radius: 50%; display: inline-grid; place-items: center; background: var(--accent-bg); color: var(--accent-ink); font-size: 0.8rem; }
+.install-steps .note { margin: 8px 0 0; font-size: 0.82rem; color: var(--muted); font-weight: 400; }
+.install-foot { display: grid; gap: 10px; justify-items: center; margin-top: 18px; }
+.install-foot .btn { width: 100%; }
+/* Mock-ups of Safari's own buttons, the one to press ringed */
+.mock { border-radius: 14px; background: #f2f2f7; color: #111; font: 15px/1.3 -apple-system, system-ui, sans-serif; overflow: hidden; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .mock { background: #1c1c1e; color: #f2f2f7; } }
+:root[data-theme="dark"] .mock { background: #1c1c1e; color: #f2f2f7; }
+.mock-bar { display: flex; align-items: center; justify-content: space-around; gap: 8px; padding: 10px 12px; }
+.mock-bar .url { flex: 1; padding: 8px 12px; border-radius: 12px; background: rgba(120,120,128,0.16); font-size: 13px; text-align: center; color: inherit; opacity: 0.85; }
+.mock-ico { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 50%; color: #0a84ff; flex: none; }
+.mock-ico svg { width: 22px; height: 22px; fill: currentColor; }
+.mock .hot { position: relative; box-shadow: 0 0 0 3px #ff9f0a; border-radius: 12px; animation: hot-pulse 1.4s ease-in-out infinite; }
+.mock-ico.hot { border-radius: 50%; }
+@keyframes hot-pulse { 50% { box-shadow: 0 0 0 6px rgba(255,159,10,0.35); } }
+.mock-rows { display: grid; }
+.mock-row { display: flex; align-items: center; justify-content: space-between; padding: 11px 14px; border-top: 0.5px solid rgba(120,120,128,0.3); }
+.mock-row:first-child { border-top: 0; }
+.mock-row svg { width: 20px; height: 20px; fill: currentColor; opacity: 0.8; }
+.mock-row.hot { margin: 4px; border-top: 0; }
+.mock-head { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; font-weight: 600; }
+.mock-head .blue { color: #0a84ff; font-weight: 400; }
+.mock-head .blue.hot { font-weight: 700; padding: 2px 8px; }
+.mock-app { display: flex; align-items: center; gap: 12px; padding: 4px 14px 12px; }
+.mock-app img { width: 46px; height: 46px; border-radius: 11px; }
+.mock-toggle { width: 44px; height: 26px; border-radius: 13px; background: #34c759; position: relative; flex: none; }
+.mock-toggle::after { content: ""; position: absolute; right: 2px; top: 2px; width: 22px; height: 22px; border-radius: 50%; background: #fff; }
+.mock-home { display: flex; gap: 18px; padding: 16px; justify-content: center; background: linear-gradient(160deg, #5b6cd6, #2b3a8c); }
+.mock-home span { display: grid; justify-items: center; gap: 4px; color: #fff; font-size: 11px; }
+.mock-home img { width: 52px; height: 52px; border-radius: 12px; }
+.mock-home .other { width: 52px; height: 52px; border-radius: 12px; background: rgba(255,255,255,0.25); }
+.copy-row { display: flex; gap: 8px; }
+.copy-row input { flex: 1; min-width: 0; min-height: 40px; padding: 0 12px; border: 0; border-radius: 999px; background: var(--surface-2); color: var(--text); font: inherit; font-size: 0.85rem; }
+/* The arrow pointing at Safari's real button, just off the bottom (or top on iPad) of the page */
+.install-arrow { position: fixed; width: 44px; height: 44px; color: #ff9f0a; animation: arrow-bob 1s ease-in-out infinite; pointer-events: none; }
+.install-arrow svg { width: 100%; height: 100%; fill: currentColor; filter: drop-shadow(0 2px 6px rgba(0,0,0,0.3)); }
+.install-arrow.bottom-right { right: 14px; bottom: calc(10px + env(safe-area-inset-bottom)); }
+.install-arrow.bottom-centre { left: calc(50% - 22px); bottom: calc(10px + env(safe-area-inset-bottom)); }
+.install-arrow.top-right { right: 70px; top: 6px; transform: rotate(180deg); }
+@keyframes arrow-bob { 50% { translate: 0 8px; } }
+.install-arrow.top-right { animation-name: arrow-bob-up; }
+@keyframes arrow-bob-up { 50% { translate: 0 -8px; } }
+
+/* ---------- first-run walkthrough ---------- */
+.intro-skip { display: block; margin: 10px auto 0; }
+.tour-cam { position: fixed; inset: 0; z-index: 1900; display: grid; grid-template-rows: 1fr auto; place-items: center; padding: max(24px, env(safe-area-inset-top)) 16px calc(24px + env(safe-area-inset-bottom)); background: #000; }
+.tour-frame { position: relative; width: min(86vw, 420px); aspect-ratio: 3 / 4; }
+.tour-frame img { width: 100%; height: 100%; object-fit: cover; border-radius: 6px; }
+.tour-cam.flash .tour-frame img { animation: tour-flash 0.35s ease-out; }
+@keyframes tour-flash { 0% { filter: brightness(3); } 100% { filter: none; } }
+.tour-corner { position: absolute; width: 34px; height: 34px; border: 3px solid rgba(255,255,255,0.9); }
+.tour-corner.tl { left: -8px; top: -8px; border-right: 0; border-bottom: 0; border-radius: 10px 0 0 0; }
+.tour-corner.tr { right: -8px; top: -8px; border-left: 0; border-bottom: 0; border-radius: 0 10px 0 0; }
+.tour-corner.bl { left: -8px; bottom: -8px; border-right: 0; border-top: 0; border-radius: 0 0 0 10px; }
+.tour-corner.br { right: -8px; bottom: -8px; border-left: 0; border-top: 0; border-radius: 0 0 10px 0; }
+.tour-shutter { width: 74px; height: 74px; border-radius: 50%; border: 4px solid #fff; background: #fff; box-shadow: inset 0 0 0 4px #000; }
+.tour-shutter:active { transform: scale(0.94); }
+.tour-reading { position: absolute; left: 16px; right: 16px; bottom: calc(24px + env(safe-area-inset-bottom)); padding: 16px; border-radius: var(--r-card); background: rgba(22,24,48,0.92); color: #fff; }
+.tour-reading-title { margin: 0 0 8px; font-weight: 700; }
+.tour-reading ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 0.9rem; }
+.tour-reading li { opacity: 0.55; }
+.tour-reading li.done { opacity: 1; }
+.tour-reading li.done::before { content: "✓ "; color: #5fd39a; font-weight: 700; }
+.coach { position: fixed; inset: 0; z-index: 2000; }
+.coach-hole { position: fixed; border-radius: 22px; box-shadow: 0 0 0 9999px rgba(8, 10, 26, 0.66); transition: left 0.35s var(--ease), top 0.35s var(--ease), width 0.35s var(--ease), height 0.35s var(--ease); pointer-events: none; }
+.coach-hole.tap::after { content: ""; position: absolute; inset: -6px; border-radius: inherit; border: 3px solid #ff9f0a; animation: hot-pulse 1.4s ease-in-out infinite; }
+.coach-hole.none { width: 0 !important; height: 0 !important; left: 50% !important; top: 40% !important; }
+.coach-tip { position: fixed; left: 16px; right: 16px; max-width: 528px; margin: 0 auto; padding: 14px 16px 12px; border-radius: 18px; background: var(--surface); color: var(--text); box-shadow: 0 10px 40px rgba(0,0,0,0.35); }
+.coach-text { margin: 0 0 10px; line-height: 1.45; }
+.coach-actions { display: flex; align-items: center; gap: 12px; }
+.coach-count { margin-left: auto; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.install-head h2:focus { outline: none; }

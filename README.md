@@ -306,7 +306,10 @@ Until someone makes an account, sign-in is anonymous: the account is that instal
 
 ## Running the beta
 
-Send testers **[spidyloke.github.io/shopping/beta/](https://spidyloke.github.io/shopping/beta/)**: how to install on iPhone and Android, what to try, and how to report problems. The app helps them along: on an iPhone in Safari, Home says how to add it to the Home Screen; on Android it offers **Install**.
+Send testers **[spidyloke.github.io/shopping/install](https://spidyloke.github.io/shopping/install)** to install it, and **[spidyloke.github.io/shopping/beta/](https://spidyloke.github.io/shopping/beta/)** for what to try and how to report problems.
+
+- **The install link** opens the app with a step-by-step guide on top, drawn to match the phone: Safari 26's ⋯ → Share → Add to Home Screen → Open as Web App, older Safari's Share button, the iPad's top-right Share, with an arrow bobbing at the real button. In Chrome, Instagram, Facebook and other in-app browsers on an iPhone, which can't install web apps, it says to open the link in Safari, with a Copy button. Android gets an **Install** button (or ⋮ → Install app); a computer is told to open it on a phone. The guide drops `?install` from the address before anything else, so the Home Screen icon opens the app itself. Home's install tip (iPhone) has **Show me** for the same guide.
+- **First run in the installed app:** after the intro, **Show me how** runs a one-minute walkthrough: tap the camera, take the "photo" of a sample second-hand tag (Sony WH-1000XM5, rank A, ¥19,800, with a barcode), watch it read and search, then a spotlight tour of the result: the verdict, the profit at CeX, the prices behind it, Bought / Sold for, and Right model and prices?. It uses no scans and no network, and the sample scan is removed at the end. **Skip** is always there; Settings → **How it works** runs it again.
 
 What comes back (with the backend set up):
 - **Right model and prices?** under every result: **Yes**, or **Not quite** with what was off (wrong model, tag price misread, new, used or CeX price off, other) and an optional note. The answer also stays on the scan, so test exports carry it into the accuracy set (step 2).
