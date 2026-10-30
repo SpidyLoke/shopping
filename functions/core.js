@@ -98,6 +98,7 @@ function checkInput(input) {
     clothes: input.clothes === true,
     override: text(input.override, 200),
     focus,
+    market: typeof input.market === 'string' && /^[A-Z]{2}$/.test(input.market) ? input.market : 'MY',
   };
 }
 
@@ -182,10 +183,13 @@ export async function runScan(rawInput, { uid, ipHash = null, deps }) {
     out.visionError = e.message;
   }
 
-  // Market prices are kept per barcode and condition, never for a corrected name, one item on a
+  // Market prices are kept per barcode and condition (and home country), never for a corrected name, one item on a
   // shelf, a quick scan or clothes (whose barcode can cover several sizes).
+  // ...and per home country, since the prices are that country's.
+  const market = prompts.marketFor(input.market);
   const barcode = prompts.findBarcodes(ocr)[0] || null;
-  const cacheId = barcode && !input.override && !input.focus && !input.quick && !input.clothes ? `${barcode}-${input.secondHand ? 'used' : 'new'}` : null;
+  const cacheId = barcode && !input.override && !input.focus && !input.quick && !input.clothes
+    ? `${barcode}-${input.secondHand ? 'used' : 'new'}${market.code === 'MY' ? '' : `-${market.code}`}` : null;
   let cached = cacheId ? await db.get(`products/${cacheId}`) : null;
   if (cached && now - cached.at > cacheDays * DAY) cached = null;
 
@@ -203,7 +207,7 @@ export async function runScan(rawInput, { uid, ipHash = null, deps }) {
     } else {
       const prompt = prompts.buildPrompt({
         ocrText: ocr, webGuess: guess, secondHand: input.secondHand, focus: input.focus, override: input.override,
-        quick: input.quick, photos: images.length, clothes: input.clothes,
+        quick: input.quick, photos: images.length, clothes: input.clothes, market: market.code,
       });
       out.gemini = await askGemini(deps, images, prompt, true);
       ai = parseJson(out.gemini.text);
@@ -220,9 +224,11 @@ export async function runScan(rawInput, { uid, ipHash = null, deps }) {
   }
 
   const query = ai?.search_query || ai?.product_name;
-  if (!input.clothes && deps.cexIndex && query) {
+  // Only CeX Malaysia's search can be asked directly; elsewhere Gemini's web search covers CeX.
+  const cexIndex = market.cex?.index;
+  if (!input.clothes && cexIndex && deps.cexLookup !== false && query) {
     try {
-      out.cex = await cexLookup(deps, query);
+      out.cex = await cexLookup({ ...deps, cexIndex }, query);
     } catch (e) {
       out.cexError = e.message; // the app tries CeX again from the phone
     }

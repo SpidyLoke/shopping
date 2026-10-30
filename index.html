@@ -83,6 +83,19 @@
       </div>
       <input id="galleryInput" type="file" accept="image/*" multiple hidden>
 
+      <a class="profit-strip" id="profitStrip" href="#/trip" hidden>
+        <div><p class="stat-label">Bought</p><p class="stat-value" id="psBought">0</p></div>
+        <div><p class="stat-label">Expected profit</p><p class="stat-value" id="psExpected">–</p></div>
+        <div><p class="stat-label">Made</p><p class="stat-value" id="psMade">–</p></div>
+      </a>
+
+      <div class="recent" id="bestWrap" hidden>
+        <div class="section-head">
+          <h2>Best finds this trip</h2>
+        </div>
+        <ul class="history-list" id="bestList"></ul>
+      </div>
+
       <div class="recent" id="favWrap" hidden>
         <div class="section-head">
           <h2>Favourites</h2>
@@ -132,7 +145,7 @@
 
         <div class="sold-row" id="soldRow" hidden>
           <label class="budget-field"><span>Sold for<small id="soldNote">Log it to see how the call held up</small></span>
-            <span class="rm-input"><span>RM</span><input id="soldInput" type="number" inputmode="decimal" min="0" placeholder="0"></span></label>
+            <span class="rm-input"><span class="home-sym">RM</span><input id="soldInput" type="number" inputmode="decimal" min="0" placeholder="0"></span></label>
         </div>
 
         <form class="fix-name" id="fixName" hidden>
@@ -192,7 +205,7 @@
             </div>
           </div>
           <div class="price-card">
-            <p class="price-head">MY new</p>
+            <p class="price-head" id="myNewHead">MY new</p>
             <p class="price-rm" id="myNew">–</p>
             <p class="price-sub" id="myNewRange"></p>
             <p class="price-src" id="myNewSrc"></p>
@@ -340,7 +353,7 @@
       <div class="trip-card">
         <label class="budget-field">
           <span>Budget</span>
-          <span class="rm-input"><span>RM</span><input id="budgetInput" type="number" inputmode="decimal" min="0" placeholder="3000"></span>
+          <span class="rm-input"><span class="home-sym">RM</span><input id="budgetInput" type="number" inputmode="decimal" min="0" placeholder="3000"></span>
         </label>
         <div class="meter" id="tripMeterWrap" hidden><div class="meter-fill" id="tripMeter"></div></div>
         <div class="trip-stats">
@@ -424,6 +437,9 @@
       </details>
 
       <section class="settings-group">
+        <label class="setting-row home-setting"><span>Home country<small>Where you'd buy it or resell it. New scans are priced for it; earlier ones keep theirs.</small></span>
+          <select id="homeMarketSelect" aria-label="Home country"></select>
+        </label>
         <label class="switch"><input type="checkbox" id="defaultTaxFree"><span>Tax refund by default</span></label>
         <label class="switch"><input type="checkbox" id="saveLocationToggle"><span>Save store location</span></label>
         <label class="switch"><input type="checkbox" id="autoInfoToggle"><span>Product info on every scan</span></label>
@@ -461,7 +477,7 @@
         </div>
         <div class="setting-row"><span>Show first</span>
           <div class="segmented" role="radiogroup" aria-label="Show first" data-setting="priceFirst">
-            <button type="button" role="radio" data-value="rm" aria-checked="false">RM</button>
+            <button type="button" role="radio" data-value="rm" aria-checked="false" class="home-sym">RM</button>
             <button type="button" role="radio" data-value="yen" aria-checked="false">¥</button>
           </div>
         </div>
@@ -485,7 +501,7 @@
         <label class="budget-field"><span>Selling fee<small>Platform cut when you resell (Carousell is free, Shopee isn't)</small></span>
           <span class="rm-input"><input id="sellFeeInput" type="number" inputmode="decimal" min="0" max="50" step="0.5"><span>%</span></span></label>
         <label class="budget-field"><span>Extra per item<small>Postage, packaging, excess baggage</small></span>
-          <span class="rm-input"><span>RM</span><input id="extraCostInput" type="number" inputmode="decimal" min="0" step="1"></span></label>
+          <span class="rm-input"><span class="home-sym">RM</span><input id="extraCostInput" type="number" inputmode="decimal" min="0" step="1"></span></label>
       </details>
 
       <details class="settings-group" id="serverGroup">
@@ -601,7 +617,7 @@
     <h2 id="introTitle">Know the profit before you pay</h2>
     <ol class="intro-steps">
       <li><strong>Snap the tag.</strong> Or a few photos: the item, its label, the price. A barcode makes the match exact.</li>
-      <li><strong>See what it fetches at home.</strong> CeX's cash offer, used and new prices in Malaysia, and the profit after your card fee.</li>
+      <li><strong>See what it fetches at home.</strong> CeX's cash offer, used and new prices back home, and the profit after your card fee.</li>
       <li><strong>Log what it sold for.</strong> Mark it bought, add the sale price later, and see how the call held up.</li>
     </ol>
     <p class="intro-note">Prices are estimates from AI and web search, and can be wrong. Tap any price to check the listings behind it before you buy.</p>

@@ -108,3 +108,24 @@ test('Share this find makes a picture of the result', async ({ page }) => {
   const size = require('fs').statSync(await download.path()).size;
   expect(size).toBeGreaterThan(20000);
 });
+
+test('Home leads with this trip: bought, expected profit, made, and the best finds not yet bought', async ({ page }) => {
+  await mockApis(page, { rates: { JPY: 0.03 } });
+  await openApp(page, {
+    settings: { fxFee: 0 },
+    history: [
+      { ...at300('Kept', { my_used: { typical: 400 }, my_new: { typical: 600 } }), bought: true, predicted: { cost: 300, profit: 100 } },
+      { ...at300('Sold', { my_used: { typical: 380 }, my_new: { typical: 600 } }), bought: true, soldFor: 350, predicted: { cost: 300, profit: 80 } },
+      at300('Small', { my_used: { typical: 320 }, my_new: { typical: 600 } }),
+      at300('Big', { my_used: { typical: 500 }, my_new: { typical: 600 } }),
+      at300('Loss', { my_used: { typical: 250 }, my_new: { typical: 280 } }),
+    ],
+  });
+  await expect(page.locator('#profitStrip')).toBeVisible();
+  await expect(page.locator('#psBought')).toHaveText('2');
+  await expect(page.locator('#psExpected')).toHaveText('RM 100');
+  await expect(page.locator('#psMade')).toHaveText('RM 50');
+  await expect(page.locator('#bestList .history-name')).toHaveText(['Big', 'Small']);
+  await page.click('#profitStrip');
+  await expect(page).toHaveURL(/#\/trip$/);
+});

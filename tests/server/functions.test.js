@@ -61,7 +61,7 @@ async function setup(opts = {}) {
   const db = fakeDb();
   const { fetch, calls } = apis(opts);
   let now = Date.UTC(2026, 9, 30, 4);
-  const deps = { db, fetch, prompts, keys: { vision: 'V', gemini: 'G' }, model: 'm', cexIndex: 'prod_cex_my', limits: { ...LIMITS, ...opts.limits }, clock: () => now };
+  const deps = { db, fetch, prompts, keys: { vision: 'V', gemini: 'G' }, model: 'm', limits: { ...LIMITS, ...opts.limits }, clock: () => now };
   const scan = (input = {}, uid = 'u1', ipHash = 'ip1') => core.runScan({ images: [IMG], ...input }, { uid, ipHash, deps });
   return { core, db, calls, deps, scan, setNow: (t) => { now = t; } };
 }
@@ -181,4 +181,19 @@ test('a failed ask is given back', async () => {
   const { core, deps, db } = await setup({ geminiStatus: 500 });
   await assert.rejects(core.runAsk({ prompt: 'hi' }, { uid: 'u1', deps }), (e) => e.code === 'unavailable');
   assert.equal(db.docs.get('users/u1').asksUsed, 0);
+});
+
+test('home country: the prompt, a separate barcode cache and CeX only where it can be asked', async () => {
+  const { scan, calls, db } = await setup({ limits: { free: 10 } });
+  await scan({ market: 'SG' });
+  assert.match(calls.gemini.at(-1).prompt, /Shopee Singapore/);
+  assert.equal(calls.cex, 0);
+  assert.ok(db.docs.has('products/4948872415545-new-SG'));
+  await scan();
+  assert.equal(calls.gemini.at(-1).search, true, 'Malaysian prices are not answered from the Singapore cache');
+  assert.equal(calls.cex, 1);
+  assert.ok(db.docs.has('products/4948872415545-new'));
+  const odd = await scan({ market: 'zz; drop' });
+  assert.ok(odd.cached, 'anything odd counts as Malaysia, so the Malaysian cache answers it');
+  assert.equal([...db.docs.keys()].filter((k) => k.startsWith('products/')).length, 2);
 });

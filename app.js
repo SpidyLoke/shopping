@@ -2,11 +2,11 @@
 // for Shopee / Carousell Malaysia prices. Everything runs in the browser; the API key
 // lives in localStorage on the user's device only.
 
-import { buildPrompt, findBarcodes, gtinValid } from './prompt.js';
+import { buildPrompt, findBarcodes, gtinValid, MARKETS, marketFor } from './prompt.js';
 import { FIREBASE } from './firebase-config.js';
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.10.30-4';
+const APP_VERSION = '2026.10.30-5';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -40,6 +40,8 @@ const settings = {
   get apiKey() { return store.get('apiKey', ''); },
   // Kaimono account (the backend's keys, monthly allowance) or your own Google keys; own keys stay
   // the default for anyone who already has them.
+  // Home country: where prices are compared and things resold (prompt.js MARKETS).
+  get homeMarket() { return MARKETS[store.get('homeMarket', 'MY')] ? store.get('homeMarket', 'MY') : 'MY'; },
   get scanWith() { return store.get('scanWith', '') || (this.apiKey ? 'keys' : 'cloud'); },
   // Google won't let a restricted key cover Gemini plus other APIs, so Gemini can have its own key.
   get geminiKey() { return store.get('geminiKey', '') || this.apiKey; },
@@ -266,11 +268,34 @@ function toNum(v) {
   return m ? Number(m[0]) : null;
 }
 
-function rm(n) {
-  if (n === null || n === undefined || !Number.isFinite(n)) return '–';
-  const dp = Math.abs(n) < 100 ? 2 : 0;
-  return `RM ${n.toLocaleString('en-MY', { minimumFractionDigits: dp, maximumFractionDigits: dp })}`;
+// ---------- home market ----------
+// Each scan is priced for the home country chosen when it was made (old scans: Malaysia). While a
+// scan is being shown, `inMarket` makes money and wording follow that scan's country.
+let marketScope = null;
+const homeMarket = () => marketFor(settings.homeMarket);
+const marketOf = (entry) => marketFor(entry?.market);
+const M = () => marketScope || homeMarket();
+const cap = (t) => t.charAt(0).toUpperCase() + t.slice(1);
+
+function inMarket(entry, fn) {
+  const before = marketScope;
+  marketScope = marketOf(entry);
+  try {
+    return fn();
+  } finally {
+    marketScope = before;
+  }
 }
+
+// Money in the home currency: "RM 1,200", "S$45", "₱2,300". `rm` is the original name.
+function rm(n, { whole = false } = {}) {
+  if (n === null || n === undefined || !Number.isFinite(n)) return '–';
+  const m = M();
+  const dp = whole || Math.abs(n) >= 100 || m.currency === 'IDR' ? 0 : 2;
+  const num = (whole ? Math.round(n) : n).toLocaleString(m.locale, { minimumFractionDigits: dp, maximumFractionDigits: dp });
+  return /[A-Za-z]$/.test(m.symbol) ? `${m.symbol} ${num}` : `${m.symbol}${num}`;
+}
+const wholeMoney = (n) => rm(n, { whole: true });
 
 function yen(n) {
   return `¥${Math.round(n).toLocaleString('en-GB')}`;
@@ -349,50 +374,52 @@ function toJpeg(src, maxSide, quality) {
 // (yen in Japan, ringgit for a Malaysian listing, and so on); rates are fetched per currency.
 const rates = store.get('rates', null) || {};
 if (!rates.JPY && store.get('rate')) rates.JPY = store.get('rate');
-let rate = rates.JPY || null; // yen, shown on Home
+let rate = null; // yen in the home currency, shown on Home
 
-async function fetchRate(currency = 'JPY', force = false) {
-  if (currency === 'MYR') return { value: 1 };
-  const cached = rates[currency];
+const rateKey = (from, to) => (to === 'MYR' ? from : `${from}>${to}`);
+
+async function fetchRate(currency = 'JPY', force = false, to = M().currency) {
+  if (currency === to) return { value: 1 };
+  const key = rateKey(currency, to);
+  const home = to === homeMarket().currency;
+  const cached = rates[key];
   if (!force && cached && Date.now() - cached.fetchedAt < RATE_TTL_MS) {
-    if (currency === 'JPY') rate = cached;
+    if (currency === 'JPY' && home) rate = cached;
     return cached;
   }
   const sources = [
     async () => {
-      const r = await fetch(`https://api.frankfurter.dev/v1/latest?base=${currency}&symbols=MYR`);
+      const r = await fetch(`https://api.frankfurter.dev/v1/latest?base=${currency}&symbols=${to}`);
       const d = await r.json();
-      return { value: d.rates.MYR, date: d.date };
+      return { value: d.rates[to], date: d.date };
     },
     async () => {
       const r = await fetch(`https://open.er-api.com/v6/latest/${currency}`);
       const d = await r.json();
-      return { value: d.rates.MYR, date: (d.time_last_update_utc || '').slice(5, 16) };
+      return { value: d.rates[to], date: (d.time_last_update_utc || '').slice(5, 16) };
     },
   ];
   for (const src of sources) {
     try {
       const { value, date } = await src();
       if (Number.isFinite(value) && value > 0) {
-        rates[currency] = { value, date, fetchedAt: Date.now() };
+        rates[key] = { value, date, fetchedAt: Date.now() };
         store.set('rates', rates);
-        if (currency === 'JPY') {
-          rate = rates.JPY;
-          store.set('rate', rate);
-        }
-        return rates[currency];
+        if (currency === 'JPY' && home) rate = rates[key];
+        return rates[key];
       }
     } catch {
       // try the next source
     }
   }
-  if (currency === 'JPY') rate = cached || null;
+  if (currency === 'JPY' && home) rate = cached || null;
   return cached || null;
 }
 
-function rateValue(currency) {
-  return currency === 'MYR' ? 1 : rates[currency]?.value || null;
+function rateValue(currency, to = M().currency) {
+  return currency === to ? 1 : rates[rateKey(currency, to)]?.value || null;
 }
+rate = rates[rateKey('JPY', homeMarket().currency)] || null;
 
 // Currencies the price box can be switched to (Gemini reads others too).
 const CURRENCIES = {
@@ -403,7 +430,7 @@ const CURRENCIES = {
 function money(n, currency = 'JPY') {
   if (!Number.isFinite(n)) return '–';
   if (currency === 'JPY') return yen(n);
-  if (currency === 'MYR') return rm(n);
+  if (currency === M().currency) return rm(n);
   const whole = n >= 1000 || ['KRW', 'IDR', 'VND', 'TWD'].includes(currency);
   const digits = whole ? 0 : 2;
   return `${CURRENCIES[currency] || `${currency} `}${n.toLocaleString('en-GB', { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
@@ -416,11 +443,13 @@ const localPrice = (e) => money(paidYen(e), curOf(e));
 // Makes sure the scan has a rate for its currency (it's stored with the scan as a fallback).
 async function ensureRate(entry) {
   const cur = curOf(entry);
-  if (cur === 'MYR') return;
-  if (!rateValue(cur)) await fetchRate(cur);
-  if (rateValue(cur) && (!entry.rate || (entry.rateCur || 'JPY') !== cur)) {
-    entry.rate = rateValue(cur);
+  const to = marketOf(entry).currency;
+  if (cur === to) return;
+  if (!rateValue(cur, to)) await fetchRate(cur, false, to);
+  if (rateValue(cur, to) && (!entry.rate || (entry.rateCur || 'JPY') !== cur || (entry.rateTo || 'MYR') !== to)) {
+    entry.rate = rateValue(cur, to);
     entry.rateCur = cur;
+    entry.rateTo = to;
   }
 }
 
@@ -616,6 +645,9 @@ function quotaText() {
 
 function renderQuota() {
   const text = quotaText();
+  // Scanning with a Kaimono account, the API keys, model and own scan server don't apply.
+  $('#keysGroup').hidden = cloudOn();
+  $('#serverGroup').hidden = cloudOn();
   $('#quotaLine').textContent = text;
   $('#quotaLine').hidden = !text;
   $('#scanWithGroup').hidden = !FIREBASE;
@@ -711,7 +743,6 @@ async function callGemini(images, prompt, { search = true, raw = false } = {}) {
 // because its pages render them with JavaScript, so asking CeX directly is far more reliable.
 // It's unofficial and may be region-locked, so Gemini's web search stays as the fallback.
 const CEX_SEARCH = 'https://search.webuy.io/1/indexes/*/queries';
-const CEX_INDEX = 'prod_cex_my';
 
 function words(text) {
   return new Set((text || '').normalize('NFKC').toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length > 1));
@@ -755,7 +786,7 @@ function pickCex(query, hits) {
   };
 }
 
-async function cexLookup(query) {
+async function cexLookup(query, index = 'prod_cex_my') {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 10000);
   const params = new URLSearchParams({ query, hitsPerPage: '30', filters: 'boxVisibilityOnWeb=1' }).toString();
@@ -764,7 +795,7 @@ async function cexLookup(query) {
       method: 'POST',
       // A "simple" content type avoids a CORS preflight, as Algolia's own browser client does.
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: JSON.stringify({ requests: [{ indexName: CEX_INDEX, params }] }),
+      body: JSON.stringify({ requests: [{ indexName: index, params }] }),
       signal: ctrl.signal,
     });
     if (!res.ok) return { found: false, error: res.status === 403 ? 'blocked by CeX (403)' : `HTTP ${res.status}` };
@@ -945,7 +976,7 @@ function japanPrice(entry) {
   const fx = fxFor(entry);
   const y = toNum(entry.yen);
   if (!y) return { rm: null, note: 'Type the price' };
-  if (curOf(entry) === 'MYR') return { rm: y, note: '' };
+  if (isHomePrice(entry)) return { rm: y, note: '' };
   let payYen = isJapan(entry) && entry.taxIncluded === false ? y * (1 + TAX) : y;
   let note = isJapan(entry) && entry.taxIncluded === false ? `${yen(payYen)} with tax` : '';
   if (entry.taxFree && isJapan(entry)) {
@@ -963,8 +994,12 @@ function japanPrice(entry) {
 
 function fxFor(entry) {
   const cur = curOf(entry);
-  return rateValue(cur) || ((entry.rateCur || 'JPY') === cur ? entry.rate : null) || null;
+  const to = marketOf(entry).currency;
+  return rateValue(cur, to) || ((entry.rateCur || 'JPY') === cur && (entry.rateTo || 'MYR') === to ? entry.rate : null) || null;
 }
+
+// A price in the scan's home currency: what you'd pay for it at home.
+const isHomePrice = (entry) => curOf(entry) === marketOf(entry).currency;
 
 function fx(entry) {
   return fxFor(entry);
@@ -1001,9 +1036,9 @@ const LOCAL_LABELS = {
 
 function verdictFor(entry) {
   const v = foreignVerdict(entry);
-  if (v && curOf(entry) === 'MYR' && v.cls !== 'none') {
+  if (v && isHomePrice(entry) && v.cls !== 'none') {
     v.label = LOCAL_LABELS[v.label] || v.label;
-    v.detail = v.detail.replace(/ in Malaysia/g, ' elsewhere in Malaysia');
+    v.detail = v.detail.split(` in ${M().name}`).join(` elsewhere in ${M().name}`);
   }
   return v;
 }
@@ -1012,12 +1047,12 @@ function foreignVerdict(entry) {
   const v = baseVerdict(entry);
   if (!v || v.cls === 'none') return v;
   if (pricesSimilar(entry)) {
-    return { cls: 'maybe', label: 'No exact match', detail: `Malaysian prices are for similar pieces, not this exact one, so they're only a rough guide. ${v.detail} Tap MY used or MY new to see them, or search the product code yourself.` };
+    return { cls: 'maybe', label: 'No exact match', detail: `${M().adj} prices are for similar pieces, not this exact one, so they're only a rough guide. ${v.detail} Tap ${M().short} used or ${M().short} new to see them, or search the product code yourself.` };
   }
   const bad = compatFor(entry).filter((c) => c.status === 'bad');
   if (bad.length) {
-    if (v.cls === 'buy') Object.assign(v, { cls: 'maybe', label: 'Cheap, but check it works in Malaysia' });
-    v.detail += ` Malaysia: ${bad.map((c) => c.topic.toLowerCase()).join(', ')} problem.`;
+    if (v.cls === 'buy') Object.assign(v, { cls: 'maybe', label: `Cheap, but check it works in ${M().name}` });
+    v.detail += ` ${cap(M().name)}: ${bad.map((c) => c.topic.toLowerCase()).join(', ')} problem.`;
   }
   const jp = japanPrice(entry).rm;
   const resale = jpUsedYen(entry);
@@ -1025,7 +1060,7 @@ function foreignVerdict(entry) {
     v.detail += ` Mercari/Yahoo Japan has it second-hand for about ${yen(resale)} (${rm(resale * fx(entry))}).`;
   }
   const cex = cexFor(entry);
-  if (cex.sell && jp && cex.sell < jp) v.detail += ` CeX Malaysia sells it used for ${rm(cex.sell)}.`;
+  if (cex.sell && jp && cex.sell < jp) v.detail += ` CeX sells it used for ${rm(cex.sell)}.`;
   if (cex.cash) v.detail += ` CeX would buy it back for ${rm(cex.cash)} cash.`;
   return v;
 }
@@ -1036,13 +1071,13 @@ function foreignVerdict(entry) {
 // What buying it here really costs: the price, the card's foreign-spend fee (none when it's already
 // in RM) and any extra per item from Settings.
 function landedCost(entry, price) {
-  const card = curOf(entry) === 'MYR' ? 0 : (price * settings.fxFee) / 100;
+  const card = isHomePrice(entry) ? 0 : (price * settings.fxFee) / 100;
   const extra = settings.extraCost || 0;
   return { total: price + card + extra, card, extra };
 }
 
 function costsSummary() {
-  return [`${settings.fxFee}% card`, settings.sellFee ? `${settings.sellFee}% selling` : null, settings.extraCost ? `RM ${settings.extraCost} extra` : null].filter(Boolean).join(' · ');
+  return [`${settings.fxFee}% card`, settings.sellFee ? `${settings.sellFee}% selling` : null, settings.extraCost ? `${rm(settings.extraCost, { whole: true })} extra` : null].filter(Boolean).join(' · ');
 }
 
 // What the MY used figure rests on: sold listings show what people paid, asking prices run high.
@@ -1055,7 +1090,7 @@ function usedEvidence(entry) {
 function dealTags(entry) {
   const jp = japanPrice(entry).rm;
   if (!jp || !entry.ai) return [];
-  if (pricesSimilar(entry)) return [{ key: 'similar', tone: 'plain', label: 'Only similar items found', short: 'No exact match', detail: 'Malaysian prices are for similar pieces, not this one.' }];
+  if (pricesSimilar(entry)) return [{ key: 'similar', tone: 'plain', label: 'Only similar items found', short: 'No exact match', detail: `${M().adj} prices are for similar pieces, not this one.` }];
   const cex = cexFor(entry);
   const myUsed = rangeValue(entry.ai.my_used);
   const myNew = rangeValue(entry.ai.my_new);
@@ -1063,28 +1098,28 @@ function dealTags(entry) {
   const paid = cost.total;
   // Reselling on a platform loses its cut; CeX's offers are what you get.
   const resale = myUsed ? myUsed * (1 - settings.sellFee / 100) : null;
-  const whole = (x) => `RM ${Math.round(x).toLocaleString('en-GB')}`;
+  const whole = wholeMoney;
   const more = (x) => whole(x - paid);
   const extras = [cost.card ? `${whole(cost.card)} card fee` : null, cost.extra ? `${whole(cost.extra)} extra` : null].filter(Boolean);
   const costNote = extras.length ? ` It costs you ${whole(paid)} with the ${extras.join(' and ')}.` : '';
   const evidence = { sold: 'sold prices', asking: 'asking prices, sold ones usually go for less' }[usedEvidence(entry)] || 'asking prices';
   const ladder = [
-    [cex.cash, () => ({ key: 'cex-flip', tone: 'profit', amount: cex.cash - paid, label: `${more(cex.cash)} profit at CeX`, short: `CeX +${more(cex.cash)}`, detail: `CeX Malaysia's cash offer is ${rm(cex.cash)}, a firm price.${costNote}` })],
-    [cex.voucher, () => ({ key: 'cex-voucher', tone: 'profit', amount: cex.voucher - paid, label: `${more(cex.voucher)} profit in CeX voucher`, short: `Voucher +${more(cex.voucher)}`, detail: `CeX Malaysia offers ${rm(cex.voucher)} in voucher.${costNote}` })],
-    [resale, () => ({ key: 'resell', tone: 'profit', amount: resale - paid, label: `${more(resale)} profit reselling`, short: `Resell +${more(resale)}`, detail: `Used ones go for about ${rm(myUsed)} in Malaysia (${evidence})${settings.sellFee ? `, ${rm(resale)} after the ${settings.sellFee}% selling fee` : ''}.${costNote}` })],
-    [cex.sell, () => ({ key: 'under-cex', tone: 'good', label: `${more(cex.sell)} under CeX`, short: 'Under CeX', detail: `CeX Malaysia sells it used for ${rm(cex.sell)}.${costNote}` })],
-    [myNew, () => ({ key: 'under-new', tone: 'plain', label: `${more(myNew)} under MY new`, short: `${more(myNew)} off new`, detail: `New in Malaysia it's about ${rm(myNew)}.${costNote}` })],
+    [cex.cash, () => ({ key: 'cex-flip', tone: 'profit', amount: cex.cash - paid, label: `${more(cex.cash)} profit at CeX`, short: `CeX +${more(cex.cash)}`, detail: `CeX's cash offer is ${rm(cex.cash)}, a firm price.${costNote}` })],
+    [cex.voucher, () => ({ key: 'cex-voucher', tone: 'profit', amount: cex.voucher - paid, label: `${more(cex.voucher)} profit in CeX voucher`, short: `Voucher +${more(cex.voucher)}`, detail: `CeX offers ${rm(cex.voucher)} in voucher.${costNote}` })],
+    [resale, () => ({ key: 'resell', tone: 'profit', amount: resale - paid, label: `${more(resale)} profit reselling`, short: `Resell +${more(resale)}`, detail: `Used ones go for about ${rm(myUsed)} in ${M().name} (${evidence})${settings.sellFee ? `, ${rm(resale)} after the ${settings.sellFee}% selling fee` : ''}.${costNote}` })],
+    [cex.sell, () => ({ key: 'under-cex', tone: 'good', label: `${more(cex.sell)} under CeX`, short: 'Under CeX', detail: `CeX sells it used for ${rm(cex.sell)}.${costNote}` })],
+    [myNew, () => ({ key: 'under-new', tone: 'plain', label: `${more(myNew)} under ${M().short} new`, short: `${more(myNew)} off new`, detail: `New in ${M().name} it's about ${rm(myNew)}.${costNote}` })],
   ];
   const tags = [];
   // The lowest price that's still above what it costs you is the one that matters.
   const hit = ladder.filter(([price]) => price && price > paid).sort((a, b) => a[0] - b[0])[0];
   if (hit) tags.push(hit[1]());
-  else if (myNew) tags.push({ key: 'over-new', tone: 'warn', label: `${whole(paid - myNew)} over MY new`, short: 'Dearer here', detail: `New in Malaysia it's about ${rm(myNew)}.${costNote}` });
+  else if (myNew) tags.push({ key: 'over-new', tone: 'warn', label: `${whole(paid - myNew)} over ${M().short} new`, short: 'Dearer here', detail: `New in ${M().name} it's about ${rm(myNew)}.${costNote}` });
   // Resale profit: a used price at home above what you pay here, on top of the ladder answer.
   if (hit && hit[1]().key !== 'resell' && resale && resale > paid && !tags.some((t) => t.tone === 'profit')) {
     tags.push(ladder[2][1]());
   }
-  if (cex.sell && cex.sell < paid && myUsed && paid < myUsed) tags.push({ key: 'over-cex', tone: 'warn', label: `${whole(paid - cex.sell)} over CeX`, short: 'Over CeX', detail: `CeX Malaysia sells it used for ${rm(cex.sell)}.` });
+  if (cex.sell && cex.sell < paid && myUsed && paid < myUsed) tags.push({ key: 'over-cex', tone: 'warn', label: `${whole(paid - cex.sell)} over CeX`, short: 'Over CeX', detail: `CeX sells it used for ${rm(cex.sell)}.` });
   const jpResale = jpUsedYen(entry);
   if (jpResale && fx(entry) && jpResale * fx(entry) < jp * 0.85) {
     tags.push({ key: 'mercari', tone: 'warn', label: 'Cheaper on Mercari', short: 'Mercari cheaper', detail: `Japan second-hand: about ${yen(jpResale)} (${rm(jpResale * fx(entry))}).` });
@@ -1099,7 +1134,7 @@ function rowTag(entry) {
   if (scanFailed(entry)) return { text: 'Failed', cls: 'tag-skip' };
   if (running.has(entry.id) && !entry.ai) return { text: '…', cls: '' };
   const made = realised(entry);
-  if (made != null) return { text: `${made >= 0 ? 'Made' : 'Lost'} ${made >= 0 ? '+' : ''}RM ${Math.abs(Math.round(made)).toLocaleString('en-GB')}`, cls: made >= 0 ? 'tag-profit' : 'tag-skip', title: `Sold for ${rm(entry.soldFor)}` };
+  if (made != null) return { text: `${made >= 0 ? 'Made +' : 'Lost '}${wholeMoney(Math.abs(made))}`, cls: made >= 0 ? 'tag-profit' : 'tag-skip', title: `Sold for ${rm(entry.soldFor)}` };
   const bad = compatFor(entry).find((c) => c.status === 'bad');
   if (bad) return { text: `${bad.topic} issue`, cls: 'tag-skip', title: bad.note, problem: true };
   const high = seriousIssues(entry)[0];
@@ -1121,7 +1156,7 @@ function baseVerdict(entry) {
   const myUsed = rangeValue(entry.ai?.my_used);
   if (!entry.ai) return null;
   if (!jp) return { cls: 'none', label: 'Need the price', detail: 'Type the price from the tag or listing to get a verdict.' };
-  if (!myNew && !myUsed) return { cls: 'none', label: 'No Malaysian prices found', detail: 'Check the Shopee and Carousell links below.' };
+  if (!myNew && !myUsed) return { cls: 'none', label: `No ${M().adj} prices found`, detail: `Check the ${M().links.map((l) => l[0]).join(' and ')} links below.` };
   return entry.secondHand ? usedVerdict(entry, jp, myNew, myUsed) : newVerdict(jp, myNew, myUsed);
 }
 
@@ -1135,20 +1170,20 @@ function newVerdict(jp, myNew, myUsed) {
         return {
           cls: 'maybe',
           label: 'Buy if you want it new',
-          detail: `${rm(save)} cheaper than new in Malaysia (${pct(save, myNew)}% less), but second-hand there is ${rm(jp - myUsed)} less than this.`,
+          detail: `${rm(save)} cheaper than new in ${M().name} (${pct(save, myNew)}% less), but second-hand there is ${rm(jp - myUsed)} less than this.`,
         };
       }
-      return { cls: 'buy', label: 'Buy it here', detail: `${rm(save)} cheaper than new in Malaysia (${pct(save, myNew)}% less).` };
+      return { cls: 'buy', label: 'Buy it here', detail: `${rm(save)} cheaper than new in ${M().name} (${pct(save, myNew)}% less).` };
     }
     if (save > 0) {
-      return { cls: 'maybe', label: 'Marginal', detail: `Only ${rm(save)} cheaper than new in Malaysia (${pct(save, myNew)}% less).` };
+      return { cls: 'maybe', label: 'Marginal', detail: `Only ${rm(save)} cheaper than new in ${M().name} (${pct(save, myNew)}% less).` };
     }
-    return { cls: 'skip', label: 'Skip it', detail: `${rm(-save)} cheaper new in Malaysia.` };
+    return { cls: 'skip', label: 'Skip it', detail: `${rm(-save)} cheaper new in ${M().name}.` };
   }
   if (myUsed < jp) {
-    return { cls: 'maybe', label: 'Cheaper second-hand at home', detail: `Second-hand in Malaysia is ${rm(jp - myUsed)} less. No new listings found.` };
+    return { cls: 'maybe', label: 'Cheaper second-hand at home', detail: `Second-hand in ${M().name} is ${rm(jp - myUsed)} less. No new listings found.` };
   }
-  return { cls: 'buy', label: 'Buy it here', detail: `Even second-hand costs ${rm(myUsed - jp)} more in Malaysia. No new listings found.` };
+  return { cls: 'buy', label: 'Buy it here', detail: `Even second-hand costs ${rm(myUsed - jp)} more in ${M().name}. No new listings found.` };
 }
 
 // Second-hand: compare like for like against Malaysian used prices, then let tag issues temper it.
@@ -1156,16 +1191,16 @@ function usedVerdict(entry, jp, myNew, myUsed) {
   let v;
   if (myUsed) {
     const save = myUsed - jp;
-    if (jp <= myUsed * 0.9) v = { cls: 'buy', label: 'Buy it here', detail: `${rm(save)} cheaper than second-hand in Malaysia (${pct(save, myUsed)}% less).` };
-    else if (save > 0) v = { cls: 'maybe', label: 'Marginal', detail: `Only ${rm(save)} cheaper than second-hand in Malaysia (${pct(save, myUsed)}% less).` };
-    else v = { cls: 'skip', label: 'Skip it', detail: `${rm(-save)} cheaper second-hand in Malaysia.` };
-    if (myNew && myNew <= jp) v = { cls: 'skip', label: 'Skip it', detail: `It's ${rm(jp - myNew)} cheaper brand new in Malaysia.` };
+    if (jp <= myUsed * 0.9) v = { cls: 'buy', label: 'Buy it here', detail: `${rm(save)} cheaper than second-hand in ${M().name} (${pct(save, myUsed)}% less).` };
+    else if (save > 0) v = { cls: 'maybe', label: 'Marginal', detail: `Only ${rm(save)} cheaper than second-hand in ${M().name} (${pct(save, myUsed)}% less).` };
+    else v = { cls: 'skip', label: 'Skip it', detail: `${rm(-save)} cheaper second-hand in ${M().name}.` };
+    if (myNew && myNew <= jp) v = { cls: 'skip', label: 'Skip it', detail: `It's ${rm(jp - myNew)} cheaper brand new in ${M().name}.` };
   } else {
     // No used listings to compare: a used item should be well under the new price to be worth it.
     const save = myNew - jp;
-    if (jp <= myNew * 0.7) v = { cls: 'buy', label: 'Buy it here', detail: `${pct(save, myNew)}% under the new price in Malaysia (${rm(save)} less). No MY second-hand listings found.` };
-    else if (save > 0) v = { cls: 'maybe', label: 'Marginal', detail: `Only ${pct(save, myNew)}% under the new price in Malaysia. No MY second-hand listings found.` };
-    else v = { cls: 'skip', label: 'Skip it', detail: `It's ${rm(-save)} cheaper brand new in Malaysia.` };
+    if (jp <= myNew * 0.7) v = { cls: 'buy', label: 'Buy it here', detail: `${pct(save, myNew)}% under the new price in ${M().name} (${rm(save)} less). No ${M().short} second-hand listings found.` };
+    else if (save > 0) v = { cls: 'maybe', label: 'Marginal', detail: `Only ${pct(save, myNew)}% under the new price in ${M().name}. No ${M().short} second-hand listings found.` };
+    else v = { cls: 'skip', label: 'Skip it', detail: `It's ${rm(-save)} cheaper brand new in ${M().name}.` };
   }
   const serious = seriousIssues(entry);
   if (serious.length) {
@@ -1232,6 +1267,7 @@ async function startScanPhotos(photos) {
   const entry = {
     id,
     createdAt: Date.now(),
+    market: settings.homeMarket,
     kind: settings.scanKind === 'clothes' ? 'clothes' : undefined,
     thumb: main.thumb,
     extra: rest.map((p, i) => ({ id: `${id}-p${i + 2}`, thumb: p.thumb })),
@@ -1444,6 +1480,7 @@ async function searchPrices(entry, images, update) {
       override: entry.override,
       quick: entry.quick,
       clothes: entry.kind === 'clothes',
+      market: marketOf(entry).code,
     });
     applyAi(entry, ai, sources);
     await ensureRate(entry);
@@ -1483,10 +1520,11 @@ function applyAi(entry, ai, sources) {
 
 async function lookupCex(entry, update) {
   const query = entry.ai?.search_query || entry.ai?.product_name;
-  if (!query) return;
+  const index = marketOf(entry).cex?.index; // only CeX Malaysia's search can be asked directly
+  if (!query || !index) return;
   entry.cexPending = true;
   update();
-  entry.cex = { ...(await cexLookup(query)), checkedAt: Date.now() };
+  entry.cex = { ...(await cexLookup(query, index)), checkedAt: Date.now() };
   entry.cexPending = false;
   update();
 }
@@ -1578,8 +1616,9 @@ function serverJobRequest(entry, images) {
       quick: entry.quick,
       photos: images.length,
       clothes,
+      market: marketOf(entry).code,
     }),
-    cex: clothes ? null : { index: CEX_INDEX },
+    cex: clothes || !marketOf(entry).cex?.index ? null : { index: marketOf(entry).cex.index },
     notify: notifyTarget(),
   };
 }
@@ -1594,6 +1633,7 @@ function cloudJobRequest(entry, images) {
     clothes: entry.kind === 'clothes',
     override: entry.override || null,
     focus: entry.focus ? { name: entry.focus.name, yen: entry.focus.yen ?? null } : null,
+    market: marketOf(entry).code,
   };
 }
 
@@ -1832,7 +1872,7 @@ ${ocrText || '(none detected)'}
 
 List every distinct product that has a visible price tag. For each give:
 - name: concise English product name (brand + model or variant)
-- search_query: best English query for Shopee Malaysia
+- search_query: best English query for ${homeMarket().searchSites}
 - jp_price_yen: the price in yen as shown; if both 税込 and 税抜 are shown, use 税込
 - tax_included: whether that price includes Japan's 10% consumption tax
 - box_2d: bounding box of the product together with its price tag, as [ymin, xmin, ymax, xmax] normalised to 0-1000
@@ -1858,6 +1898,7 @@ async function startShelf(file) {
     id: uid(),
     kind: 'shelf',
     createdAt: Date.now(),
+    market: settings.homeMarket,
     thumb,
     ocrText: '',
     items: [],
@@ -1972,6 +2013,7 @@ async function checkShelfItem(shelf, item, image, quiet = false) {
   const child = {
     id: uid(),
     createdAt: Date.now(),
+    market: shelf.market || 'MY',
     thumb: item.thumb || shelf.thumb,
     imageId: shelf.id,
     parentId: shelf.id,
@@ -2130,7 +2172,7 @@ function renderShelf(shelf) {
       onclick: () => checkAllShelf(shelf.id),
     }, checking ? 'Checking prices…' : unchecked ? `Check all prices (${unchecked})` : 'All items checked') : null,
     el('ul', { class: 'history-list' }, rows),
-    shelf.items.length ? el('p', { class: 'muted small' }, 'Each checked item becomes its own scan in History, with the full Malaysia comparison.') : null,
+    shelf.items.length ? el('p', { class: 'muted small' }, `Each checked item becomes its own scan in History, with the full ${homeMarket().name} comparison.`) : null,
   ].filter(Boolean));
 }
 
@@ -2167,8 +2209,13 @@ function realised(entry) {
 }
 
 function renderSold(entry) {
+  return inMarket(entry, () => renderSoldIn(entry));
+}
+
+function renderSoldIn(entry) {
   $('#soldRow').hidden = !entry.bought || entry.kind === 'shelf';
   if ($('#soldRow').hidden) return;
+  $('#soldRow .home-sym').textContent = M().symbol;
   const input = $('#soldInput');
   if (document.activeElement !== input) input.value = entry.soldFor ?? '';
   const made = realised(entry);
@@ -2207,6 +2254,10 @@ function scanFailed(entry) {
 }
 
 function historyItem(entry, opts = {}) {
+  return inMarket(entry, () => historyRow(entry, opts));
+}
+
+function historyRow(entry, opts) {
   if (entry.kind === 'shelf') return shelfHistoryItem(entry);
   const jp = japanPrice(entry).rm;
   const isRunning = running.has(entry.id);
@@ -2427,11 +2478,11 @@ function shareFigures(entry) {
   const deal = dealTags(entry)[0];
   const cex = cexFor(entry);
   const made = realised(entry);
-  if (made != null) return { paid, right: ['Sold for', entry.soldFor], pill: `${made >= 0 ? '+' : '−'}RM ${Math.abs(Math.round(made)).toLocaleString('en-GB')} ${made >= 0 ? 'made' : 'lost'}`, good: made >= 0 };
+  if (made != null) return { paid, right: ['Sold for', entry.soldFor], pill: `${made >= 0 ? '+' : '−'}${wholeMoney(Math.abs(made))} ${made >= 0 ? 'made' : 'lost'}`, good: made >= 0 };
   const right = deal?.key === 'cex-flip' ? ['CeX pays', cex.cash]
     : deal?.key === 'cex-voucher' ? ['CeX voucher', cex.voucher]
-      : rangeValue(entry.ai?.my_used) && deal?.key === 'resell' ? ['Sells used in MY', rangeValue(entry.ai.my_used)]
-        : rangeValue(entry.ai?.my_new) ? ['New in MY', rangeValue(entry.ai.my_new)] : null;
+      : rangeValue(entry.ai?.my_used) && deal?.key === 'resell' ? [`Sells used in ${M().short}`, rangeValue(entry.ai.my_used)]
+        : rangeValue(entry.ai?.my_new) ? [`New in ${M().short}`, rangeValue(entry.ai.my_new)] : null;
   return { paid, right, pill: deal?.label || verdictFor(entry)?.label || null, good: deal ? deal.tone === 'profit' || deal.tone === 'good' : verdictFor(entry)?.cls === 'buy' };
 }
 
@@ -2464,6 +2515,16 @@ function wrapLines(ctx, text, width, max) {
 }
 
 async function shareCardBlob(entry) {
+  const before = marketScope;
+  marketScope = marketOf(entry);
+  try {
+    return await drawShareCard(entry);
+  } finally {
+    marketScope = before;
+  }
+}
+
+async function drawShareCard(entry) {
   const W = 1080;
   const H = 1350;
   const canvas = document.createElement('canvas');
@@ -2513,8 +2574,8 @@ async function shareCardBlob(entry) {
     ctx.font = font(700, 64);
     ctx.fillText(value, x, y + 72);
   };
-  if (f.paid) stat(64, 'Paid here', `RM ${Math.round(f.paid).toLocaleString('en-GB')}`);
-  if (f.right?.[1]) stat(W / 2 + 20, f.right[0], `RM ${Math.round(f.right[1]).toLocaleString('en-GB')}`);
+  if (f.paid) stat(64, 'Paid here', wholeMoney(f.paid));
+  if (f.right?.[1]) stat(W / 2 + 20, f.right[0], wholeMoney(f.right[1]));
   y += 140;
   if (f.pill) {
     ctx.font = font(700, 38);
@@ -2589,12 +2650,40 @@ function renderHome() {
   const favs = all.filter((e) => e.fav).slice(0, 3);
   $('#quickToggle').checked = settings.quick;
   renderRefreshButtons();
+  renderProfitStrip(all);
   $('#favWrap').hidden = favs.length === 0;
   $('#favList').replaceChildren(...favs.map(historyItem));
   const list = all.slice(0, 3);
   $('#recentWrap').hidden = list.length === 0;
   $('#recentList').replaceChildren(...list.map(historyItem));
   renderRate();
+}
+
+// What you'd make: this trip's bought items (the profit the app expected when you bought them,
+// and what the sold ones actually made), then the most profitable finds you haven't bought yet.
+// Only scans priced for the current home country count, so the sums share one currency.
+function profitOf(entry) {
+  return dealTags(entry).find((t) => t.tone === 'profit')?.amount ?? null;
+}
+
+function renderProfitStrip(all) {
+  const trip = currentTrip().id;
+  const here = all.filter((e) => e.kind !== 'shelf' && tripOf(e) === trip && (e.market || 'MY') === settings.homeMarket);
+  const bought = here.filter((e) => e.bought);
+  const sold = bought.filter((e) => realised(e) != null);
+  const pending = bought.filter((e) => realised(e) == null);
+  const expected = pending.reduce((sum, e) => sum + (e.predicted?.profit ?? profitOf(e) ?? 0), 0);
+  const made = sold.reduce((sum, e) => sum + realised(e), 0);
+  $('#profitStrip').hidden = !bought.length;
+  $('#psBought').textContent = String(bought.length);
+  $('#psExpected').textContent = pending.length ? wholeMoney(expected) : '–';
+  $('#psMade').textContent = sold.length ? `${made < 0 ? '−' : ''}${wholeMoney(Math.abs(made))}` : '–';
+  $('#psMade').classList.toggle('pos', sold.length > 0 && made >= 0);
+  $('#psMade').classList.toggle('neg', made < 0);
+  const best = here.filter((e) => !e.bought && !rowTag(e).problem && profitOf(e) > 0)
+    .sort((a, b) => profitOf(b) - profitOf(a)).slice(0, 3);
+  $('#bestWrap').hidden = !best.length;
+  $('#bestList').replaceChildren(...best.map(historyItem));
 }
 
 const CAPTURE_TEXT = {
@@ -2801,6 +2890,10 @@ function renderSteps(entry) {
 let verdictOpen = null; // id of the scan whose verdict reasoning is expanded
 
 function renderPrices(entry) {
+  return inMarket(entry, () => renderPricesIn(entry));
+}
+
+function renderPricesIn(entry) {
   const jp = japanPrice(entry);
   $('#jpRm').textContent = rm(jp.rm);
   $('#jpNote').textContent = jp.note;
@@ -2809,14 +2902,14 @@ function renderPrices(entry) {
   if (!$(`#currencySelect option[value="${cur}"]`)) $('#currencySelect').append(el('option', { value: cur }, cur));
   $('#currencySelect').value = cur;
   $('#currencySymbol').textContent = CURRENCIES[cur] || cur;
-  $('#prices').classList.toggle('local', cur === 'MYR');
+  $('#prices').classList.toggle('local', isHomePrice(entry));
   $('#taxInclToggle').closest('.toggle-pill').hidden = !isJapan(entry);
   $('#taxFreeToggle').closest('.toggle-pill').hidden = !isJapan(entry);
   $('#taxInclToggle').checked = entry.taxIncluded !== false;
   $('#taxFreeToggle').checked = Boolean(entry.taxFree);
   $('#secondHandToggle').checked = Boolean(entry.secondHand);
   $('#secondHandLabel').textContent = entry.autoUsed && entry.secondHand ? 'Used (tag)' : 'Used';
-  const where = { JPY: 'Japan', MYR: 'Asking price' }[cur] || `Price in ${cur}`;
+  const where = isHomePrice(entry) ? 'Asking price' : cur === 'JPY' ? 'Japan' : `Price in ${cur}`;
   $('#jpHead').textContent = entry.secondHand && cur === 'JPY' ? 'Japan used' : where;
 
   for (const [key, valueSel, rangeSel] of [['my_new', '#myNew', '#myNewRange'], ['my_used', '#myUsed', '#myUsedRange']]) {
@@ -2871,6 +2964,10 @@ function renderPrices(entry) {
 }
 
 function renderCondition(entry) {
+  return inMarket(entry, () => renderConditionIn(entry));
+}
+
+function renderConditionIn(entry) {
   const c = conditionFor(entry);
   const panel = $('#conditionPanel');
   const show = c && (c.issues.length || c.grade || c.missing.length || entry.secondHand);
@@ -2949,6 +3046,10 @@ function pickGrade(entry, option) {
 // ---------- exact model ----------
 
 function renderVariant(entry) {
+  return inMarket(entry, () => renderVariantIn(entry));
+}
+
+function renderVariantIn(entry) {
   const ai = entry.ai;
   const lookalikes = (Array.isArray(ai?.lookalikes) ? ai.lookalikes : []).filter((l) => l?.name).slice(0, 3);
   const box = $('#variantBox');
@@ -2991,14 +3092,15 @@ function infoPrompt(entry) {
   const ai = entry.ai || {};
   const jp = japanPrice(entry).rm;
   const name = entry.override || ai.product_name;
-  return `You are advising a Malaysian shopper in Japan who is deciding whether to buy: "${name}"${ai.brand ? ` by ${ai.brand}` : ''}${entry.secondHand ? ' (second-hand)' : ''}.
-Price here: ${toNum(entry.yen) ? `${localPrice(entry)} (about ${rm(jp)})` : 'unknown'}. In Malaysia it is typically ${rm(rangeValue(ai.my_new))} new and ${rm(rangeValue(ai.my_used))} second-hand.
+  const m = marketOf(entry);
+  return `You are advising a shopper from ${m.name}, usually in Japan, who is deciding whether to buy: "${name}"${ai.brand ? ` by ${ai.brand}` : ''}${entry.secondHand ? ' (second-hand)' : ''}.
+Price here: ${toNum(entry.yen) ? `${localPrice(entry)} (about ${rm(jp)})` : 'unknown'}. In ${m.name} it is typically ${rm(rangeValue(ai.my_new))} new and ${rm(rangeValue(ai.my_used))} second-hand.
 
-Use Google Search (reviews, spec pages, Malaysian and Japanese retailers) to write a short buying guide:
+Use Google Search (reviews, spec pages, ${m.adj} and Japanese retailers) to write a short buying guide:
 - What it is and the features or specs that matter.
 - Pros and cons from reviews, and the reviewer consensus with a typical score if there is one.
 - Lookalike variants that are easy to confuse with it (older or newer generations, Lite/Pro versions, editions): what differs, how to tell them apart on the box, and typical price in RM.
-- Better or better-value alternatives available in Malaysia or Japan: what makes each better or cheaper, for whom, and a typical price.
+- Better or better-value alternatives available in ${m.name} or Japan: what makes each better or cheaper, for whom, and a typical price.
 - Whether it is worth buying at this price, and whether a successor has been released or announced.
 
 Reply with only a JSON object inside a \`\`\`json code block:
@@ -3034,6 +3136,10 @@ async function loadInfo(id) {
 
 // "Worth it?" answer, shown inline in the Ask section: the call, a line of why, pros and cons, and alternatives.
 function renderInfo(entry) {
+  return inMarket(entry, () => renderInfoIn(entry));
+}
+
+function renderInfoIn(entry) {
   const info = entry.info;
   const loading = infoLoading.has(entry.id);
   const list = (x) => (Array.isArray(x) ? x.filter(Boolean) : []);
@@ -3070,6 +3176,10 @@ function renderInfo(entry) {
 }
 
 function renderCompat(entry) {
+  return inMarket(entry, () => renderCompatIn(entry));
+}
+
+function renderCompatIn(entry) {
   const list = compatFor(entry);
   $('#compatPanel').hidden = !list.length;
   if (!list.length) return;
@@ -3088,10 +3198,10 @@ function renderCompat(entry) {
   const warn = list.filter((c) => c.status === 'warn').length;
   const size = entry.kind === 'clothes' && entry.ai?.clothing?.size_my;
   $('#compatSummary').textContent = size
-    ? `Size: about MY ${size}${warn || bad ? ', may fit small' : ''}`
+    ? `Size: about ${M().short} ${size}${warn || bad ? ', may fit small' : ''}`
     : bad
-      ? `Malaysia: ${bad} problem${bad > 1 ? 's' : ''}`
-      : warn ? `Malaysia: ${warn} thing${warn > 1 ? 's' : ''} to check` : 'Works in Malaysia';
+      ? `${cap(M().name)}: ${bad} problem${bad > 1 ? 's' : ''}`
+      : warn ? `${cap(M().name)}: ${warn} thing${warn > 1 ? 's' : ''} to check` : `Works in ${M().name}`;
   $('#compatPanel').classList.toggle('has-serious', bad > 0);
 }
 
@@ -3176,8 +3286,8 @@ function renderPlace(entry) {
 // Each MY new / MY used / JP used box opens the listings behind its figure, so the model can be checked.
 
 const SOURCE_KINDS = {
-  new: { title: 'MY new', search: (q) => `https://shopee.com.my/search?keyword=${encodeURIComponent(q)}`, searchLabel: 'Search Shopee' },
-  used: { title: 'MY used', search: (q) => `https://www.carousell.com.my/search/${encodeURIComponent(q)}`, searchLabel: 'Search Carousell' },
+  get new() { const [name, url] = M().links[0]; return { title: `${M().short} new`, search: (q) => `${url}${encodeURIComponent(q)}`, searchLabel: `Search ${name}` }; },
+  get used() { const [name, url] = M().links[1]; return { title: `${M().short} used`, search: (q) => `${url}${encodeURIComponent(q)}`, searchLabel: `Search ${name}` }; },
   jp: { title: 'JP used', search: (q) => `https://jp.mercari.com/search?keyword=${encodeURIComponent(q)}`, searchLabel: 'Search Mercari' },
 };
 
@@ -3221,6 +3331,10 @@ function pricesSimilar(entry) {
 }
 
 function renderSourceLines(entry) {
+  return inMarket(entry, () => renderSourceLinesIn(entry));
+}
+
+function renderSourceLinesIn(entry) {
   for (const [kind, sel] of [['new', '#myNewSrc'], ['used', '#myUsedSrc'], ['jp', '#jpUsedSrc']]) {
     const n = listingsFor(entry, kind).length;
     const card = $(sel).closest('.price-card');
@@ -3234,7 +3348,8 @@ function renderSourceLines(entry) {
     $(sel).classList.toggle('warn', flagged);
   }
   const evidence = entry.ai ? usedEvidence(entry) : null;
-  $('#myUsedHead').textContent = evidence ? `MY used · ${evidence}` : 'MY used';
+  $('#myUsedHead').textContent = evidence ? `${M().short} used · ${evidence}` : `${M().short} used`;
+  $('#myNewHead').textContent = `${M().short} new`;
 }
 
 function openSources(kind) {
@@ -3276,9 +3391,9 @@ const asking = new Set();
 function askPrompt(entry, question) {
   const ai = entry.ai || {};
   const earlier = (entry.qa || []).filter((x) => x.a).slice(-3).map((x) => `Q: ${x.q}\nA: ${x.a}`).join('\n');
-  return `A Malaysian shopper is looking at the item in the photo: "${entry.override || ai.product_name || entry.webGuess || 'unknown item'}"${ai.variant ? ` (${ai.variant})` : ''}.
+  return `A shopper from ${marketOf(entry).name} is looking at the item in the photo: "${entry.override || ai.product_name || entry.webGuess || 'unknown item'}"${ai.variant ? ` (${ai.variant})` : ''}.
 Tag text: """${(entry.ocrText || entry.contextText || '').slice(0, 1500)}"""
-Price here: ${toNum(entry.yen) ? localPrice(entry) : 'unknown'}. In Malaysia: ${rm(rangeValue(ai.my_new))} new, ${rm(rangeValue(ai.my_used))} second-hand.
+Price here: ${toNum(entry.yen) ? localPrice(entry) : 'unknown'}. In ${marketOf(entry).name}: ${rm(rangeValue(ai.my_new))} new, ${rm(rangeValue(ai.my_used))} second-hand.
 ${earlier ? `Earlier questions:\n${earlier}\n` : ''}
 Their question: "${question}"
 Answer in plain English in two to four short sentences, specific to this exact model. Use Google Search when you need facts. If you aren't sure, say so. No preamble and no markdown.`;
@@ -3436,7 +3551,7 @@ function setupViewer() {
 function clothingLine(entry) {
   const c = entry.ai?.clothing;
   if (!c) return '';
-  const size = c.size_on_tag ? `Size ${c.size_on_tag}${c.size_my && c.size_my !== c.size_on_tag ? ` (≈ MY ${c.size_my})` : ''}` : null;
+  const size = c.size_on_tag ? `Size ${c.size_on_tag}${c.size_my && c.size_my !== c.size_on_tag ? ` (≈ ${M().short} ${c.size_my})` : ''}` : null;
   return [size, c.material, c.colour].filter(Boolean).join(' · ');
 }
 
@@ -3455,6 +3570,10 @@ async function renderHero(entry) {
 }
 
 function renderResult(entry) {
+  inMarket(entry, () => renderResultIn(entry));
+}
+
+function renderResultIn(entry) {
   current = entry;
   renderHero(entry);
   $('#resPhoto').src = entry.thumb;
@@ -3502,16 +3621,20 @@ function renderResult(entry) {
   const q = searchQuery(entry);
   $('#searchLinks').hidden = !q;
   $('#estimateNote').hidden = !entry.ai;
-  $('#shopeeLink').href = `https://shopee.com.my/search?keyword=${encodeURIComponent(q)}`;
-  $('#carousellLink').href = `https://www.carousell.com.my/search/${encodeURIComponent(q)}`;
+  const m = M();
+  for (const [sel, [name, url]] of [['#shopeeLink', m.links[0]], ['#carousellLink', m.links[1]]]) {
+    $(sel).textContent = name;
+    $(sel).href = `${url}${encodeURIComponent(q)}`;
+  }
   const qJa = entry.ai?.search_query_ja || q;
   $('#mercariLink').href = `https://jp.mercari.com/search?keyword=${encodeURIComponent(qJa)}`;
-  // Clothes: Zalora instead of CeX, which doesn't sell them.
+  // Clothes: a fashion store instead of CeX, which doesn't sell them; no CeX link where there's no CeX site.
   const clothes = entry.kind === 'clothes';
-  $('#cexLink').textContent = clothes ? 'Zalora' : 'CeX';
+  $('#cexLink').hidden = !clothes && !m.cex?.search;
+  $('#cexLink').textContent = clothes ? m.clothesLink[0] : 'CeX';
   $('#cexLink').href = clothes
-    ? `https://www.zalora.com.my/search?q=${encodeURIComponent(q)}`
-    : cexFor(entry).url || `https://my.webuy.com/search?stext=${encodeURIComponent(q)}`;
+    ? `${m.clothesLink[1]}${encodeURIComponent(q)}`
+    : cexFor(entry).url || `${m.cex?.search || ''}${encodeURIComponent(q)}`;
   $('#yahooLink').href = `https://auctions.yahoo.co.jp/search/search?p=${encodeURIComponent(qJa)}`;
 
   renderSourceLines(entry);
@@ -3619,7 +3742,7 @@ function renderTrip() {
   $('#tripSaved').hidden = counted === 0;
   $('#tripSaved').classList.toggle('neg', t.savedRm < 0);
   $('#tripSavedValue').textContent = t.savedRm >= 0 ? `${rm(t.savedRm)} saved` : `${rm(-t.savedRm)} more`;
-  $('#tripSavedNote').textContent = `${t.savedRm >= 0 ? 'vs' : 'than'} buying in Malaysia${counted < t.bought.length ? ` · ${counted} of ${t.bought.length} items had Malaysian prices` : ''}`;
+  $('#tripSavedNote').textContent = `${t.savedRm >= 0 ? 'vs' : 'than'} buying in ${M().name}${counted < t.bought.length ? ` · ${counted} of ${t.bought.length} items had ${M().adj} prices` : ''}`;
   $('#boughtSaved').textContent = counted ? (t.savedRm >= 0 ? `${rm(t.savedRm)} saved` : `${rm(-t.savedRm)} more than MY`) : '';
   $('#boughtSaved').classList.toggle('neg', t.savedRm < 0);
 
@@ -3651,12 +3774,12 @@ function pickPrompt(items, need) {
     const compat = compatFor(e).filter((c) => c.status !== 'ok').map((c) => `${c.topic}: ${c.note}`).join('; ');
     return `${i + 1}. "${e.override || ai.product_name || e.webGuess || 'unknown item'}"${ai.brand ? ` by ${ai.brand}` : ''}${ai.variant ? ` (${ai.variant})` : ''}${e.secondHand ? ', second-hand' : ''}
    Price here: ${toNum(e.yen) ? `${localPrice(e)} (about ${rm(japanPrice(e).rm)})` : 'unknown'}${storeName(e) ? ` at ${storeName(e)}` : ''}
-   Malaysia: ${rm(rangeValue(ai.my_new))} new, ${rm(rangeValue(ai.my_used))} second-hand${issues ? `\n   Issues on the tag: ${issues}` : ''}${compat ? `\n   Malaysia caveats: ${compat}` : ''}`;
+   ${cap(M().name)}: ${rm(rangeValue(ai.my_new))} new, ${rm(rangeValue(ai.my_used))} second-hand${issues ? `\n   Issues on the tag: ${issues}` : ''}${compat ? `\n   ${cap(M().name)} caveats: ${compat}` : ''}`;
   };
-  return `A Malaysian shopper in Japan is choosing between these ${items.length} products (photos attached in the same order):
+  return `A shopper from ${M().name}, usually in Japan, is choosing between these ${items.length} products (photos attached in the same order):
 ${items.map(describe).join('\n')}
 ${need ? `What matters to them: "${need}"\n` : ''}
-Use Google Search for specs and reviews. Decide which one is more worth buying for them, considering what each does, compatibility (phones, platforms, regions, 240V), build and reviews, and value at these prices compared with buying in Malaysia. If the right choice depends on something you don't know (e.g. iPhone or Android), say so and say which to get in each case.
+Use Google Search for specs and reviews. Decide which one is more worth buying for them, considering what each does, compatibility (phones, platforms, regions, ${M().volts}), build and reviews, and value at these prices compared with buying in ${M().name}. If the right choice depends on something you don't know (e.g. iPhone or Android), say so and say which to get in each case.
 
 Reply with only a JSON object inside a \`\`\`json code block:
 {
@@ -3750,12 +3873,12 @@ function renderCompare(ids) {
   const rows = [
     ['Store', (e) => storeName(e) || e.place?.area || '–'],
     ['Price', (e) => [toNum(e.yen) ? localPrice(e) : '–', el('small', {}, rm(japanPrice(e).rm))], (e) => japanPrice(e).rm],
-    ['MY new', (e) => rm(rangeValue(e.ai?.my_new)), null],
-    ['MY second-hand', (e) => rm(rangeValue(e.ai?.my_used)), null],
+    [`${M().short} new`, (e) => rm(rangeValue(e.ai?.my_new)), null],
+    [`${M().short} second-hand`, (e) => rm(rangeValue(e.ai?.my_used)), null],
     ['JP second-hand', (e) => (jpUsedYen(e) ? [yen(jpUsedYen(e)), el('small', {}, rm(jpUsedYen(e) * (fx(e) || 0)))] : '–'), (e) => jpUsedYen(e)],
-    ['CeX Malaysia sells', (e) => (cexFor(e).sell ? rm(cexFor(e).sell) : '–'), (e) => cexFor(e).sell],
+    ['CeX sells', (e) => (cexFor(e).sell ? rm(cexFor(e).sell) : '–'), (e) => cexFor(e).sell],
     ['CeX buys at', (e) => (cexFor(e).cash ? `${rm(cexFor(e).cash)} cash` : '–'), (e) => (cexFor(e).cash ? -cexFor(e).cash : null)],
-    ['You save vs MY', (e) => {
+    [`You save vs ${M().short}`, (e) => {
       const s = saving(e);
       return s === null ? '–' : s >= 0 ? rm(s) : `${rm(-s)} more`;
     }, (e) => (saving(e) === null ? null : -saving(e))],
@@ -3772,7 +3895,7 @@ function renderCompare(ids) {
       const n = seriousIssues(e).length;
       return n ? `${n} serious issue${n > 1 ? 's' : ''}` : e.secondHand ? 'No serious issues' : '–';
     }],
-    ['Works in Malaysia', (e) => {
+    [`Works in ${M().name}`, (e) => {
       const c = compatFor(e);
       const bad = c.filter((x) => x.status === 'bad').length;
       const warn = c.filter((x) => x.status === 'warn').length;
@@ -3792,7 +3915,7 @@ function renderCompare(ids) {
     el('span', {}, e.ai?.product_name || e.webGuess || 'Unidentified item'),
   )));
   const body = rows.map(([label, cell, score]) => {
-    const cells = items.map(cell);
+    const cells = items.map((e) => inMarket(e, () => cell(e)));
     if (cells.every((c) => c === '–')) return null; // nothing to compare on this row
     let best = null;
     if (score) {
@@ -3920,6 +4043,8 @@ function openSettings() {
   $('#serverStatus').textContent = settings.serverUrl ? (settings.telegram?.chatId ? 'On · Telegram' : 'On') : 'Off';
   $('#serverGroup').open = false;
   renderQuota();
+  renderHomeSelect();
+  renderHomeSymbols();
   if (cloudOn()) cloudCall('usage', {}, 15000).then(saveUsage).catch(() => {});
   $('#settingsDialog').showModal();
 }
@@ -4037,6 +4162,27 @@ $('#clearHistoryBtn').addEventListener('click', () => {
 });
 
 // ---------- events ----------
+
+// Currency labels on inputs (budget, costs, RM/¥ first) follow the home country.
+function renderHomeSymbols() {
+  for (const n of document.querySelectorAll('.home-sym')) if (!n.closest('#soldRow')) n.textContent = homeMarket().symbol;
+}
+
+function renderHomeSelect() {
+  const sel = $('#homeMarketSelect');
+  if (!sel.options.length) sel.append(...Object.values(MARKETS).map((m) => el('option', { value: m.code }, cap(m.name.replace(/^the /, '')))));
+  sel.value = settings.homeMarket;
+}
+
+$('#homeMarketSelect').addEventListener('change', async (e) => {
+  store.set('homeMarket', e.target.value);
+  rate = rates[rateKey('JPY', homeMarket().currency)] || null;
+  renderHomeSymbols();
+  renderRate();
+  route(true);
+  await fetchRate('JPY');
+  renderRate();
+});
 
 $('#introStart').addEventListener('click', () => {
   store.set('onboarded', true);
@@ -4607,6 +4753,7 @@ setupPageGestures();
 // ---------- boot ----------
 
 applyLook();
+renderHomeSymbols();
 route();
 // First run: what the app does and that its prices are estimates. Not for anyone who already has scans.
 if (!store.get('onboarded') && !historyEntries().length) $('#introSheet').showModal();

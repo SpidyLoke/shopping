@@ -63,8 +63,11 @@ test('Worth it and questions use the backend too; Settings can switch to your ow
   await expect(page.locator('#scanWithGroup')).toBeVisible();
   await expect(page.locator('#quotaStatus')).toHaveText(/scans left this month/);
   await expect(page.locator('#accountId')).toHaveText('Account ID anon-1');
+  await expect(page.locator('#keysGroup')).toBeHidden(); // own-key settings don't apply
+  await expect(page.locator('#serverGroup')).toBeHidden();
   await page.click('[data-setting="scanWith"] [data-value="keys"]');
   await expect(page.locator('#quotaStatus')).toHaveText(/your own Google keys/);
+  await expect(page.locator('#keysGroup')).toBeVisible();
   await page.evaluate(() => localStorage.setItem('kc.apiKey', '"K"'));
   await page.click('#saveSettingsBtn');
   await page.fill('#askInput', 'And the charger?');

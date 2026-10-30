@@ -54,7 +54,7 @@ async function mockCloud(page, { ocr = '税込 ¥11,480 4948872415545', gemini =
     const answer = await gemini(prompt);
     return ok({ candidates: [{ content: { parts: [{ text: typeof answer === 'string' ? answer : `\`\`\`json\n${JSON.stringify(answer)}\n\`\`\`` }] } }] });
   };
-  const deps = { db, fetch, prompts, keys: { vision: 'V', gemini: 'G' }, model: 'm', cexIndex: null, limits: { free: 10, pro: 300, daily: 100, perIp: 40, freeAsks: 40, proAsks: 1000, dailyAsks: 100, ...limits } };
+  const deps = { db, fetch, prompts, keys: { vision: 'V', gemini: 'G' }, model: 'm', cexLookup: false, limits: { free: 10, pro: 300, daily: 100, perIp: 40, freeAsks: 40, proAsks: 1000, dailyAsks: 100, ...limits } };
   await page.route('**/firebase-config.js', (r) => r.fulfill({ contentType: 'text/javascript', body: `export const FIREBASE = ${JSON.stringify(CONFIG)};` }));
   for (const [m, body] of Object.entries(STUBS)) await page.route(`${SDK}/firebase-${m}.js`, (r) => r.fulfill({ contentType: 'text/javascript', headers: { 'access-control-allow-origin': '*' }, body }));
   await page.route('**/__cloud/*', async (r) => {

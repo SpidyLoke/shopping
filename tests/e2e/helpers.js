@@ -27,10 +27,13 @@ const geminiReply = (json) => ({ candidates: [{ content: { parts: [{ text: `\`\`
  */
 async function mockApis(page, { gemini = () => product(), vision = () => '税込 ¥11,480', cexHits = [], rates = { JPY: 0.0278, USD: 4.4, SGD: 3.3 } } = {}) {
   const calls = { gemini: [], vision: [], cex: 0, rates: [] };
+  // rates: { JPY: 0.03 } is yen to ringgit; { 'JPY>SGD': 0.009 } for another home currency.
   await page.route('https://api.frankfurter.dev/**', (r) => {
-    const base = new URL(r.request().url()).searchParams.get('base') || 'JPY';
-    calls.rates.push(base);
-    r.fulfill({ json: { date: '2026-10-30', rates: { MYR: rates[base] } } });
+    const q = new URL(r.request().url()).searchParams;
+    const base = q.get('base') || 'JPY';
+    const to = q.get('symbols') || 'MYR';
+    calls.rates.push(to === 'MYR' ? base : `${base}>${to}`);
+    r.fulfill({ json: { date: '2026-10-30', rates: { [to]: rates[to === 'MYR' ? base : `${base}>${to}`] } } });
   });
   await page.route('https://open.er-api.com/**', (r) => r.abort());
   await page.route('https://nominatim.openstreetmap.org/**', (r) => r.fulfill({ json: { address: { quarter: 'Higashi-Ikebukuro', city: 'Toshima' } } }));

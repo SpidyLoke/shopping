@@ -13,6 +13,22 @@ Phone web app for shopping in Japan. Snap a box, price tag or shelf label and it
 
 It's a static site on GitHub Pages and installs to your home screen like an app. It scans either with your own Google API keys (they stay on your phone) or, once the Kaimono backend is set up, with a Kaimono account: no keys needed, a monthly allowance of scans (see [Kaimono backend](#kaimono-backend-firebase)).
 
+### Home country
+
+Settings → **Home country**: Malaysia (default), Singapore, the Philippines, Indonesia, Thailand, Australia or the UK. It's where prices are compared and things resold, so it decides:
+
+| | Prices from | CeX | Mains |
+| --- | --- | --- | --- |
+| Malaysia | Shopee, Carousell, Lazada | CeX Malaysia, checked live | 240V, Type G |
+| Singapore | Shopee, Carousell, Lazada | none | 230V, Type G |
+| Philippines | Shopee, Carousell, Lazada, Facebook | none | 220V, Type A/B/C |
+| Indonesia | Tokopedia, Shopee, OLX | none | 230V, Type C/F |
+| Thailand | Shopee, Lazada, Kaidee | none | 220V, Type A/B/C/O |
+| Australia | JB Hi-Fi, Amazon AU, eBay sold, Gumtree | CeX Australia, via web search | 230V, Type I |
+| UK | Amazon UK, Argos, eBay sold, Vinted | CeX UK, via web search | 230V, Type G |
+
+Money shows in that country's currency (RM, S$, ₱, Rp, ฿, A$, £), labels read "SG new", "UK used" and so on, the search links go to that country's sites, and the compatibility check uses its mains. Each scan keeps the country it was priced for: changing it later doesn't relabel earlier scans, so a Malaysian scan stays in ringgit. Live CeX checks only exist for Malaysia (CeX's search can't be asked directly elsewhere); for Australia and the UK, Gemini's web search reads CeX's site instead. eBay's sold listings show what things actually sold for, which makes the used figure more reliable in Australia and the UK.
+
 ### Outside Japan
 
 It works anywhere, not just Japan. Gemini reads the price and its currency from the tag or listing (¥, RM, S$, NT$, ₩, ฿, HK$, US$, € and more) and everything is converted to RM at that day's rate.
@@ -98,6 +114,7 @@ Repo **Settings → Pages → Build and deployment → Deploy from a branch → 
 
 ### Keeping track
 
+- **Home:** once you've bought something, Home leads with this trip: how many bought, the profit the app expected on those not yet sold, and what the sold ones made. Under it, **Best finds this trip**: the most profitable scans you haven't bought yet, so you can go back for them. Tap the figures for the Trip tab.
 - **Trips:** name each trip in the Trip tab (e.g. "Osaka Nov 2026"). New scans go into the current trip; budget, spending, tax back and savings are per trip, and History can show one trip or all.
 - **Search:** History searches item names, brands, stores and areas.
 - **Refresh prices:** on the Favourites list (home or History), one tap re-checks the Malaysian prices for every favourite.
@@ -245,6 +262,7 @@ Shipping, luggage allowance and warranty aren't factored in. Gemini flags Japan-
   - **Built-in camera** on or off.
 - **Clear history:** deletes all saved scans from the phone.
 - **How it works · About · Privacy · Terms** at the bottom. The first time the app opens (with no scans yet) a short intro explains it and that prices are estimates; **How it works** shows it again.
+- **Home country:** see [Home country](#home-country).
 - **Scan with** (once the backend is set up): **Kaimono** or **My keys**, with scans left this month and the anonymous **Account ID** to quote if you want the backend's record deleted.
 - **API keys** and **Background scanning** fold away once set up. Saved keys and tokens are never shown or refilled; the box shows a hint like "Saved · AIza…x9Q2", and leaving it empty keeps what's saved. With no password-style fields and no form, iPhone doesn't offer to save a password. The × at the top closes Settings without saving.
 
@@ -277,7 +295,7 @@ After that, any change to `functions/` redeploys by itself. To use your own keys
 
 Limits and the model are settings (`functions/.env`: `FREE_SCANS`, `PRO_SCANS`, `DAILY_SCANS`, `PER_IP_SCANS`, `FREE_ASKS`, `PRO_ASKS`, `DAILY_ASKS`, `GEMINI_MODEL`, `CACHE_DAYS`); redeploy after changing them. To give someone the paid plan by hand until payments exist, set `plan: "pro"` on their `users/{uid}` document in Firestore.
 
-Sign-in is anonymous: the account is that install. Removing the app from the home screen starts a new one. Proper accounts (Google, Apple, email) come with payments, since paying is the main reason to need one.
+Sign-in is anonymous: the account is that install. Removing the app from the home screen starts a new one. Proper accounts (Google, Apple, email) come with payments, since paying is the main reason to need one. While scanning with a Kaimono account, Settings hides the API keys and own scan server sections, which only apply to own-key scanning.
 
 ## Development and tests
 

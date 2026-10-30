@@ -53,7 +53,6 @@ const deps = () => ({
   prompts,
   keys: { vision: VISION_KEY.value(), gemini: GEMINI_KEY.value() },
   model: GEMINI_MODEL.value(),
-  cexIndex: 'prod_cex_my',
   cacheDays: CACHE_DAYS.value(),
   limits: {
     free: FREE_SCANS.value(), pro: PRO_SCANS.value(), daily: DAILY_SCANS.value(), perIp: PER_IP_SCANS.value(),
