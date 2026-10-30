@@ -273,7 +273,12 @@ Optional. With it, people scan without their own Google keys: the backend (`func
 **What it does**
 - **Scans:** the app sends the photos and scan options; the backend reads them (Vision), builds the same prompt as the app (`prompt.js`, shared), asks Gemini with Google Search and checks CeX. Same result format as the Apps Script server, so background collection works the same way: a scan whose reply was lost is collected afterwards, not run twice.
 - **Questions:** Worth it, Ask, Translate tag, shelf scans and Compare go through it too, with their own allowance.
-- **Allowance:** 10 scans and 40 questions a month on the free plan, 300 and 1,000 on the paid plan (step 5); resets on the 1st, Malaysia time. Home and Settings show what's left. A failed Gemini call gives the scan back.
+- **Allowance:** 10 scans and 40 questions a month free (resetting on the 1st, Malaysia time). Home and Settings show what's left, with **Get more** when 3 or fewer are left. A failed Gemini call gives the scan back.
+- **Plans** (Settings → Upgrade, paid on Stripe's page):
+  - **Trip pass:** one payment, 60 scans over 14 days (`PASS_SCANS`, `PASS_DAYS`). Buying another while one runs adds 14 days and a fresh 60.
+  - **Monthly:** a subscription, `PRO_SCANS` scans a month (default 100; at roughly RM 0.20 to 0.40 a scan, keep it to what the price carries). **Manage** in Settings opens Stripe's portal to change card, see invoices or cancel; it runs to the end of the paid month.
+  - Paying needs an **account** (email and password), so the plan isn't tied to one phone. Making one upgrades this install's anonymous account in place; **Sign in** on another phone or after reinstalling brings the plan back. Settings shows the account and plan.
+  - Stripe tells the backend about each payment (`stripeWebhook`); FPX and other delayed methods count once they settle.
 - **Barcode cache:** when Gemini identifies a product by its barcode, its Malaysian prices are kept for 7 days. The next scan of that barcode (same condition, new or used) reuses them and only asks Gemini to read the tag, with no search: a fraction of the cost, and free for the user. The result says so.
 - **Bill protection:** a cap on scans across the whole app per day (500) and per connection per day (40), so a bug or someone reinstalling for fresh allowances can't run up the bill.
 
@@ -289,13 +294,15 @@ Optional. With it, people scan without their own Google keys: the backend (`func
    - **Variables → New repository variable** `FIREBASE_PROJECT_ID`: the project ID from step 1.
 5. GitHub → **Actions → Deploy backend → Run workflow**. The first run (about 5 minutes) turns on the Google APIs, creates the database in Singapore, makes an API key that only works for Vision and Gemini, deploys, sets up auto-deletion of old scan results and writes the project's web config into `firebase-config.js`. When it's green, reopen the app: Settings shows **Scan with: Kaimono**.
 
+6. **Payments (optional, any time later):** make a [Stripe](https://dashboard.stripe.com/register) account (Malaysian businesses are supported; sign-up works on a phone). In Stripe → Developers → API keys, copy the **Secret key** (`sk_test_…` while trying it out) into a GitHub secret `STRIPE_SECRET_KEY`, then run **Deploy backend** again. It creates the two prices, the webhook that tells the backend about payments, and the customer portal. Pay with Stripe's test card `4242 4242 4242 4242` to try it; switch to the live key (`sk_live_…`, after Stripe has verified the business) to sell for real. Prices default to RM 19.90 (trip pass) and RM 29.90 a month: set repository variables `PASS_PRICE_SEN` and `MONTHLY_PRICE_SEN` (in sen, e.g. `2490`) and run the workflow again to change them.
+
 After that, any change to `functions/` redeploys by itself. To use your own keys instead of the generated one, add repository secrets `VISION_KEY` and `GEMINI_KEY` and run the workflow again.
 
 **From a computer instead:** `npm install -g firebase-tools`, `firebase login`, `firebase use --add`, `firebase functions:secrets:set VISION_KEY` and `GEMINI_KEY`, `firebase deploy --only functions,firestore`, then paste the web app config (Project settings → Your apps) into `firebase-config.js`.
 
 Limits and the model are settings (`functions/.env`: `FREE_SCANS`, `PRO_SCANS`, `DAILY_SCANS`, `PER_IP_SCANS`, `FREE_ASKS`, `PRO_ASKS`, `DAILY_ASKS`, `GEMINI_MODEL`, `CACHE_DAYS`); redeploy after changing them. To give someone the paid plan by hand until payments exist, set `plan: "pro"` on their `users/{uid}` document in Firestore.
 
-Sign-in is anonymous: the account is that install. Removing the app from the home screen starts a new one. Proper accounts (Google, Apple, email) come with payments, since paying is the main reason to need one. While scanning with a Kaimono account, Settings hides the API keys and own scan server sections, which only apply to own-key scanning.
+Until someone makes an account, sign-in is anonymous: the account is that install, and removing the app from the home screen starts a new one. While scanning with a Kaimono account, Settings hides the API keys and own scan server sections, which only apply to own-key scanning.
 
 ## Development and tests
 
@@ -327,6 +334,7 @@ GitHub Actions runs both on every push (`.github/workflows/test.yml`).
 | `firebase-config.js` | The Firebase project the app uses for account scans (empty until set up) |
 | `legal/` | Privacy policy and terms of use (linked from the first-run intro, Settings and the About page) |
 | `.github/workflows/deploy-backend.yml` | Sets up and deploys the backend from GitHub, so it needs no computer |
+| `functions/billing.js` | Payments: plans from Stripe, checkout, the customer portal and Stripe's payment events |
 | `functions/` | Kaimono backend: Cloud Functions for account scans and questions (`core.js` logic, `index.js` wiring) |
 | `firebase.json`, `firestore.rules` | Firebase deploy settings and database rules |
 | `sw.js` | Caches the app so it opens instantly and offline |

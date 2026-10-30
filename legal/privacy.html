@@ -23,7 +23,8 @@
       <ul>
         <li>Your scans, photos and settings live on your phone, not on our servers.</li>
         <li>To price an item, its photos and text go to Google (Vision and Gemini). Product names go to CeX's search.</li>
-        <li>With a Kaimono account we keep an anonymous account ID and how many scans you've used. We don't keep your photos.</li>
+        <li>With a Kaimono account we keep an account ID, how many scans you've used and, if you make an account, your email. We don't keep your photos.</li>
+        <li>Payments are handled by Stripe. We never see your card details.</li>
         <li>No ads, no tracking, no selling your data.</li>
       </ul>
     </div>
@@ -49,20 +50,24 @@
     <p>Every service also sees your internet address, as any website does. Google's handling of what you send is set by its terms: with the Kaimono backend (a paid Google account), Google doesn't use your photos or questions to improve its products. If you use your own key on Google's free tier, Google's terms let it use what you send to improve its products.</p>
 
     <h2>With a Kaimono account</h2>
-    <p>When you scan without your own keys, the app signs in anonymously (no name, email or phone number). The backend, on Google Cloud in Singapore, keeps:</p>
+    <p>When you scan without your own keys, the app signs in anonymously (no name, email or phone number). If you make an account to buy a plan, Firebase Authentication (Google) keeps your email and a scrambled form of your password, so you can sign in again; we never see the password. The backend, on Google Cloud in Singapore, keeps:</p>
     <ul>
       <li><strong>An anonymous account ID</strong> for this install, with your plan and how many scans and questions you've used this month. Kept while you use the app.</li>
       <li><strong>The result of each scan for 6 hours</strong>, so it still reaches you if you close the app mid-scan. Your photos are not stored.</li>
       <li><strong>A one-way code made from your internet address</strong>, with a count of today's scans, to stop the free allowance being abused. It can't be turned back into the address and is deleted after 2 days.</li>
+      <li><strong>Your plan</strong>: whether you have a trip pass or the monthly plan, until when, and the Stripe customer and subscription IDs that link it to your payments. Kept while you have the account.</li>
       <li><strong>Market prices for a product's barcode for 7 days</strong>, so the next person scanning that product gets them faster. This holds the product and its prices only, nothing about you.</li>
     </ul>
     <p>Because the backend is in Singapore, this data is processed outside Malaysia, by Google under its data protection terms.</p>
+
+    <h2>Payments</h2>
+    <p>Plans are paid on Stripe's own page. Stripe collects and processes your card or bank details, email and billing country under <a href="https://stripe.com/privacy">its privacy policy</a>, and tells us only that a payment went through, for which account, and when a subscription renews or ends. Stripe keeps payment records as the law requires.</p>
 
     <h2>Why we use it</h2>
     <p>Only to run the app: to read and price what you scan, keep your history on your phone, apply the monthly allowance and keep the service running for everyone. We don't use it for advertising, don't build profiles and don't sell or rent it. There are no analytics or tracking scripts in the app.</p>
 
     <h2>Your rights</h2>
-    <p>Under the PDPA you can ask for a copy of personal data we hold about you, ask us to correct it, move it elsewhere, or stop processing it. Most of your data is already in your hands: export it with <em>Settings → Back up</em>, and delete it from the app. For data on the backend, contact us from the app and we'll delete your account record. Since accounts are anonymous, we'll ask for a detail only your phone has so we delete the right one.</p>
+    <p>Under the PDPA you can ask for a copy of personal data we hold about you, ask us to correct it, move it elsewhere, or stop processing it. Most of your data is already in your hands: export it with <em>Settings → Back up</em>, and delete it from the app. For data on the backend, contact us from the app and we'll delete your account record and your sign-in. Payment records Stripe must keep by law stay with Stripe. Since accounts are anonymous, we'll ask for a detail only your phone has so we delete the right one.</p>
 
     <h2>Children</h2>
     <p>The app is not meant for children under 13, and we don't knowingly hold their data.</p>

@@ -6,7 +6,7 @@ import { buildPrompt, findBarcodes, gtinValid, MARKETS, marketFor } from './prom
 import { FIREBASE } from './firebase-config.js';
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.10.30-5';
+const APP_VERSION = '2026.10.30-6';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -593,9 +593,9 @@ function connectCloud() {
     const a = auth.getAuth(fb);
     await a.authStateReady();
     if (!a.currentUser) await auth.signInAnonymously(a);
-    if (store.get('cloudUid') !== a.currentUser.uid) store.set('cloudUid', a.currentUser.uid);
+    rememberUser(a.currentUser);
     const functions = fns.getFunctions(fb, CLOUD_REGION);
-    return (name, data, timeout) => fns.httpsCallable(functions, name, { timeout })(data);
+    return { auth: a, authApi: auth, call: (name, data, timeout) => fns.httpsCallable(functions, name, { timeout })(data) };
   })().catch((e) => {
     cloudReady = null;
     throw e;
@@ -606,10 +606,16 @@ function connectCloud() {
 // Errors that another try won't fix (allowance used up, bad request) are marked `final`.
 const FINAL_CODES = ['resource-exhausted', 'invalid-argument', 'unauthenticated', 'permission-denied', 'failed-precondition'];
 
+// Who's signed in: an anonymous install, or an account with an email (kept for Settings).
+function rememberUser(user) {
+  store.set('cloudUid', user?.uid || null);
+  store.set('cloudEmail', user && !user.isAnonymous ? user.email || null : null);
+}
+
 async function cloudCall(name, data, timeout = 60000) {
   let call;
   try {
-    call = await connectCloud();
+    ({ call } = await connectCloud());
   } catch (e) {
     throw new Error(`Kaimono: couldn't connect (${e.message}). Check your signal.`);
   }
@@ -623,7 +629,8 @@ async function cloudCall(name, data, timeout = 60000) {
     const err = new Error(FINAL_CODES.includes(code) ? e.message : `Kaimono: ${e.message}`);
     err.code = code;
     err.final = FINAL_CODES.includes(code);
-    if (e.details?.reason === 'quota') saveUsage({ used: e.details.used, limit: e.details.limit, plan: e.details.plan, month: e.details.month, resetsAt: e.details.resetsAt });
+    if (e.details?.reason === 'quota' && e.details.plan !== 'pro') err.message += ' Get more in Settings → Upgrade.';
+    if (e.details?.reason === 'quota') saveUsage({ used: e.details.used, limit: e.details.limit, plan: e.details.plan, month: e.details.month, resetsAt: e.details.resetsAt, until: e.details.until ?? null });
     if (e.details?.reason === 'asks') saveUsage({ asks: { used: e.details.used, limit: e.details.limit } });
     throw err;
   }
@@ -635,12 +642,23 @@ function saveUsage(u) {
 }
 
 // "7 of 10 scans left this month", on Home and in Settings.
+const myDay = (t) => new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', timeZone: 'Asia/Kuala_Lumpur' }).format(t);
+const PLAN_NAMES = { free: 'Free plan', pass: 'Trip pass', pro: 'Monthly plan' };
+
+function quotaLeft() {
+  const u = store.get('cloudUsage');
+  if (!cloudOn() || !u?.limit) return null;
+  if (u.plan === 'pass' && Date.now() >= u.until) return null; // ended: the next call tells
+  return u.resetsAt && Date.now() >= u.resetsAt ? u.limit : Math.max(0, u.limit - (u.used || 0));
+}
+
 function quotaText() {
   const u = store.get('cloudUsage');
-  if (!cloudOn() || !u?.limit) return '';
-  const left = u.resetsAt && Date.now() >= u.resetsAt ? u.limit : Math.max(0, u.limit - (u.used || 0));
-  const resets = u.resetsAt ? ` · resets ${new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', timeZone: 'Asia/Kuala_Lumpur' }).format(u.resetsAt)}` : '';
-  return `${left} of ${u.limit} scan${u.limit === 1 ? '' : 's'} left this month${resets}`;
+  const left = quotaLeft();
+  if (left == null) return '';
+  const scans = `${left} of ${u.limit} scan${u.limit === 1 ? '' : 's'} left`;
+  if (u.plan === 'pass') return `${scans} · pass until ${myDay(u.until)}`;
+  return `${scans} this month${u.resetsAt ? ` · resets ${myDay(u.resetsAt)}` : ''}`;
 }
 
 function renderQuota() {
@@ -648,9 +666,21 @@ function renderQuota() {
   // Scanning with a Kaimono account, the API keys, model and own scan server don't apply.
   $('#keysGroup').hidden = cloudOn();
   $('#serverGroup').hidden = cloudOn();
-  $('#quotaLine').textContent = text;
+  const u = store.get('cloudUsage') || {};
+  const plan = u.plan || 'free';
+  // Running low on the free plan: the way to more is right there.
+  $('#quotaLine').replaceChildren(text, plan === 'free' && quotaLeft() != null && quotaLeft() <= 3
+    ? el('button', { class: 'link quota-upgrade', type: 'button', onclick: openUpgrade }, 'Get more') : '');
   $('#quotaLine').hidden = !text;
   $('#scanWithGroup').hidden = !FIREBASE;
+  const email = store.get('cloudEmail');
+  $('#accountBox').hidden = !cloudOn();
+  $('#accountLine').replaceChildren(email || 'Not signed in', el('small', {}, email ? 'Signed in' : 'An account keeps your plan if you change phones'));
+  $('#accountBtn').textContent = email ? 'Sign out' : 'Sign in';
+  $('#planLine').replaceChildren(PLAN_NAMES[plan] || 'Free plan', u.until ? el('small', {}, `${plan === 'pass' ? 'Until' : 'Renews or ends'} ${myDay(u.until)}`) : '');
+  $('#upgradeBtn').hidden = plan === 'pro';
+  $('#upgradeBtn').textContent = plan === 'pass' ? 'Extend' : 'Upgrade';
+  $('#manageBtn').hidden = plan !== 'pro';
   // Quoted when asking for the backend's record of this install to be deleted (privacy policy).
   const uid = cloudOn() ? store.get('cloudUid') : null;
   $('#accountId').hidden = !uid;
@@ -2412,7 +2442,8 @@ let undoState = null;
 function showUndo(text, undo, commit = null, ms = 5000) {
   finishUndo();
   undoState = { undo, commit, timer: setTimeout(finishUndo, ms) };
-  $('#undoText').textContent = text.length > 40 ? `${text.slice(0, 38)}…` : text;
+  $('#undoText').textContent = text.length > 40 && undo ? `${text.slice(0, 38)}…` : text;
+  $('#undoBtn').hidden = !undo;
   $('#undoToast').hidden = false;
 }
 
@@ -3945,6 +3976,10 @@ function renderNav(hash) {
 }
 
 function route(keepScroll = false) {
+  if (location.hash === '#/upgraded') {
+    history.replaceState(null, '', '#/');
+    afterPayment();
+  }
   const hash = location.hash || '#/';
   renderNav(hash);
   trackNav(hash);
@@ -4160,6 +4195,197 @@ $('#clearHistoryBtn').addEventListener('click', () => {
   location.hash = '#/';
   route();
 });
+
+// ---------- account and payments ----------
+// Paying needs an account (email and password), so what you buy isn't tied to one phone. Creating
+// one upgrades this install's anonymous account in place, keeping its allowance and history.
+
+let accountMode = 'create';
+let pendingPlan = null;
+
+function openAccount(mode = 'create', why = null) {
+  accountMode = mode;
+  const create = mode === 'create';
+  $('#accountTitle').textContent = create ? 'Create an account' : 'Sign in';
+  $('#accountWhy').textContent = why || (create
+    ? 'Keeps your plan if you change phones or reinstall. Your scans stay on this phone.'
+    : 'Sign in to the account you made on another phone or before reinstalling.');
+  $('#accPassword').autocomplete = create ? 'new-password' : 'current-password';
+  $('#accountSubmit').textContent = create ? 'Create account' : 'Sign in';
+  $('#accountSwitch').textContent = create ? 'I already have an account' : 'Make a new account';
+  $('#accountForgot').hidden = create;
+  $('#accountMsg').textContent = '';
+  $('#accountMsg').classList.remove('ok');
+  if (!$('#accountSheet').open) $('#accountSheet').showModal();
+}
+
+const AUTH_ERRORS = {
+  'auth/email-already-in-use': 'That email already has an account. Sign in instead.',
+  'auth/credential-already-in-use': 'That email already has an account. Sign in instead.',
+  'auth/invalid-email': 'That email doesn\'t look right.',
+  'auth/weak-password': 'Use at least 8 characters.',
+  'auth/invalid-credential': 'Wrong email or password.',
+  'auth/wrong-password': 'Wrong email or password.',
+  'auth/user-not-found': 'Wrong email or password.',
+  'auth/too-many-requests': 'Too many tries. Wait a few minutes, or reset the password.',
+  'auth/network-request-failed': 'No connection. Check your signal.',
+};
+
+async function submitAccount() {
+  const email = $('#accEmail').value.trim();
+  const password = $('#accPassword').value;
+  const msg = $('#accountMsg');
+  msg.classList.remove('ok');
+  msg.textContent = accountMode === 'create' ? 'Creating…' : 'Signing in…';
+  $('#accountSubmit').disabled = true;
+  try {
+    const { auth, authApi } = await connectCloud();
+    if (accountMode === 'create') {
+      const cred = authApi.EmailAuthProvider.credential(email, password);
+      await authApi.linkWithCredential(auth.currentUser, cred);
+      await auth.currentUser.getIdToken(true); // so the backend sees the email straight away
+    } else {
+      await authApi.signInWithEmailAndPassword(auth, email, password);
+    }
+    rememberUser(auth.currentUser);
+    $('#accPassword').value = '';
+    $('#accountSheet').close();
+    cloudCall('usage', {}, 15000).then(saveUsage).catch(() => {});
+    renderQuota();
+    if (pendingPlan) {
+      const plan = pendingPlan;
+      pendingPlan = null;
+      await startCheckout(plan);
+    }
+  } catch (e) {
+    if (e.code === 'auth/email-already-in-use' || e.code === 'auth/credential-already-in-use') openAccount('signin');
+    $('#accountMsg').textContent = AUTH_ERRORS[e.code] || e.message;
+  } finally {
+    $('#accountSubmit').disabled = false;
+  }
+}
+
+async function forgotPassword() {
+  const email = $('#accEmail').value.trim();
+  const msg = $('#accountMsg');
+  if (!email) {
+    msg.textContent = 'Type your email first.';
+    return;
+  }
+  try {
+    const { auth, authApi } = await connectCloud();
+    await authApi.sendPasswordResetEmail(auth, email);
+    msg.classList.add('ok');
+    msg.textContent = `If ${email} has an account, a reset link is on its way.`;
+  } catch (e) {
+    msg.textContent = AUTH_ERRORS[e.code] || e.message;
+  }
+}
+
+// Signing out leaves a fresh anonymous install, as after reinstalling.
+async function signOutAccount() {
+  if (!confirm('Sign out? Your scans stay on this phone; your plan stays with the account.')) return;
+  const { auth, authApi } = await connectCloud();
+  await authApi.signOut(auth);
+  await authApi.signInAnonymously(auth);
+  rememberUser(auth.currentUser);
+  store.set('cloudUsage', null);
+  cloudCall('usage', {}, 15000).then(saveUsage).catch(() => {});
+  renderQuota();
+}
+
+const fmtPrice = (p) => `${p.currency === 'MYR' ? 'RM ' : `${p.currency} `}${p.amount.toFixed(2)}`;
+
+async function openUpgrade() {
+  if ($('#settingsDialog').open) $('#settingsDialog').close();
+  $('#upgradeMsg').textContent = 'Loading prices…';
+  $('#planList').replaceChildren();
+  $('#upgradeSheet').showModal();
+  try {
+    const { plans, free } = await cloudCall('plans', {}, 20000);
+    $('#upgradeFree').textContent = `Free: ${free} scans a month. Scans of a barcode someone checked in the last week are always free.`;
+    $('#planList').replaceChildren(...plans.map((p) => el('button', { class: `plan-card${p.id === 'pass' ? ' best' : ''}`, type: 'button', 'data-plan': p.id, onclick: () => choosePlan(p.id) },
+      el('span', { class: 'plan-name' }, p.id === 'pass' ? 'Trip pass' : 'Monthly'),
+      el('span', { class: 'plan-price' }, p.id === 'pass' ? fmtPrice(p) : `${fmtPrice(p)}/month`),
+      el('span', { class: 'plan-what' }, p.id === 'pass'
+        ? `${p.scans} scans over ${p.days} days. One payment, for a shopping trip.`
+        : `${p.scans} scans every month, for regular reselling. Cancel any time.`),
+    )));
+    $('#upgradeMsg').textContent = plans.length ? '' : 'Nothing on sale yet.';
+  } catch (e) {
+    $('#upgradeMsg').textContent = e.message;
+  }
+}
+
+function choosePlan(plan) {
+  if (!store.get('cloudEmail')) {
+    pendingPlan = plan;
+    $('#upgradeSheet').close();
+    openAccount('create', 'First make an account, so what you buy isn\'t tied to this phone. Your scans stay here.');
+    return;
+  }
+  startCheckout(plan);
+}
+
+async function startCheckout(plan) {
+  if (!$('#upgradeSheet').open) $('#upgradeSheet').showModal();
+  $('#upgradeMsg').textContent = 'Opening Stripe…';
+  try {
+    const { url } = await cloudCall('checkout', { plan }, 20000);
+    location.href = url;
+  } catch (e) {
+    $('#upgradeMsg').textContent = e.message;
+  }
+}
+
+async function openPortal() {
+  try {
+    const { url } = await cloudCall('portal', {}, 20000);
+    location.href = url;
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
+// Back from Stripe: the webhook usually lands within seconds, so check a few times.
+async function afterPayment() {
+  showUndo('Payment received. Turning it on…', null, null, 8000);
+  for (let i = 0; i < 8; i += 1) {
+    try {
+      const u = await cloudCall('usage', {}, 15000);
+      saveUsage(u);
+      if (u.plan !== 'free') {
+        showUndo(u.plan === 'pass' ? `Trip pass on: ${u.limit} scans until ${myDay(u.until)}` : `Monthly plan on: ${u.limit} scans a month`, null, null, 6000);
+        return;
+      }
+    } catch {
+      // try again
+    }
+    await new Promise((r) => setTimeout(r, 2500));
+  }
+  showUndo('Still waiting for Stripe. Check Settings in a minute.', null, null, 6000);
+}
+
+$('#accountForm').addEventListener('submit', (e) => {
+  e.preventDefault();
+  submitAccount();
+});
+$('#accountSwitch').addEventListener('click', () => openAccount(accountMode === 'create' ? 'signin' : 'create'));
+$('#accountForgot').addEventListener('click', forgotPassword);
+$('#accountClose').addEventListener('click', () => {
+  pendingPlan = null;
+  $('#accountSheet').close();
+});
+$('#upgradeClose').addEventListener('click', () => $('#upgradeSheet').close());
+$('#accountBtn').addEventListener('click', () => {
+  if (store.get('cloudEmail')) signOutAccount();
+  else {
+    $('#settingsDialog').close();
+    openAccount('signin');
+  }
+});
+$('#upgradeBtn').addEventListener('click', openUpgrade);
+$('#manageBtn').addEventListener('click', openPortal);
 
 // ---------- events ----------
 

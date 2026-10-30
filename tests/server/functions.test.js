@@ -54,7 +54,7 @@ function apis({ ocr = '税込 ¥8,980 4948872415545', gemini = () => ({ ...MARKE
 }
 
 const IMG = 'A'.repeat(200);
-const LIMITS = { free: 3, pro: 300, daily: 100, perIp: 40, freeAsks: 2, proAsks: 100, dailyAsks: 100 };
+const LIMITS = { free: 3, pro: 300, pass: 60, daily: 100, perIp: 40, freeAsks: 2, proAsks: 100, dailyAsks: 100 };
 
 async function setup(opts = {}) {
   const { core, prompts } = await load();

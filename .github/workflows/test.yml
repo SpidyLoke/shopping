@@ -17,12 +17,11 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium
+      - run: npm ci --prefix functions
       - name: Server tests
         run: npm run test:server
       - name: Backend loads (Firebase functions)
-        run: |
-          npm ci --prefix functions
-          cd functions && node -e "import('./index.js').then((m) => console.log('exports:', Object.keys(m).join(', ')))"
+        run: cd functions && node -e "import('./index.js').then((m) => console.log('exports:', Object.keys(m).join(', ')))"
       - name: App tests
         run: npm run test:e2e
       - uses: actions/upload-artifact@v4

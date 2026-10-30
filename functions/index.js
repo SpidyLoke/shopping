@@ -3,22 +3,27 @@
 //
 // Settings (functions/.env, or asked for on first deploy):
 //   FREE_SCANS    scans a month on the free plan (default 10)
-//   PRO_SCANS     scans a month on the paid plan (default 300)
+//   PRO_SCANS     scans a month on the monthly plan (default 100)
 //   DAILY_SCANS   most scans the whole app runs in a day, so a bug or abuse can't run up the bill (default 500)
 //   PER_IP_SCANS  most scans from one connection in a day (default 40)
 //   FREE_ASKS, PRO_ASKS, DAILY_ASKS  the same for questions (Worth it, Ask, shelf, Compare): 40, 1000, 2000
 //   GEMINI_MODEL  (default gemini-flash-latest)
 //   CACHE_DAYS    how long a barcode's market prices are reused (default 7)
-// Secrets (firebase functions:secrets:set NAME): VISION_KEY, GEMINI_KEY.
+//   PASS_SCANS, PASS_DAYS  what a trip pass gives (default 60 scans over 14 days)
+//   APP_URL       where Stripe sends people back to (default https://spidyloke.github.io/shopping/)
+// Secrets (firebase functions:secrets:set NAME): VISION_KEY, GEMINI_KEY, STRIPE_SECRET_KEY and
+// STRIPE_WEBHOOK_SECRET (the Deploy backend workflow sets the Stripe ones, or "unset" until then).
 // ENFORCE_APP_CHECK=true in functions/.env turns on App Check once the app is registered for it.
 
 import { initializeApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
-import { onCall, HttpsError } from 'firebase-functions/v2/https';
+import { onCall, onRequest, HttpsError } from 'firebase-functions/v2/https';
 import { defineInt, defineSecret, defineString } from 'firebase-functions/params';
 import { createHash } from 'node:crypto';
 import * as prompts from './prompt.js';
+import Stripe from 'stripe';
 import { runScan, runAsk, jobResult, usageFor, ScanError } from './core.js';
+import { listPlans, createCheckout, createPortal, handleEvent } from './billing.js';
 
 initializeApp();
 const firestore = getFirestore();
@@ -26,7 +31,7 @@ const firestore = getFirestore();
 const VISION_KEY = defineSecret('VISION_KEY');
 const GEMINI_KEY = defineSecret('GEMINI_KEY');
 const FREE_SCANS = defineInt('FREE_SCANS', { default: 10 });
-const PRO_SCANS = defineInt('PRO_SCANS', { default: 300 });
+const PRO_SCANS = defineInt('PRO_SCANS', { default: 100 });
 const DAILY_SCANS = defineInt('DAILY_SCANS', { default: 500 });
 const PER_IP_SCANS = defineInt('PER_IP_SCANS', { default: 40 });
 const FREE_ASKS = defineInt('FREE_ASKS', { default: 40 });
@@ -34,6 +39,11 @@ const PRO_ASKS = defineInt('PRO_ASKS', { default: 1000 });
 const DAILY_ASKS = defineInt('DAILY_ASKS', { default: 2000 });
 const GEMINI_MODEL = defineString('GEMINI_MODEL', { default: 'gemini-flash-latest' });
 const CACHE_DAYS = defineInt('CACHE_DAYS', { default: 7 });
+const PASS_SCANS = defineInt('PASS_SCANS', { default: 60 });
+const PASS_DAYS = defineInt('PASS_DAYS', { default: 14 });
+const APP_URL = defineString('APP_URL', { default: 'https://spidyloke.github.io/shopping/' });
+const STRIPE_SECRET_KEY = defineSecret('STRIPE_SECRET_KEY');
+const STRIPE_WEBHOOK_SECRET = defineSecret('STRIPE_WEBHOOK_SECRET');
 
 // Firestore behind the small get / set / transaction interface core.js uses.
 const ref = (path) => firestore.doc(path);
@@ -55,7 +65,7 @@ const deps = () => ({
   model: GEMINI_MODEL.value(),
   cacheDays: CACHE_DAYS.value(),
   limits: {
-    free: FREE_SCANS.value(), pro: PRO_SCANS.value(), daily: DAILY_SCANS.value(), perIp: PER_IP_SCANS.value(),
+    free: FREE_SCANS.value(), pro: PRO_SCANS.value(), pass: PASS_SCANS.value(), daily: DAILY_SCANS.value(), perIp: PER_IP_SCANS.value(),
     freeAsks: FREE_ASKS.value(), proAsks: PRO_ASKS.value(), dailyAsks: DAILY_ASKS.value(),
   },
 });
@@ -105,4 +115,64 @@ export const result = onCall(options, async (req) => {
 export const usage = onCall(options, async (req) => {
   const uid = signedIn(req);
   return usageFor(uid, { db, limits: deps().limits });
+});
+
+// ---------- payments ----------
+
+// The secret is "unset" until Stripe is connected; then payment calls say so instead of failing oddly.
+const stripeClient = () => {
+  const key = STRIPE_SECRET_KEY.value();
+  return key && (key.startsWith('sk_') || key.startsWith('rk_')) ? new Stripe(key) : null;
+};
+const billing = () => ({ stripe: stripeClient(), db, appUrl: APP_URL.value(), passDays: PASS_DAYS.value(), limits: deps().limits });
+const paying = { ...options, secrets: [STRIPE_SECRET_KEY] };
+
+export const plans = onCall(paying, async (req) => {
+  signedIn(req);
+  try {
+    return await listPlans(billing());
+  } catch (e) {
+    throw asHttps(e);
+  }
+});
+
+export const checkout = onCall(paying, async (req) => {
+  const uid = signedIn(req);
+  const token = req.auth.token || {};
+  try {
+    return await createCheckout(req.data || {}, { uid, email: token.email, anonymous: token.firebase?.sign_in_provider === 'anonymous' }, billing());
+  } catch (e) {
+    throw asHttps(e);
+  }
+});
+
+export const portal = onCall(paying, async (req) => {
+  const uid = signedIn(req);
+  try {
+    return await createPortal({ uid }, billing());
+  } catch (e) {
+    throw asHttps(e);
+  }
+});
+
+// Stripe tells the backend about payments here; the signature proves it's Stripe.
+export const stripeWebhook = onRequest({ region: options.region, secrets: [STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET] }, async (req, res) => {
+  const stripe = stripeClient();
+  if (!stripe) {
+    res.status(503).send('Payments not set up');
+    return;
+  }
+  let event;
+  try {
+    event = stripe.webhooks.constructEvent(req.rawBody, req.headers['stripe-signature'], STRIPE_WEBHOOK_SECRET.value());
+  } catch {
+    res.status(400).send('Bad signature');
+    return;
+  }
+  try {
+    res.json({ ok: true, handled: await handleEvent(event, billing()) });
+  } catch (e) {
+    console.error('stripeWebhook', event.type, e);
+    res.status(500).send('Not handled'); // Stripe retries
+  }
 });

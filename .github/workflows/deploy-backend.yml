@@ -6,6 +6,8 @@
 #   secret   FIREBASE_SERVICE_ACCOUNT  the JSON key of a service account with the roles Editor,
 #                                      Secret Manager Admin, API Keys Admin and Service Account User
 #   secrets  VISION_KEY, GEMINI_KEY    optional: your own keys; without them the first run makes one
+#   secret   STRIPE_SECRET_KEY         optional: turns payments on (sk_test_… to try, sk_live_… to sell)
+#   variables PASS_PRICE_SEN, MONTHLY_PRICE_SEN  prices in sen (default 1990 = RM 19.90, 2990 = RM 29.90)
 #
 # The first run (Actions → Deploy backend → Run workflow) also turns on the Google APIs, creates the
 # database in Singapore, makes the backend's API key, sets up auto-deletion of old scan results and
@@ -62,17 +64,17 @@ jobs:
             gcloud firestore databases create --database='(default)' --location="$REGION" --type=firestore-native --project "$PROJECT"
           fi
 
-      - name: Turn on anonymous sign-in
+      - name: Turn on sign-in (anonymous, and email for accounts)
         run: |
           reply=$(curl -sS -X PATCH \
             -H "Authorization: Bearer $(gcloud auth print-access-token)" \
             -H "X-Goog-User-Project: $PROJECT" -H "Content-Type: application/json" \
-            "https://identitytoolkit.googleapis.com/admin/v2/projects/$PROJECT/config?updateMask=signIn.anonymous.enabled" \
-            -d '{"signIn":{"anonymous":{"enabled":true}}}')
+            "https://identitytoolkit.googleapis.com/admin/v2/projects/$PROJECT/config?updateMask=signIn.anonymous.enabled,signIn.email.enabled,signIn.email.passwordRequired" \
+            -d '{"signIn":{"anonymous":{"enabled":true},"email":{"enabled":true,"passwordRequired":true}}}')
           if echo "$reply" | grep -q '"anonymous"'; then
-            echo "Anonymous sign-in is on."
+            echo "Anonymous and email sign-in are on."
           else
-            echo "::warning::Couldn't turn on anonymous sign-in: open Firebase console → Authentication → Get started → Sign-in method → Anonymous → Enable, then run this again."
+            echo "::warning::Couldn't turn on sign-in: open Firebase console → Authentication → Get started → Sign-in method, enable Anonymous and Email/Password, then run this again."
             echo "$reply" | head -c 500
           fi
 
@@ -104,6 +106,63 @@ jobs:
           echo "::add-mask::$key"
           has VISION_KEY || put VISION_KEY "$key"
           has GEMINI_KEY || put GEMINI_KEY "$key"
+
+      - name: Payments (Stripe)
+        env:
+          STRIPE_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          PASS_PRICE: ${{ vars.PASS_PRICE_SEN || '1990' }}
+          MONTHLY_PRICE: ${{ vars.MONTHLY_PRICE_SEN || '2990' }}
+        run: |
+          set -euo pipefail
+          current() { gcloud secrets versions access latest --secret="$1" --project "$PROJECT" 2>/dev/null || true; }
+          put() {
+            f="$RUNNER_TEMP/secret"
+            printf '%s' "$2" > "$f"
+            $FIREBASE functions:secrets:set "$1" --data-file "$f" --project "$PROJECT" --non-interactive
+            rm -f "$f"
+          }
+          # The functions need both secrets to exist; "unset" until Stripe is connected.
+          [ -n "$(current STRIPE_SECRET_KEY)" ] || put STRIPE_SECRET_KEY unset
+          [ -n "$(current STRIPE_WEBHOOK_SECRET)" ] || put STRIPE_WEBHOOK_SECRET unset
+          if [ -z "${STRIPE_KEY:-}" ]; then echo "No STRIPE_SECRET_KEY secret yet: payments stay off."; exit 0; fi
+          echo "::add-mask::$STRIPE_KEY"
+          [ "$(current STRIPE_SECRET_KEY)" = "$STRIPE_KEY" ] || put STRIPE_SECRET_KEY "$STRIPE_KEY"
+          api() { curl -sS --fail-with-body -u "$STRIPE_KEY:" "$@"; }
+
+          # Prices, found by lookup key; a changed amount becomes a new price that takes the key over.
+          price() { # lookup_key name amount [interval]
+            have=$(api -G https://api.stripe.com/v1/prices --data-urlencode "lookup_keys[]=$1" -d active=true | jq -r '.data[0].unit_amount // empty')
+            if [ "$have" = "$3" ]; then echo "$1: RM $3 sen, unchanged."; return; fi
+            args=(-d currency=myr -d unit_amount="$3" -d lookup_key="$1" -d transfer_lookup_key=true --data-urlencode "product_data[name]=$2")
+            [ -n "${4:-}" ] && args+=(-d "recurring[interval]=$4")
+            api https://api.stripe.com/v1/prices "${args[@]}" | jq -r '"\(.lookup_key): created \(.id)"'
+          }
+          price kaimono_pass "Kaimono Check trip pass" "$PASS_PRICE"
+          price kaimono_monthly "Kaimono Check monthly" "$MONTHLY_PRICE" month
+
+          # The webhook that tells the backend about payments.
+          url="https://$REGION-$PROJECT.cloudfunctions.net/stripeWebhook"
+          hook=$(api -G https://api.stripe.com/v1/webhook_endpoints -d limit=100 | jq -r --arg u "$url" '[.data[] | select(.url == $u)][0].id // empty')
+          if [ -n "$hook" ] && [ "$(current STRIPE_WEBHOOK_SECRET)" != "unset" ]; then
+            echo "Webhook already set up."
+          else
+            [ -n "$hook" ] && api -X DELETE "https://api.stripe.com/v1/webhook_endpoints/$hook" >/dev/null
+            secret=$(api https://api.stripe.com/v1/webhook_endpoints --data-urlencode "url=$url" \
+              -d "enabled_events[]=checkout.session.completed" -d "enabled_events[]=checkout.session.async_payment_succeeded" \
+              -d "enabled_events[]=customer.subscription.created" -d "enabled_events[]=customer.subscription.updated" \
+              -d "enabled_events[]=customer.subscription.deleted" | jq -r .secret)
+            echo "::add-mask::$secret"
+            put STRIPE_WEBHOOK_SECRET "$secret"
+          fi
+
+          # Stripe's customer portal (Manage in Settings): change card, cancel, invoices.
+          if [ "$(api -G https://api.stripe.com/v1/billing_portal/configurations -d is_default=true | jq '.data | length')" = "0" ]; then
+            api https://api.stripe.com/v1/billing_portal/configurations \
+              -d "features[subscription_cancel][enabled]=true" -d "features[payment_method_update][enabled]=true" \
+              -d "features[invoice_history][enabled]=true" -d "features[customer_update][enabled]=false" \
+              --data-urlencode "business_profile[headline]=Kaimono Check" >/dev/null
+            echo "Customer portal set up."
+          fi
 
       - name: Deploy functions and database rules
         run: $FIREBASE deploy --only functions,firestore:rules --project "$PROJECT" --non-interactive --force

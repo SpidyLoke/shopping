@@ -416,6 +416,17 @@
           </div>
         </div>
         <p class="muted small" id="quotaStatus"></p>
+        <div class="account-box" id="accountBox" hidden>
+          <div class="data-row">
+            <span id="accountLine">Not signed in<small>An account keeps your plan if you change phones</small></span>
+            <button class="btn btn-small" type="button" id="accountBtn">Sign in</button>
+          </div>
+          <div class="data-row">
+            <span id="planLine">Free plan</span>
+            <button class="btn btn-small btn-primary" type="button" id="upgradeBtn">Upgrade</button>
+            <button class="btn btn-small" type="button" id="manageBtn" hidden>Manage</button>
+          </div>
+        </div>
         <p class="muted small account-id" id="accountId" hidden></p>
       </section>
 
@@ -623,6 +634,35 @@
     <p class="intro-note">Prices are estimates from AI and web search, and can be wrong. Tap any price to check the listings behind it before you buy.</p>
     <button class="btn btn-primary intro-go" type="button" id="introStart">Start scanning</button>
     <p class="muted small intro-legal">By using Kaimono you agree to the <a href="legal/terms.html">Terms</a> and <a href="legal/privacy.html">Privacy policy</a>.</p>
+  </dialog>
+  <!-- Account: email and password, so a plan survives a new phone -->
+  <dialog class="sheet" id="accountSheet" aria-labelledby="accountTitle">
+    <div class="sheet-head">
+      <h2 id="accountTitle">Create an account</h2>
+      <button class="icon-btn" type="button" id="accountClose" aria-label="Close"><svg class="i" viewBox="0 0 256 256" aria-hidden="true"><path d="M204.24,195.76a6,6,0,1,1-8.48,8.48L128,136.49,60.24,204.24a6,6,0,0,1-8.48-8.48L119.51,128,51.76,60.24a6,6,0,0,1,8.48-8.48L128,119.51l67.76-67.75a6,6,0,0,1,8.48,8.48L136.49,128Z"/></svg></button>
+    </div>
+    <p class="muted small" id="accountWhy">Keeps your plan if you change phones or reinstall. Your scans stay on this phone.</p>
+    <form class="account-form" id="accountForm">
+      <label class="field"><span>Email</span><input id="accEmail" type="email" autocomplete="username" autocapitalize="off" spellcheck="false" required></label>
+      <label class="field"><span>Password</span><input id="accPassword" type="password" autocomplete="new-password" minlength="8" required></label>
+      <p class="small account-msg" id="accountMsg" role="status"></p>
+      <button class="btn btn-primary" type="submit" id="accountSubmit">Create account</button>
+      <div class="account-links">
+        <button class="link small" type="button" id="accountSwitch">I already have an account</button>
+        <button class="link small" type="button" id="accountForgot" hidden>Forgot password?</button>
+      </div>
+    </form>
+  </dialog>
+  <!-- Upgrade: the plans on sale, paid on Stripe's page -->
+  <dialog class="sheet" id="upgradeSheet" aria-labelledby="upgradeTitle">
+    <div class="sheet-head">
+      <h2 id="upgradeTitle">More scans</h2>
+      <button class="icon-btn" type="button" id="upgradeClose" aria-label="Close"><svg class="i" viewBox="0 0 256 256" aria-hidden="true"><path d="M204.24,195.76a6,6,0,1,1-8.48,8.48L128,136.49,60.24,204.24a6,6,0,0,1-8.48-8.48L119.51,128,51.76,60.24a6,6,0,0,1,8.48-8.48L128,119.51l67.76-67.75a6,6,0,0,1,8.48,8.48L136.49,128Z"/></svg></button>
+    </div>
+    <p class="muted small" id="upgradeFree"></p>
+    <div class="plan-list" id="planList"></div>
+    <p class="small account-msg" id="upgradeMsg" role="status"></p>
+    <p class="muted small">Paid securely on Stripe's page. Cancel the monthly plan any time from Settings. <a href="legal/terms.html">Terms</a></p>
   </dialog>
   <!-- Long-press a scan: quick actions -->
   <dialog class="sheet menu-sheet" id="rowMenu" aria-label="Quick actions">

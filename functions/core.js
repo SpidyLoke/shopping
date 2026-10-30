@@ -34,16 +34,40 @@ function resetsAt(now) {
   return Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1) - MYT;
 }
 
+// Plans (set by billing.js from Stripe, or by hand in Firestore):
+//   free   FREE_SCANS a month
+//   pass   a trip pass: PASS_SCANS in all until passUntil
+//   pro    the monthly subscription: PRO_SCANS a month while proUntil is ahead (or no proUntil: given by hand)
+export function planOf(user, now) {
+  if (user?.passUntil > now) return 'pass';
+  if (user?.plan === 'pro' && (!user.proUntil || user.proUntil > now)) return 'pro';
+  return 'free';
+}
+
 function usageOf(user, now, limits) {
-  const plan = user?.plan === 'pro' ? 'pro' : 'free';
+  const plan = planOf(user, now);
   const month = monthKey(now);
-  return { plan, used: user?.month === month ? user.used || 0 : 0, limit: plan === 'pro' ? limits.pro : limits.free, month, resetsAt: resetsAt(now) };
+  if (plan === 'pass') return { plan, used: user.passUsed || 0, limit: limits.pass, month, resetsAt: user.passUntil, until: user.passUntil };
+  return {
+    plan,
+    used: user?.month === month ? user.used || 0 : 0,
+    limit: plan === 'pro' ? limits.pro : limits.free,
+    month,
+    resetsAt: resetsAt(now),
+    until: plan === 'pro' ? user.proUntil || null : null,
+  };
+}
+
+// The usage fields to write after one scan more (+1) or one given back (-1).
+function counted(user, u, step) {
+  const used = Math.max(0, u.used + step);
+  return u.plan === 'pass' ? { passUsed: used } : { month: u.month, used };
 }
 
 export async function usageFor(uid, { db, now = Date.now(), limits }) {
   const user = await db.get(`users/${uid}`);
   const u = usageOf(user, now, limits);
-  return { ...u, asks: { used: user?.asksMonth === u.month ? user.asksUsed || 0 : 0, limit: u.plan === 'pro' ? limits.proAsks : limits.freeAsks } };
+  return { ...u, asks: { used: user?.asksMonth === u.month ? user.asksUsed || 0 : 0, limit: u.plan === 'free' ? limits.freeAsks : limits.proAsks } };
 }
 
 // One scan from the allowance, plus the project-wide daily cap and a per-connection daily cap
@@ -56,7 +80,8 @@ async function reserve(db, { uid, ipHash, now, limits }) {
     const ip = ipHash ? (await t.get(`ipDaily/${day}-${ipHash}`)) || {} : null;
     const u = usageOf(user, now, limits);
     if (u.used >= u.limit) {
-      throw new ScanError('resource-exhausted', `No scans left this month (${u.limit} a month on the ${u.plan} plan).`, { reason: 'quota', ...u });
+      const message = u.plan === 'pass' ? `No scans left on your trip pass (${u.limit} scans).` : `No scans left this month (${u.limit} a month on the ${u.plan} plan).`;
+      throw new ScanError('resource-exhausted', message, { reason: 'quota', ...u });
     }
     if ((counter.scans || 0) >= limits.daily) {
       throw new ScanError('resource-exhausted', 'Kaimono has hit its scan limit for today. Try again tomorrow, or scan with your own keys (Settings).', { reason: 'daily' });
@@ -64,7 +89,7 @@ async function reserve(db, { uid, ipHash, now, limits }) {
     if (ip && (ip.scans || 0) >= limits.perIp) {
       throw new ScanError('resource-exhausted', 'Too many scans from this connection today.', { reason: 'connection' });
     }
-    t.set(`users/${uid}`, { ...user, plan: u.plan, month: u.month, used: u.used + 1, updatedAt: now });
+    t.set(`users/${uid}`, { ...user, ...counted(user, u, 1), updatedAt: now });
     t.set(`counters/day-${day}`, { scans: (counter.scans || 0) + 1 });
     if (ip) t.set(`ipDaily/${day}-${ipHash}`, { scans: (ip.scans || 0) + 1, expireAt: new Date(now + 2 * DAY) });
     return { ...u, used: u.used + 1 };
@@ -76,7 +101,7 @@ async function refund(db, { uid, now, limits }) {
   return db.txn(async (t) => {
     const user = (await t.get(`users/${uid}`)) || {};
     const u = usageOf(user, now, limits);
-    if (u.used > 0) t.set(`users/${uid}`, { ...user, used: u.used - 1, updatedAt: now });
+    if (u.used > 0) t.set(`users/${uid}`, { ...user, ...counted(user, u, -1), updatedAt: now });
     return { ...u, used: Math.max(0, u.used - 1) };
   });
 }
@@ -254,7 +279,7 @@ async function reserveAsk(db, { uid, ipHash, now, limits }) {
     const user = (await t.get(`users/${uid}`)) || {};
     const counter = (await t.get(`counters/asks-${day}`)) || {};
     const ip = ipHash ? (await t.get(`ipDaily/asks-${day}-${ipHash}`)) || {} : null;
-    const limit = user.plan === 'pro' ? limits.proAsks : limits.freeAsks;
+    const limit = planOf(user, now) === 'free' ? limits.freeAsks : limits.proAsks;
     const used = user.asksMonth === month ? user.asksUsed || 0 : 0;
     if (used >= limit) throw new ScanError('resource-exhausted', `No questions left this month (${limit} a month).`, { reason: 'asks', used, limit });
     if ((counter.asks || 0) >= limits.dailyAsks) throw new ScanError('resource-exhausted', 'Kaimono has hit its limit for today. Try again tomorrow.', { reason: 'daily' });
