@@ -3,7 +3,7 @@
 // lives in localStorage on the user's device only.
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.10.29-4';
+const APP_VERSION = '2026.10.30-1';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -335,22 +335,27 @@ function toJpeg(src, maxSide, quality) {
 
 // ---------- exchange rate ----------
 
-let rate = null;
+// Everything is compared in ringgit. Each scan keeps its price in the currency it was shown in
+// (yen in Japan, ringgit for a Malaysian listing, and so on); rates are fetched per currency.
+const rates = store.get('rates', null) || {};
+if (!rates.JPY && store.get('rate')) rates.JPY = store.get('rate');
+let rate = rates.JPY || null; // yen, shown on Home
 
-async function fetchRate(force = false) {
-  const cached = store.get('rate');
+async function fetchRate(currency = 'JPY', force = false) {
+  if (currency === 'MYR') return { value: 1 };
+  const cached = rates[currency];
   if (!force && cached && Date.now() - cached.fetchedAt < RATE_TTL_MS) {
-    rate = cached;
-    return rate;
+    if (currency === 'JPY') rate = cached;
+    return cached;
   }
   const sources = [
     async () => {
-      const r = await fetch('https://api.frankfurter.dev/v1/latest?base=JPY&symbols=MYR');
+      const r = await fetch(`https://api.frankfurter.dev/v1/latest?base=${currency}&symbols=MYR`);
       const d = await r.json();
       return { value: d.rates.MYR, date: d.date };
     },
     async () => {
-      const r = await fetch('https://open.er-api.com/v6/latest/JPY');
+      const r = await fetch(`https://open.er-api.com/v6/latest/${currency}`);
       const d = await r.json();
       return { value: d.rates.MYR, date: (d.time_last_update_utc || '').slice(5, 16) };
     },
@@ -359,16 +364,54 @@ async function fetchRate(force = false) {
     try {
       const { value, date } = await src();
       if (Number.isFinite(value) && value > 0) {
-        rate = { value, date, fetchedAt: Date.now() };
-        store.set('rate', rate);
-        return rate;
+        rates[currency] = { value, date, fetchedAt: Date.now() };
+        store.set('rates', rates);
+        if (currency === 'JPY') {
+          rate = rates.JPY;
+          store.set('rate', rate);
+        }
+        return rates[currency];
       }
     } catch {
       // try the next source
     }
   }
-  rate = cached || null;
-  return rate;
+  if (currency === 'JPY') rate = cached || null;
+  return cached || null;
+}
+
+function rateValue(currency) {
+  return currency === 'MYR' ? 1 : rates[currency]?.value || null;
+}
+
+// Currencies the price box can be switched to (Gemini reads others too).
+const CURRENCIES = {
+  JPY: '¥', MYR: 'RM', SGD: 'S$', THB: '฿', KRW: '₩', TWD: 'NT$', HKD: 'HK$', CNY: 'CN¥',
+  USD: 'US$', EUR: '€', GBP: '£', AUD: 'A$', IDR: 'Rp', PHP: '₱', VND: '₫', INR: '₹',
+};
+
+function money(n, currency = 'JPY') {
+  if (!Number.isFinite(n)) return '–';
+  if (currency === 'JPY') return yen(n);
+  if (currency === 'MYR') return rm(n);
+  const whole = n >= 1000 || ['KRW', 'IDR', 'VND', 'TWD'].includes(currency);
+  const digits = whole ? 0 : 2;
+  return `${CURRENCIES[currency] || `${currency} `}${n.toLocaleString('en-GB', { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
+}
+
+const curOf = (e) => e.currency || 'JPY';
+const isJapan = (e) => curOf(e) === 'JPY';
+const localPrice = (e) => money(paidYen(e), curOf(e));
+
+// Makes sure the scan has a rate for its currency (it's stored with the scan as a fallback).
+async function ensureRate(entry) {
+  const cur = curOf(entry);
+  if (cur === 'MYR') return;
+  if (!rateValue(cur)) await fetchRate(cur);
+  if (rateValue(cur) && (!entry.rate || (entry.rateCur || 'JPY') !== cur)) {
+    entry.rate = rateValue(cur);
+    entry.rateCur = cur;
+  }
 }
 
 function renderRate() {
@@ -523,21 +566,21 @@ Add a "clothing" key to the JSON: { "size_on_tag": "size as printed or null", "s
 `;
 
 function buildPrompt({ ocrText, webGuess, secondHand, focus, override, quick, photos = 1, clothes = false }) {
-  return `You are helping a Malaysian shopper standing in a shop in Japan decide whether to buy an item here or back home in Malaysia.
+  return `You are helping a Malaysian shopper decide whether an item is worth buying at the price shown, compared with buying it in Malaysia. They are usually in a shop in Japan, but may be shopping in Malaysia itself (a shop, a market, or a screenshot of a Carousell, Shopee, Mudah or Facebook listing) or in another country.
 
 ${photos > 1
     ? `The ${photos} attached photos all show the same item (for example the whole item, a brand or size label, and the price tag). Use them together.`
-    : 'The attached photo shows a product, box, price tag or shelf label in a Japanese shop.'}
+    : 'The attached photo shows a product, box, price tag, shelf label or an online listing.'}
 OCR text from the photo${photos > 1 ? 's' : ''}:
 """
 ${ocrText || '(none detected)'}
 """
 Google's visual best guess for the photo: "${webGuess || 'none'}"
-${focus ? `\nThe photo shows a whole shelf with several products. Evaluate ONLY this one: "${focus.name}"${focus.yen ? `, priced ${yen(focus.yen)}` : ''}. Ignore every other product in the photo.\n` : ''}${override ? `\nThe shopper has checked the box and confirmed the exact product is: "${override}". Treat that as certain and price that exact model.\n` : ''}${secondHand ? '\nThe shopper is in a second-hand shop (e.g. Hard Off, 2nd Street, Book Off, Sofmap used), so this is a used item. When searching Malaysia, prioritise second-hand listings in similar condition.\n' : ''}
+${focus ? `\nThe photo shows a whole shelf with several products. Evaluate ONLY this one: "${focus.name}"${focus.yen ? `, priced ${yen(focus.yen)}` : ''}. Ignore every other product in the photo.\n` : ''}${override ? `\nThe shopper has checked the box and confirmed the exact product is: "${override}". Treat that as certain and price that exact model.\n` : ''}${secondHand ? '\nThe shopper is looking at a second-hand item (e.g. Hard Off, 2nd Street or Book Off in Japan, or a used listing). When searching Malaysia, prioritise second-hand listings in similar condition.\n' : ''}
 ${quick ? 'QUICK MODE: keep this fast. Only search Shopee and Carousell Malaysia. Skip CeX, Mercari, Yahoo Auctions and the Malaysia compatibility check, and return null or empty lists for cex_my, jp_used_yen and my_compat.\n' : ''}${clothes ? CLOTHES_RULES : ''}
 Tasks:
 1. Identify the exact product: brand, model, size or capacity, and above all the exact variant. Words like Reloaded, Pro, Lite, OLED, Slim, Edge, V2, Mk II, 2nd Gen, Digital Edition or a special edition usually mean a different product at a different price (e.g. "Victrix Pro BFG" and "Victrix Pro BFG Reloaded" are different controllers). Read these words from the box, tag or the product itself and say where you saw them. If the photo doesn't show enough to tell lookalike variants apart, say so and list them with how to tell them apart.
-2. Read the Japanese shop price in yen from the photo or OCR text. If both tax-inclusive (税込) and tax-exclusive (税抜) prices are shown, use the tax-inclusive one. Say whether the number you picked includes Japan's 10% consumption tax. Use null if no price is visible.
+2. Read the asking price and its currency from the photo or OCR text: ¥ or 円 = JPY, RM = MYR, S$ = SGD, NT$ = TWD, ₩ = KRW, ฿ = THB, HK$ = HKD, US$ = USD, and so on; use the shop's country if no symbol is shown. In Japan, if both tax-inclusive (税込) and tax-exclusive (税抜) prices are shown, use the tax-inclusive one and say whether the number includes Japan's 10% consumption tax. For a listing screenshot use the listed price. Use null if no price is visible.
 3. Use Google Search to find current prices in Malaysia, in RM, for the same product:
    - New: Shopee Malaysia (shopee.com.my). If Shopee has none, use Lazada Malaysia or official Malaysian retailers.
    - Second-hand: Carousell Malaysia (carousell.com.my), plus used listings on Shopee Malaysia.
@@ -546,7 +589,7 @@ Tasks:
    Also search Japan's second-hand market for the same item in comparable condition: Mercari Japan (jp.mercari.com) and Yahoo! Auctions Japan (auctions.yahoo.co.jp), prices in yen.
    SOURCES: mark a listing "sold": true when it is sold or no longer available (it still shows the going price). The shopper checks every figure against its listings, so in "listings" give the actual listings behind my_new, my_used and jp_used_yen (up to 3 for each), with the listing title copied exactly as shown, its price and its URL. Base each figure only on listings that are the exact same model and variant. If you include a listing you are not sure is the exact model, set "exact_model": false and leave it out of the figure. Do not report a figure with no listing behind it; use null instead.
 4. Read any condition information on the tag or label: the shop's condition grade or rank and what it means on that shop's scale (second-hand chains such as 2nd Street, Hard Off, Book Off, Geo, Sofmap and Surugaya each have their own scale; explain it plainly rather than just saying "good"). If the tag or shelf shows more than one grade (for example separate A and B units of the same item at different prices, or a printed grade legend), list every grade with its price and meaning, and say which one applies to the item photographed if you can tell. Also read every issue, defect or caveat mentioned (e.g. ジャンク, 動作未確認, 通電のみ, 欠品, キズ, 箱なし, 返品不可, 保証なし). Translate each into plain English and rate it: "high" = may not work, sold as-is, no returns or no warranty; "medium" = missing parts, visible damage or heavy wear; "low" = minor cosmetic. List stated positives (e.g. 動作確認済, 美品, 付属品完備) with severity "good". Ignore marketing claims on new-product packaging (e.g. 傷つきにくい means scratch-resistant, not scratched).
-5. Check whether it will work properly in Malaysia: 240V 50Hz mains and Type G three-pin plugs (Japan is 100V with Type A two-pin plugs). Cover only what applies to this product:
+5. Check whether it will work properly in Malaysia: 240V 50Hz mains and Type G three-pin plugs (Japan is 100V with Type A two-pin plugs). If they're already shopping in Malaysia, only flag imported units (e.g. a Japanese 100V version or a Japan-only warranty). Cover only what applies to this product:
    - Power: does it accept 240V? Many chargers and adapters are 100-240V and only need a plug adapter; 100V-only appliances (rice cookers, hair dryers, some kitchen and beauty gear) need a step-down transformer.
    - Region: game, Blu-ray or DVD region locks, region-specific online services or apps.
    - Language: Japanese-only menus, firmware or software.
@@ -567,9 +610,11 @@ Reply with only a JSON object inside a \`\`\`json code block, with exactly these
     { "name": "full name of an easily confused variant", "how_to_tell": "how to tell them apart on the box or product", "typical_price_rm": 0 }
   ],
   "search_query_ja": "best Japanese query for Mercari or Yahoo Auctions",
-  "jp_price_yen": 12800,
-  "jp_price_tax_included": true,
-  "jp_price_note": "short note on which price was read, or null",
+  "price": 12800,
+  "currency": "ISO code of the asking price, e.g. JPY, MYR, SGD",
+  "shop_country": "ISO country code where they're shopping, e.g. JP, MY",
+  "price_tax_included": true,
+  "price_note": "short note on which price was read, or null",
   "my_new": { "low": 0, "high": 0, "typical": 0 },
   "my_used": { "low": 0, "high": 0, "typical": 0 },
   "jp_used_yen": { "low": 0, "high": 0, "typical": 0 },
@@ -872,13 +917,16 @@ function rangeValue(r) {
   return lo || hi || null;
 }
 
+// The shop price in ringgit. `entry.yen` holds the price in entry.currency (the name predates other
+// currencies); Japan's 10% tax and tourist refund only apply to yen prices.
 function japanPrice(entry) {
-  const fx = rate?.value || entry.rate || null;
+  const fx = fxFor(entry);
   const y = toNum(entry.yen);
-  if (!y) return { rm: null, note: 'Type the tag price' };
-  let payYen = entry.taxIncluded === false ? y * (1 + TAX) : y;
-  let note = entry.taxIncluded === false ? `${yen(payYen)} with tax` : '';
-  if (entry.taxFree) {
+  if (!y) return { rm: null, note: 'Type the price' };
+  if (curOf(entry) === 'MYR') return { rm: y, note: '' };
+  let payYen = isJapan(entry) && entry.taxIncluded === false ? y * (1 + TAX) : y;
+  let note = isJapan(entry) && entry.taxIncluded === false ? `${yen(payYen)} with tax` : '';
+  if (entry.taxFree && isJapan(entry)) {
     if (payYen >= TAX_FREE_MIN_YEN) {
       payYen /= 1 + TAX;
       note = `${yen(payYen)} after refund`;
@@ -887,11 +935,17 @@ function japanPrice(entry) {
     }
   }
   if (!fx) return { rm: null, note: 'No exchange rate' };
+  if (!isJapan(entry)) note = `${money(payYen, curOf(entry))} at ${rm(fx * (fx < 0.1 ? 1000 : 1))}${fx < 0.1 ? ' per 1,000' : ''}`;
   return { rm: payYen * fx, note };
 }
 
+function fxFor(entry) {
+  const cur = curOf(entry);
+  return rateValue(cur) || ((entry.rateCur || 'JPY') === cur ? entry.rate : null) || null;
+}
+
 function fx(entry) {
-  return rate?.value || entry.rate || null;
+  return fxFor(entry);
 }
 
 // Typical used price on Mercari / Yahoo Auctions, in yen.
@@ -916,7 +970,23 @@ function cexFor(entry) {
   };
 }
 
+// Shopping in Malaysia (a shop or a Carousell/Shopee listing): the question is whether it's a good price
+// here, not whether to buy abroad.
+const LOCAL_LABELS = {
+  'Buy it here': 'Good price', Marginal: 'Fair price', 'Skip it': 'Overpriced',
+  'Buy if you want it new': 'Good price for new', 'Cheaper second-hand at home': 'Cheaper used elsewhere',
+};
+
 function verdictFor(entry) {
+  const v = foreignVerdict(entry);
+  if (v && curOf(entry) === 'MYR' && v.cls !== 'none') {
+    v.label = LOCAL_LABELS[v.label] || v.label;
+    v.detail = v.detail.replace(/ in Malaysia/g, ' elsewhere in Malaysia');
+  }
+  return v;
+}
+
+function foreignVerdict(entry) {
   const v = baseVerdict(entry);
   if (!v || v.cls === 'none') return v;
   if (pricesSimilar(entry)) {
@@ -1000,7 +1070,7 @@ function baseVerdict(entry) {
   const myNew = rangeValue(entry.ai?.my_new);
   const myUsed = rangeValue(entry.ai?.my_used);
   if (!entry.ai) return null;
-  if (!jp) return { cls: 'none', label: 'Need the yen price', detail: 'Type the price from the tag to get a verdict.' };
+  if (!jp) return { cls: 'none', label: 'Need the price', detail: 'Type the price from the tag or listing to get a verdict.' };
   if (!myNew && !myUsed) return { cls: 'none', label: 'No Malaysian prices found', detail: 'Check the Shopee and Carousell links below.' };
   return entry.secondHand ? usedVerdict(entry, jp, myNew, myUsed) : newVerdict(jp, myNew, myUsed);
 }
@@ -1124,11 +1194,12 @@ async function startScanPhotos(photos) {
     yen: null,
     taxIncluded: true,
     taxFree: settings.taxFree,
+    currency: store.get('lastCurrency', 'JPY'),
     secondHand: settings.secondHand,
     quick: settings.quick,
     tripId: currentTrip().id,
     place: null,
-    rate: rate?.value || null,
+    rate: null, // set for the scan's currency once it's known (ensureRate)
     status: { vision: 'pending', translate: 'pending', search: 'pending' },
     errors: [],
   };
@@ -1229,7 +1300,7 @@ async function runScan(entry, imageB64, { quiet = false } = {}) {
       entry.errors.push(e.message);
     }
   }
-  if (!entry.yen) entry.yen = parseYen(entry.ocrText);
+  if (!entry.yen && isJapan(entry)) entry.yen = parseYen(entry.ocrText);
   update();
 
   const translating = entry.status.translate === 'active'
@@ -1246,7 +1317,7 @@ async function runScan(entry, imageB64, { quiet = false } = {}) {
     : Promise.resolve();
 
   await Promise.all([translating, searchPrices(entry, images, update)]);
-  if (!entry.rate && rate) entry.rate = rate.value;
+  await ensureRate(entry);
   // Left the app mid-scan and the connection was cut: pick it up again when the app is back.
   if (lastHiddenAt > startedAt && entry.errors.some((m) => /network error|no answer after/.test(m))) entry.resume = true;
   running.delete(entry.id);
@@ -1325,6 +1396,7 @@ async function searchPrices(entry, images, update) {
       clothes: entry.kind === 'clothes',
     });
     applyAi(entry, ai, sources);
+    await ensureRate(entry);
   } catch (e) {
     entry.status.search = 'failed';
     entry.errors.push(e.message);
@@ -1343,9 +1415,14 @@ function applyAi(entry, ai, sources) {
     entry.secondHand = true;
     entry.autoUsed = true;
   }
+  const cur = String(ai.currency || '').toUpperCase();
+  if (!entry.currencyEdited && /^[A-Z]{3}$/.test(cur)) entry.currency = cur;
+  else if (!entry.currencyEdited && toNum(ai.jp_price_yen)) entry.currency = 'JPY'; // answers from before other currencies
+  if (entry.currency) store.set('lastCurrency', entry.currency);
   if (!entry.yenEdited) {
-    entry.yen = toNum(ai.jp_price_yen) || entry.yen || parseYen(entry.ocrText);
-    if (typeof ai.jp_price_tax_included === 'boolean') entry.taxIncluded = ai.jp_price_tax_included;
+    entry.yen = toNum(ai.price) || toNum(ai.jp_price_yen) || entry.yen || (isJapan(entry) ? parseYen(entry.ocrText) : null);
+    const taxIncl = ai.price_tax_included ?? ai.jp_price_tax_included;
+    if (typeof taxIncl === 'boolean') entry.taxIncluded = taxIncl;
   }
   entry.status.search = 'done';
 }
@@ -1509,7 +1586,7 @@ async function applyServerResult(entry, out, { quiet = false } = {}) {
     entry.status.vision = 'failed';
     entry.errors.push(out.visionError);
   }
-  if (!entry.yen) entry.yen = parseYen(entry.ocrText);
+  if (!entry.yen && isJapan(entry)) entry.yen = parseYen(entry.ocrText);
   if (out.translate) {
     Object.assign(entry, out.translate);
     entry.status.translate = 'done';
@@ -1523,6 +1600,7 @@ async function applyServerResult(entry, out, { quiet = false } = {}) {
     try {
       const sources = (out.gemini.chunks || []).filter((c) => safeUrl(c.uri)).map((c) => ({ title: c.title, url: c.uri }));
       applyAi(entry, parseJson(out.gemini.text), sources);
+      await ensureRate(entry);
     } catch (e) {
       entry.status.search = 'failed';
       entry.errors.push(e.message);
@@ -1534,7 +1612,7 @@ async function applyServerResult(entry, out, { quiet = false } = {}) {
   if (out.cex?.hits) entry.cex = { ...pickCex(out.cex.query, out.cex.hits), checkedAt: Date.now() };
   // Keep the server's timings and ntfy's answer so a missing notification can be explained.
   entry.serverJob = { ...entry.serverJob, done: true, startedAt: out.startedAt, finishedAt: out.finishedAt, ntfy: out.ntfy || null };
-  if (!entry.rate && rate) entry.rate = rate.value;
+  await ensureRate(entry);
   running.delete(entry.id);
   const update = () => refresh(entry);
   update();
@@ -1873,9 +1951,9 @@ async function checkAllShelf(id) {
 }
 
 function shelfItemPrice(shelf, item) {
-  const rateValue = rate?.value || shelf.rate;
-  if (!item.yen || !rateValue) return null;
-  return (item.taxIncluded === false ? item.yen * (1 + TAX) : item.yen) * rateValue;
+  const shelfFx = rate?.value || shelf.rate;
+  if (!item.yen || !shelfFx) return null;
+  return (item.taxIncluded === false ? item.yen * (1 + TAX) : item.yen) * shelfFx;
 }
 
 function shelfHistoryItem(shelf) {
@@ -2023,7 +2101,7 @@ function historyItem(entry, opts = {}) {
   // One line under the name: price, then where and when (distance instead of date when sorting by Near).
   const dist = distanceFromHere(entry);
   const meta = [
-    settings.priceFirst === 'yen' && toNum(entry.yen) ? yen(paidYen(entry)) : jp ? rm(jp) : null,
+    settings.priceFirst === 'yen' && toNum(entry.yen) ? localPrice(entry) : jp ? rm(jp) : null,
     entry.bought ? 'Bought' : null,
     storeName(entry) || entry.place?.area,
     historySort === 'nearest' && dist !== null ? fmtAway(dist) : shortDate.format(entry.createdAt),
@@ -2472,11 +2550,19 @@ function renderPrices(entry) {
   $('#jpRm').textContent = rm(jp.rm);
   $('#jpNote').textContent = jp.note;
   if (document.activeElement !== $('#yenInput')) $('#yenInput').value = toNum(entry.yen) ?? '';
+  const cur = curOf(entry);
+  if (!$(`#currencySelect option[value="${cur}"]`)) $('#currencySelect').append(el('option', { value: cur }, cur));
+  $('#currencySelect').value = cur;
+  $('#currencySymbol').textContent = CURRENCIES[cur] || cur;
+  $('#prices').classList.toggle('local', cur === 'MYR');
+  $('#taxInclToggle').closest('.toggle-pill').hidden = !isJapan(entry);
+  $('#taxFreeToggle').closest('.toggle-pill').hidden = !isJapan(entry);
   $('#taxInclToggle').checked = entry.taxIncluded !== false;
   $('#taxFreeToggle').checked = Boolean(entry.taxFree);
   $('#secondHandToggle').checked = Boolean(entry.secondHand);
   $('#secondHandLabel').textContent = entry.autoUsed && entry.secondHand ? 'Used (tag)' : 'Used';
-  $('#jpHead').textContent = entry.secondHand ? 'Japan used' : 'Japan';
+  const where = { JPY: 'Japan', MYR: 'Asking price' }[cur] || `Price in ${cur}`;
+  $('#jpHead').textContent = entry.secondHand && cur === 'JPY' ? 'Japan used' : where;
 
   for (const [key, valueSel, rangeSel] of [['my_new', '#myNew', '#myNewRange'], ['my_used', '#myUsed', '#myUsedRange']]) {
     const r = entry.ai?.[key];
@@ -2651,7 +2737,7 @@ function infoPrompt(entry) {
   const jp = japanPrice(entry).rm;
   const name = entry.override || ai.product_name;
   return `You are advising a Malaysian shopper in Japan who is deciding whether to buy: "${name}"${ai.brand ? ` by ${ai.brand}` : ''}${entry.secondHand ? ' (second-hand)' : ''}.
-Price here: ${toNum(entry.yen) ? `${yen(paidYen(entry))} (about ${rm(jp)})` : 'unknown'}. In Malaysia it is typically ${rm(rangeValue(ai.my_new))} new and ${rm(rangeValue(ai.my_used))} second-hand.
+Price here: ${toNum(entry.yen) ? `${localPrice(entry)} (about ${rm(jp)})` : 'unknown'}. In Malaysia it is typically ${rm(rangeValue(ai.my_new))} new and ${rm(rangeValue(ai.my_used))} second-hand.
 
 Use Google Search (reviews, spec pages, Malaysian and Japanese retailers) to write a short buying guide:
 - What it is and the features or specs that matter.
@@ -2933,9 +3019,9 @@ const asking = new Set();
 function askPrompt(entry, question) {
   const ai = entry.ai || {};
   const earlier = (entry.qa || []).filter((x) => x.a).slice(-3).map((x) => `Q: ${x.q}\nA: ${x.a}`).join('\n');
-  return `A Malaysian shopper in a Japanese shop is looking at the item in the photo: "${entry.override || ai.product_name || entry.webGuess || 'unknown item'}"${ai.variant ? ` (${ai.variant})` : ''}.
+  return `A Malaysian shopper is looking at the item in the photo: "${entry.override || ai.product_name || entry.webGuess || 'unknown item'}"${ai.variant ? ` (${ai.variant})` : ''}.
 Tag text: """${(entry.ocrText || entry.contextText || '').slice(0, 1500)}"""
-Price here: ${toNum(entry.yen) ? yen(entry.yen) : 'unknown'}. In Malaysia: ${rm(rangeValue(ai.my_new))} new, ${rm(rangeValue(ai.my_used))} second-hand.
+Price here: ${toNum(entry.yen) ? localPrice(entry) : 'unknown'}. In Malaysia: ${rm(rangeValue(ai.my_new))} new, ${rm(rangeValue(ai.my_used))} second-hand.
 ${earlier ? `Earlier questions:\n${earlier}\n` : ''}
 Their question: "${question}"
 Answer in plain English in two to four short sentences, specific to this exact model. Use Google Search when you need facts. If you aren't sure, say so. No preamble and no markdown.`;
@@ -3184,10 +3270,11 @@ function malaysiaBaseline(e) {
     : rangeValue(e.ai?.my_new) || rangeValue(e.ai?.my_used);
 }
 
+// What the tag asks, in its own currency (Japanese prices shown before tax get the 10% added).
 function paidYen(e) {
   const y = toNum(e.yen);
   if (!y) return 0;
-  return e.taxIncluded === false ? y * (1 + TAX) : y;
+  return isJapan(e) && e.taxIncluded === false ? y * (1 + TAX) : y;
 }
 
 // Tax-free needs ¥5,000 at one store on one day, so group bought items that way.
@@ -3199,23 +3286,24 @@ function tripSummary() {
     const when = e.boughtAt || e.createdAt;
     const storeLabel = storeName(e) || e.place?.area || 'Unknown store';
     const key = `${storeLabel.toLowerCase()}|${new Date(when).toDateString()}`;
-    if (!groups.has(key)) groups.set(key, { store: storeLabel, when, items: [], yen: 0 });
+    if (!groups.has(key)) groups.set(key, { store: storeLabel, when, items: [], yen: 0, rm: 0 });
     const g = groups.get(key);
     g.items.push(e);
-    g.yen += paidYen(e);
+    if (isJapan(e)) g.yen += paidYen(e);
+    g.rm += japanPrice(e).rm || 0;
   }
   let spentRm = 0;
   let spentYen = 0;
   let refundRm = 0;
   for (const e of bought) {
-    spentYen += paidYen(e);
+    if (isJapan(e)) spentYen += paidYen(e);
     spentRm += paidYen(e) * (fx(e) || 0);
   }
   for (const g of groups.values()) {
     g.eligible = g.yen >= TAX_FREE_MIN_YEN;
     if (!g.eligible) continue;
     // Assume you claim it wherever you qualify; that's the point of tracking it.
-    for (const e of g.items) refundRm += (paidYen(e) * TAX / (1 + TAX)) * (fx(e) || 0);
+    for (const e of g.items) if (isJapan(e)) refundRm += (paidYen(e) * TAX / (1 + TAX)) * (fx(e) || 0);
   }
   // Saved = Malaysian price minus what you actually paid here (after the refund where the store qualifies).
   const savedById = new Map();
@@ -3224,7 +3312,7 @@ function tripSummary() {
     for (const e of g.items) {
       const base = malaysiaBaseline(e);
       if (!base || !fx(e) || !paidYen(e)) continue;
-      const netYen = g.eligible ? paidYen(e) / (1 + TAX) : paidYen(e);
+      const netYen = g.eligible && isJapan(e) ? paidYen(e) / (1 + TAX) : paidYen(e);
       const saved = base - netYen * fx(e);
       savedById.set(e.id, saved);
       savedRm += saved;
@@ -3258,11 +3346,12 @@ function renderTrip() {
   $('#storeList').replaceChildren(...t.groups.map((g) => el('li', { class: 'store-row' },
     el('div', { class: 'compare-body' },
       el('span', { class: 'compare-store' }, g.store),
-      el('span', { class: 'compare-meta' }, `${new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' }).format(g.when)} · ${g.items.length} item${g.items.length > 1 ? 's' : ''} · ${yen(g.yen)}`),
+      el('span', { class: 'compare-meta' }, `${new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' }).format(g.when)} · ${g.items.length} item${g.items.length > 1 ? 's' : ''} · ${g.yen ? yen(g.yen) : rm(g.rm)}`),
     ),
-    g.eligible
-      ? el('span', { class: 'tag tag-buy' }, 'Tax-free ✓')
-      : el('span', { class: 'tag tag-maybe' }, `${yen(TAX_FREE_MIN_YEN - g.yen)} to tax-free`),
+    !g.yen ? null
+      : g.eligible
+        ? el('span', { class: 'tag tag-buy' }, 'Tax-free ✓')
+        : el('span', { class: 'tag tag-maybe' }, `${yen(TAX_FREE_MIN_YEN - g.yen)} to tax-free`),
   )));
   const counted = t.savedById.size;
   $('#tripSaved').hidden = counted === 0;
@@ -3291,7 +3380,7 @@ function pickPrompt(items, need) {
     const issues = seriousIssues(e).map((x) => x.en).join('; ');
     const compat = compatFor(e).filter((c) => c.status !== 'ok').map((c) => `${c.topic}: ${c.note}`).join('; ');
     return `${i + 1}. "${e.override || ai.product_name || e.webGuess || 'unknown item'}"${ai.brand ? ` by ${ai.brand}` : ''}${ai.variant ? ` (${ai.variant})` : ''}${e.secondHand ? ', second-hand' : ''}
-   Price here: ${toNum(e.yen) ? `${yen(paidYen(e))} (about ${rm(japanPrice(e).rm)})` : 'unknown'}${storeName(e) ? ` at ${storeName(e)}` : ''}
+   Price here: ${toNum(e.yen) ? `${localPrice(e)} (about ${rm(japanPrice(e).rm)})` : 'unknown'}${storeName(e) ? ` at ${storeName(e)}` : ''}
    Malaysia: ${rm(rangeValue(ai.my_new))} new, ${rm(rangeValue(ai.my_used))} second-hand${issues ? `\n   Issues on the tag: ${issues}` : ''}${compat ? `\n   Malaysia caveats: ${compat}` : ''}`;
   };
   return `A Malaysian shopper in Japan is choosing between these ${items.length} products (photos attached in the same order):
@@ -3390,7 +3479,7 @@ function renderCompare(ids) {
   // Each row: label, cell renderer, and optionally a score to highlight the best (lowest) value.
   const rows = [
     ['Store', (e) => storeName(e) || e.place?.area || '–'],
-    ['Japan price', (e) => [toNum(e.yen) ? yen(paidYen(e)) : '–', el('small', {}, rm(japanPrice(e).rm))], (e) => japanPrice(e).rm],
+    ['Price', (e) => [toNum(e.yen) ? localPrice(e) : '–', el('small', {}, rm(japanPrice(e).rm))], (e) => japanPrice(e).rm],
     ['MY new', (e) => rm(rangeValue(e.ai?.my_new)), null],
     ['MY second-hand', (e) => rm(rangeValue(e.ai?.my_used)), null],
     ['JP second-hand', (e) => (jpUsedYen(e) ? [yen(jpUsedYen(e)), el('small', {}, rm(jpUsedYen(e) * (fx(e) || 0)))] : '–'), (e) => jpUsedYen(e)],
@@ -3733,6 +3822,16 @@ function editCurrent(fn) {
   renderCondition(current);
 }
 
+$('#currencySelect').addEventListener('change', async (e) => {
+  if (!current) return;
+  const entry = current;
+  entry.currency = e.target.value;
+  entry.currencyEdited = true;
+  store.set('lastCurrency', entry.currency);
+  await ensureRate(entry);
+  saveEntry(entry);
+  renderResult(entry);
+});
 $('#yenInput').addEventListener('input', (e) => editCurrent((entry) => {
   entry.yen = toNum(e.target.value);
   entry.yenEdited = true;
@@ -3960,12 +4059,23 @@ window.addEventListener('hashchange', route);
 
 let camStream = null;
 let camPhotos = [];
+let camIdleTimer = null;
 
 const canLiveCamera = () => settings.liveCamera && Boolean(navigator.mediaDevices?.getUserMedia);
 
+// iPhone asks for camera permission again whenever a home-screen app starts a new camera stream, so
+// the stream is kept (paused) for a minute after closing the camera and reused if it's opened again.
 async function startCameraStream() {
-  stopCameraStream();
+  clearTimeout(camIdleTimer);
   $('#camMsg').hidden = true;
+  const parked = camStream?.getVideoTracks().find((t) => t.readyState === 'live');
+  if (parked) {
+    parked.enabled = true;
+    $('#camVideo').srcObject = camStream;
+    await $('#camVideo').play().catch(() => {});
+    return;
+  }
+  stopCameraStream();
   try {
     camStream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1440 } },
@@ -3985,9 +4095,17 @@ async function startCameraStream() {
 }
 
 function stopCameraStream() {
+  clearTimeout(camIdleTimer);
   for (const t of camStream?.getTracks() || []) t.stop();
   camStream = null;
   $('#camVideo').srcObject = null;
+}
+
+function parkCameraStream() {
+  for (const t of camStream?.getTracks() || []) t.enabled = false;
+  $('#camVideo').pause?.();
+  clearTimeout(camIdleTimer);
+  camIdleTimer = setTimeout(stopCameraStream, 60000);
 }
 
 function renderCameraStrip() {
@@ -4009,7 +4127,7 @@ function openCamera() {
 }
 
 function closeCamera() {
-  stopCameraStream();
+  parkCameraStream();
   for (const p of camPhotos) URL.revokeObjectURL(p.url);
   camPhotos = [];
   if ($('#cameraView').open) $('#cameraView').close();
@@ -4058,7 +4176,7 @@ document.addEventListener('click', (e) => {
 $('#camShutter').addEventListener('click', takePhoto);
 $('#camDone').addEventListener('click', finishCamera);
 $('#camClose').addEventListener('click', closeCamera);
-$('#cameraView').addEventListener('cancel', () => stopCameraStream());
+$('#cameraView').addEventListener('cancel', () => parkCameraStream());
 $('#camFallback').addEventListener('click', () => closeCamera());
 $('#camLibrary').addEventListener('click', () => closeCamera());
 $('#camTorch').addEventListener('click', async () => {
@@ -4076,7 +4194,7 @@ $('#camTorch').addEventListener('click', async () => {
 document.addEventListener('visibilitychange', () => {
   if (!$('#cameraView').open) return;
   if (document.visibilityState === 'visible') startCameraStream();
-  else stopCameraStream();
+  else parkCameraStream();
 });
 
 // ---------- edge swipe back, pull to refresh ----------
@@ -4154,7 +4272,7 @@ async function pullRefresh() {
     return;
   }
   if (target !== 'list') return;
-  fetchRate(true).then(renderRate);
+  fetchRate('JPY', true).then(renderRate);
   const failed = historyEntries().filter((e) => e.kind !== 'shelf' && !e.fav && scanFailed(e)).slice(0, 5);
   for (const e of failed) rescan(e.id, { quiet: true });
   await refreshFavourites();

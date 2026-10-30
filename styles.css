@@ -1644,3 +1644,11 @@ dialog.camera::backdrop { background: #000; }
 :root[data-theme="dark"] .tag-profit { color: #0d1020; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .tag-profit { color: #0d1020; } }
 .history-item > .tag { max-width: 46%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---------- Currency picker in the price box ---------- */
+
+.currency-pick { position: relative; display: inline-flex; align-items: center; gap: 2px; padding-right: 12px; cursor: pointer; }
+.currency-pick::after { content: ""; position: absolute; right: 2px; top: 50%; width: 5px; height: 5px; margin-top: -4px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg); opacity: 0.6; }
+.currency-pick select { position: absolute; inset: 0; width: 100%; opacity: 0; cursor: pointer; font-size: 16px; }
+/* Shopping in Malaysia: the asking price is already in RM, so no conversion line */
+.prices.local .price-main-rm .price-rm { display: none; }

@@ -171,8 +171,11 @@
             <div>
               <p class="price-head" id="jpHead">Japan</p>
               <div class="yen-input">
-                <span>¥</span>
-                <input id="yenInput" type="number" inputmode="numeric" min="0" step="1" placeholder="Price" aria-label="Japan price in yen">
+                <label class="currency-pick" title="Currency">
+                  <span id="currencySymbol">¥</span>
+                  <select id="currencySelect" aria-label="Currency"><option value="JPY">¥ JPY</option><option value="MYR">RM MYR</option><option value="SGD">S$ SGD</option><option value="THB">฿ THB</option><option value="KRW">₩ KRW</option><option value="TWD">NT$ TWD</option><option value="HKD">HK$ HKD</option><option value="CNY">CN¥ CNY</option><option value="USD">US$ USD</option><option value="EUR">€ EUR</option><option value="GBP">£ GBP</option><option value="AUD">A$ AUD</option><option value="IDR">Rp IDR</option><option value="PHP">₱ PHP</option><option value="VND">₫ VND</option><option value="INR">₹ INR</option></select>
+                </label>
+                <input id="yenInput" type="number" inputmode="numeric" min="0" step="1" placeholder="Price" aria-label="Price on the tag or listing">
               </div>
             </div>
             <div class="price-main-rm">

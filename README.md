@@ -13,6 +13,14 @@ Phone web app for shopping in Japan. Snap a box, price tag or shelf label and it
 
 It's a static site on GitHub Pages and installs to your home screen like an app. No server; your API key stays on your device.
 
+### Outside Japan
+
+It works anywhere, not just Japan. Gemini reads the price and its currency from the tag or listing (¥, RM, S$, NT$, ₩, ฿, HK$, US$, € and more) and everything is converted to RM at that day's rate.
+
+- **In Malaysia** (a shop, or a screenshot of a Carousell, Shopee or Facebook listing): the price box says **Asking price** in RM, and the verdict says **Good price**, **Fair price** or **Overpriced** compared with other Malaysian listings, plus the deal labels (CeX pays more, under CeX and so on).
+- **Elsewhere:** the price box shows the local price and its RM value. Japan's tax and tourist-refund switches only show for yen prices, and only yen purchases count towards the Trip tax-free totals.
+- **Wrong currency?** Tap the symbol in the price box to pick another; the RM figure and verdict update.
+
 ## Setup
 
 ### 1. Google API keys (two keys)
@@ -212,7 +220,7 @@ Shipping, luggage allowance and warranty aren't factored in. Gemini flags Japan-
 - **Pull down** on a result to re-check its prices, or on Home, History or Trip to refresh the exchange rate, favourites and any scans that failed.
 - **Undo** appears for a few seconds after favouriting, marking bought, deleting and every rescan (Undo after a rescan, a new photo or a corrected name puts the previous result back).
 - **Filter chips** in History: Buy, Maybe, Skip, Used, Clothes and your most-visited stores.
-- **Built-in camera:** tapping Take a photo opens a viewfinder inside the app. Item and Shelf scan the moment you press the shutter; Clothes lets you take several shots, then **Check**. The torch button appears where the phone allows it. iPhone may ask for camera permission again after the app has been closed for a while; turn Built-in camera off in Settings to use the iPhone camera instead.
+- **Built-in camera:** tapping Take a photo opens a viewfinder inside the app. Item and Shelf scan the moment you press the shutter; Clothes lets you take several shots, then **Check**. The torch button appears where the phone allows it. iPhone may ask for camera permission again after the app has been closed for a while; turn Built-in camera off in Settings to use the iPhone camera instead. iPhone asks for camera permission the first time you open it after launching the app; after that the camera is kept ready for a minute, so reopening it doesn't ask again. Turn Built-in camera off in Settings to use the iPhone camera, which never asks.
 - While a scan is loading, the result's layout shows straight away with placeholders that fill in as each price arrives.
 
 ## Settings
