@@ -1,0 +1,14 @@
+{
+  "name": "kaimono-check",
+  "private": true,
+  "description": "Kaimono Check: is it a good price? Tests and tooling (the app itself is static files).",
+  "scripts": {
+    "test": "npm run test:server && npm run test:e2e",
+    "test:e2e": "playwright test",
+    "test:server": "node --test tests/server/*.test.js",
+    "serve": "node tests/serve.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0"
+  }
+}

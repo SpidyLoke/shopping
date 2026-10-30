@@ -236,6 +236,22 @@ Shipping, luggage allowance and warranty aren't factored in. Gemini flags Japan-
 - **Clear history:** deletes all saved scans from the phone.
 - **API keys** and **Background scanning** fold away once set up. Saved keys and tokens are never shown or refilled; the box shows a hint like "Saved · AIza…x9Q2", and leaving it empty keeps what's saved. With no password-style fields and no form, iPhone doesn't offer to save a password. The × at the top closes Settings without saving.
 
+## Development and tests
+
+The app is plain static files (no build step). Tests run the real app in Chromium at phone size with Google, CeX and the exchange rate mocked, so no keys or network are needed:
+
+```
+npm install
+npx playwright install chromium   # first time only
+npm test                          # server tests, then app tests
+npm run serve                     # the app on http://localhost:8124
+```
+
+- `tests/e2e/`: scanning (one or several photos, clothes, other currencies), deal labels, History gestures and Undo, Settings and backup, the built-in camera, Compare, and background scanning against the real server code.
+- `tests/server/`: the scan server (`server/Code.gs`, `server/Loader.gs`) in a fake Apps Script sandbox.
+
+GitHub Actions runs both on every push (`.github/workflows/test.yml`).
+
 ## Files
 
 | File | What it does |
