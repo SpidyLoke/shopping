@@ -1714,3 +1714,25 @@ dialog.camera::backdrop { background: #000; }
 .plan-what { grid-column: 1 / -1; font-size: 0.88rem; color: var(--muted); }
 .plan-card.best { box-shadow: inset 0 0 0 2px var(--accent), var(--shadow); }
 .quota-upgrade { margin-left: 6px; font-size: 12px; font-weight: 600; }
+
+/* Beta: was the result right? */
+.judge { margin-top: 12px; padding: 10px 12px; border-radius: var(--r-tile); background: var(--surface); }
+.judge-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.judge-q { font-size: 0.88rem; font-weight: 600; margin-right: auto; }
+.chip-mini { min-height: 34px; padding: 0 12px; border: 0; border-radius: 999px; background: var(--surface-2); color: var(--text); font: inherit; font-size: 0.85rem; font-weight: 600; }
+.chip-mini[aria-pressed="true"] { background: var(--accent-bg); color: var(--accent-ink); }
+.judge-more { display: grid; gap: 10px; margin-top: 10px; }
+.judge-opts { display: flex; flex-wrap: wrap; gap: 6px; }
+.judge-send { display: flex; gap: 8px; }
+.judge-send input { flex: 1; min-width: 0; min-height: 38px; padding: 0 12px; border: 0; border-radius: 999px; background: var(--surface-2); color: var(--text); font: inherit; font-size: 0.9rem; }
+.judge-done { margin: 0; font-size: 0.88rem; color: var(--muted); }
+.feedback-text { width: 100%; margin: 12px 0 8px; padding: 12px; border: 0; border-radius: var(--r-tile); background: var(--surface); color: var(--text); font: inherit; resize: vertical; }
+.feedback-go { width: 100%; }
+.install-tip { display: flex; align-items: center; gap: 8px; margin: 12px 0 0; padding: 10px 8px 10px 14px; border-radius: var(--r-tile); background: var(--surface); box-shadow: var(--shadow); font-size: 0.88rem; }
+.install-tip > span { margin-right: auto; }
+#statsBtn { justify-self: start; margin-top: 4px; }
+.stats-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 12px 0; }
+.stats-grid div { padding: 10px; border-radius: var(--r-tile); background: var(--surface); }
+.stats-list { list-style: none; margin: 6px 0 14px; padding: 0; display: grid; gap: 6px; font-size: 0.85rem; }
+.stats-list li { padding: 8px 10px; border-radius: var(--r-tile); background: var(--surface); }
+.stats-list small { display: block; color: var(--muted); }

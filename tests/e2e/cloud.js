@@ -50,8 +50,11 @@ export const httpsCallable = (fns, name) => async (data) => {
 function fakeDb() {
   const docs = new Map();
   const copy = (v) => (v == null ? null : structuredClone(v));
+  const inCol = (c) => [...docs.entries()].filter(([k]) => k.startsWith(`${c}/`)).map(([, v]) => v);
   return {
     docs,
+    count: async (c, where) => inCol(c).filter((d) => !where || (where[1] === '>' ? d[where[0]] > where[2] : d[where[0]] === where[2])).length,
+    recent: async (c, n) => inCol(c).sort((a, b) => b.at - a.at).slice(0, n).map(copy),
     get: async (p) => copy(docs.get(p)),
     set: async (p, v) => { docs.set(p, copy(v)); },
     txn: async (fn) => {
@@ -75,9 +78,10 @@ const stripe = {
 };
 
 // dropReplies: how many scan replies are lost on the way back (the app was closed mid-scan).
-async function mockCloud(page, { ocr = '税込 ¥11,480 4948872415545', gemini = () => product({ barcode: '4948872415545', identified_by: 'barcode' }), limits = {}, dropReplies = 0 } = {}) {
+async function mockCloud(page, { ocr = '税込 ¥11,480 4948872415545', gemini = () => product({ barcode: '4948872415545', identified_by: 'barcode' }), limits = {}, dropReplies = 0, owners = [] } = {}) {
   const core = await import(path.join(ROOT, 'functions', 'core.js'));
   const billing = await import(path.join(ROOT, 'functions', 'billing.js'));
+  const ops = await import(path.join(ROOT, 'functions', 'ops.js'));
   const prompts = await import(path.join(ROOT, 'prompt.js'));
   const db = fakeDb();
   const calls = { scan: [], ask: [], result: 0, gemini: [], regions: new Set(), checkout: [], uids: new Set() };
@@ -112,7 +116,10 @@ async function mockCloud(page, { ocr = '税込 ¥11,480 4948872415545', gemini =
             : name === 'plans' ? await billing.listPlans(pay)
               : name === 'checkout' ? await billing.createCheckout(data, { uid, email: user?.email, anonymous: user?.isAnonymous }, pay)
                 : name === 'portal' ? await billing.createPortal({ uid }, pay)
-                  : await core.usageFor(uid, deps);
+                  : name === 'report' ? await ops.saveReport(data, { uid, deps: { db } })
+                    : name === 'feedback' ? await ops.saveFeedback(data, { uid, deps: { db } })
+                      : name === 'stats' ? await ops.ownerStats({ uid }, { deps: { db }, owners })
+                        : { ...(await core.usageFor(uid, deps)), owner: ops.isOwner(uid, owners) };
       if (name === 'scan' && drops > 0) {
         drops -= 1;
         await r.abort('connectionreset');

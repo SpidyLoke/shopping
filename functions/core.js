@@ -26,8 +26,17 @@ export class ScanError extends Error {
   }
 }
 
+// +1 on a counter document's field (daily totals for the beta dashboard).
+export async function bump(db, path, field, by = 1) {
+  await db.txn(async (t) => {
+    const doc = (await t.get(path)) || {};
+    t.set(path, { ...doc, [field]: (doc[field] || 0) + by });
+  });
+}
+
+export const dayKey = (now) => new Date(now + MYT).toISOString().slice(0, 10);
+
 export const monthKey = (now) => new Date(now + MYT).toISOString().slice(0, 7);
-const dayKey = (now) => new Date(now + MYT).toISOString().slice(0, 10);
 
 function resetsAt(now) {
   const d = new Date(now + MYT);
@@ -90,7 +99,7 @@ async function reserve(db, { uid, ipHash, now, limits }) {
       throw new ScanError('resource-exhausted', 'Too many scans from this connection today.', { reason: 'connection' });
     }
     t.set(`users/${uid}`, { ...user, ...counted(user, u, 1), updatedAt: now });
-    t.set(`counters/day-${day}`, { scans: (counter.scans || 0) + 1 });
+    t.set(`counters/day-${day}`, { ...counter, scans: (counter.scans || 0) + 1 });
     if (ip) t.set(`ipDaily/${day}-${ipHash}`, { scans: (ip.scans || 0) + 1, expireAt: new Date(now + 2 * DAY) });
     return { ...u, used: u.used + 1 };
   });
@@ -227,6 +236,7 @@ export async function runScan(rawInput, { uid, ipHash = null, deps }) {
       for (const k of prompts.TAG_KEYS) if (k in tag) ai[k] = tag[k];
       out.gemini = { text: fence(ai), chunks: cached.chunks || [] };
       out.cached = { at: cached.at };
+      await bump(db, `counters/day-${dayKey(now)}`, 'cached');
       usage = await refund(db, { uid, now, limits });
       await Promise.resolve(db.set(`products/${cacheId}`, { ...cached, hits: (cached.hits || 1) + 1, lastHitAt: now })).catch(() => {});
     } else {

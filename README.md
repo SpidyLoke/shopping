@@ -304,6 +304,22 @@ Limits and the model are settings (`functions/.env`: `FREE_SCANS`, `PRO_SCANS`, 
 
 Until someone makes an account, sign-in is anonymous: the account is that install, and removing the app from the home screen starts a new one. While scanning with a Kaimono account, Settings hides the API keys and own scan server sections, which only apply to own-key scanning.
 
+## Running the beta
+
+Send testers **[spidyloke.github.io/shopping/beta/](https://spidyloke.github.io/shopping/beta/)**: how to install on iPhone and Android, what to try, and how to report problems. The app helps them along: on an iPhone in Safari, Home says how to add it to the Home Screen; on Android it offers **Install**.
+
+What comes back (with the backend set up):
+- **Right model and prices?** under every result: **Yes**, or **Not quite** with what was off (wrong model, tag price misread, new, used or CeX price off, other) and an optional note. The answer also stays on the scan, so test exports carry it into the accuracy set (step 2).
+- **Send feedback** in Settings, for everything else. Without the backend it opens a GitHub issue instead.
+- **Error reports:** crashes and failed scans report themselves once each: message, where, app version, phone and browser. Nothing from the scan's photos or history. The last 20 also stay on the phone and go in the test export.
+- **Reports and feedback** delete themselves after 90 days.
+
+**Beta dashboard** (Settings, only for you): scans today and this week, the share answered free from the barcode cache, accounts, paying users, accuracy (the share of results testers marked right), and the latest feedback and errors. To get it, copy your **Account ID** from Settings into a GitHub repository variable `OWNER_UIDS` (several, comma-separated) and run **Deploy backend**.
+
+**Free access for testers:** in Stripe → Product catalogue → Coupons, make a 100% off coupon (e.g. "once" for the pass, or "repeating 3 months" for monthly) with a promotion code such as `KAIMONOBETA`. Testers enter it on Stripe's page under **Add promotion code**. Or give someone a plan by hand: in Firestore, set `passUntil` (a time in milliseconds) or `plan: "pro"` on their `users/{Account ID}` document.
+
+Other settings as repository variables (then run **Deploy backend**): `FREE_SCANS`, `PRO_SCANS`, `PASS_SCANS`, `PASS_DAYS`, `DAILY_SCANS`, `GEMINI_MODEL`.
+
 ## Development and tests
 
 The app is plain static files (no build step). Tests run the real app in Chromium at phone size with Google, CeX and the exchange rate mocked, so no keys or network are needed:
@@ -332,6 +348,8 @@ GitHub Actions runs both on every push (`.github/workflows/test.yml`).
 | `app.js` | Camera, Google API calls, verdict logic, history |
 | `prompt.js` | The scan prompt and barcode reading, shared with the backend |
 | `firebase-config.js` | The Firebase project the app uses for account scans (empty until set up) |
+| `beta/` | The tester guide to send beta testers |
+| `functions/ops.js` | Beta tooling: error reports, feedback and the owner's dashboard |
 | `legal/` | Privacy policy and terms of use (linked from the first-run intro, Settings and the About page) |
 | `.github/workflows/deploy-backend.yml` | Sets up and deploys the backend from GitHub, so it needs no computer |
 | `functions/billing.js` | Payments: plans from Stripe, checkout, the customer portal and Stripe's payment events |

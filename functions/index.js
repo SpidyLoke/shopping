@@ -11,6 +11,7 @@
 //   CACHE_DAYS    how long a barcode's market prices are reused (default 7)
 //   PASS_SCANS, PASS_DAYS  what a trip pass gives (default 60 scans over 14 days)
 //   APP_URL       where Stripe sends people back to (default https://spidyloke.github.io/shopping/)
+//   OWNER_UIDS    account IDs (Settings shows yours) that may open the beta dashboard, comma-separated
 // Secrets (firebase functions:secrets:set NAME): VISION_KEY, GEMINI_KEY, STRIPE_SECRET_KEY and
 // STRIPE_WEBHOOK_SECRET (the Deploy backend workflow sets the Stripe ones, or "unset" until then).
 // ENFORCE_APP_CHECK=true in functions/.env turns on App Check once the app is registered for it.
@@ -24,6 +25,7 @@ import * as prompts from './prompt.js';
 import Stripe from 'stripe';
 import { runScan, runAsk, jobResult, usageFor, ScanError } from './core.js';
 import { listPlans, createCheckout, createPortal, handleEvent } from './billing.js';
+import { saveReport, saveFeedback, ownerStats, isOwner } from './ops.js';
 
 initializeApp();
 const firestore = getFirestore();
@@ -42,6 +44,8 @@ const CACHE_DAYS = defineInt('CACHE_DAYS', { default: 7 });
 const PASS_SCANS = defineInt('PASS_SCANS', { default: 60 });
 const PASS_DAYS = defineInt('PASS_DAYS', { default: 14 });
 const APP_URL = defineString('APP_URL', { default: 'https://spidyloke.github.io/shopping/' });
+const OWNER_UIDS = defineString('OWNER_UIDS', { default: '' });
+const owners = () => OWNER_UIDS.value().split(',').map((x) => x.trim()).filter(Boolean);
 const STRIPE_SECRET_KEY = defineSecret('STRIPE_SECRET_KEY');
 const STRIPE_WEBHOOK_SECRET = defineSecret('STRIPE_WEBHOOK_SECRET');
 
@@ -55,6 +59,13 @@ const db = {
     get: async (path) => data(await tx.get(ref(path))),
     set: (path, value) => { tx.set(ref(path), value); },
   })),
+  // For the dashboard: how many documents (optionally where field op value), and the newest by `at`.
+  count: async (collection, where) => {
+    let q = firestore.collection(collection);
+    if (where) q = q.where(...where);
+    return (await q.count().get()).data().count;
+  },
+  recent: async (collection, n) => (await firestore.collection(collection).orderBy('at', 'desc').limit(n).get()).docs.map((d) => d.data()),
 };
 
 const deps = () => ({
@@ -114,8 +125,23 @@ export const result = onCall(options, async (req) => {
 
 export const usage = onCall(options, async (req) => {
   const uid = signedIn(req);
-  return usageFor(uid, { db, limits: deps().limits });
+  return { ...(await usageFor(uid, { db, limits: deps().limits })), owner: isOwner(uid, owners()) };
 });
+
+// ---------- beta ----------
+
+const handled = (fn) => async (req) => {
+  const uid = signedIn(req);
+  try {
+    return await fn(req.data || {}, uid);
+  } catch (e) {
+    throw asHttps(e);
+  }
+};
+
+export const report = onCall(options, handled((input, uid) => saveReport(input, { uid, deps: { db } })));
+export const feedback = onCall(options, handled((input, uid) => saveFeedback(input, { uid, deps: { db } })));
+export const stats = onCall(options, handled((input, uid) => ownerStats({ uid }, { deps: { db }, owners: owners() })));
 
 // ---------- payments ----------
 

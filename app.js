@@ -6,7 +6,7 @@ import { buildPrompt, findBarcodes, gtinValid, MARKETS, marketFor } from './prom
 import { FIREBASE } from './firebase-config.js';
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.10.30-6';
+const APP_VERSION = '2026.10.30-7';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -681,6 +681,7 @@ function renderQuota() {
   $('#upgradeBtn').hidden = plan === 'pro';
   $('#upgradeBtn').textContent = plan === 'pass' ? 'Extend' : 'Upgrade';
   $('#manageBtn').hidden = plan !== 'pro';
+  $('#statsBtn').hidden = !u.owner;
   // Quoted when asking for the backend's record of this install to be deleted (privacy policy).
   const uid = cloudOn() ? store.get('cloudUid') : null;
   $('#accountId').hidden = !uid;
@@ -1437,6 +1438,7 @@ async function runScan(entry, imageB64, { quiet = false } = {}) {
   // Left the app mid-scan and the connection was cut: pick it up again when the app is back.
   if (lastHiddenAt > startedAt && entry.errors.some((m) => /network error|no answer after/.test(m))) entry.resume = true;
   running.delete(entry.id);
+  reportScanErrors(entry);
   update();
   if (!quiet) notifyDone();
 }
@@ -1765,6 +1767,7 @@ async function applyServerResult(entry, out, { quiet = false } = {}) {
   entry.serverJob = { ...entry.serverJob, done: true, startedAt: out.startedAt, finishedAt: out.finishedAt, ntfy: out.ntfy || null, cachedAt: out.cached?.at || null };
   await ensureRate(entry);
   running.delete(entry.id);
+  reportScanErrors(entry);
   const update = () => refresh(entry);
   update();
   if (!quiet) notifyDone();
@@ -1793,6 +1796,7 @@ function giveUpServerJob(entry, message) {
   entry.errors.push(message);
   entry.serverJob = { ...entry.serverJob, done: true };
   running.delete(entry.id);
+  reportScanErrors(entry);
   refresh(entry);
 }
 
@@ -2676,6 +2680,7 @@ function rowActions(entry, isRunning, failed) {
 function renderHome() {
   $('#keyNotice').hidden = canScan();
   renderQuota();
+  renderInstallTip();
   renderMode();
   const all = historyEntries();
   const favs = all.filter((e) => e.fav).slice(0, 3);
@@ -3652,6 +3657,7 @@ function renderResultIn(entry) {
   const q = searchQuery(entry);
   $('#searchLinks').hidden = !q;
   $('#estimateNote').hidden = !entry.ai;
+  renderJudge(entry);
   const m = M();
   for (const [sel, [name, url]] of [['#shopeeLink', m.links[0]], ['#carousellLink', m.links[1]]]) {
     $(sel).textContent = name;
@@ -4110,7 +4116,7 @@ $('#geminiKeyRemove').addEventListener('click', () => {
 // Back up first (scans, photos, trips, settings, the scan server pairing), reinstall, then Restore.
 
 // A test export keeps only the scans (allowlist, so a key added later can't leak) and drops GPS pins.
-const TEST_EXPORT_KEYS = ['kc.history', 'kc.picks'];
+const TEST_EXPORT_KEYS = ['kc.history', 'kc.picks', 'kc.errorLog'];
 
 async function exportBackup({ forTesting = false } = {}) {
   const data = {};
@@ -4194,6 +4200,188 @@ $('#clearHistoryBtn').addEventListener('click', () => {
   $('#settingsDialog').close();
   location.hash = '#/';
   route();
+});
+
+// ---------- beta: error reports and feedback ----------
+// Crashes and failed scans go to the backend (no photos), so problems on testers' phones show up on
+// the owner's dashboard. The last 20 also stay on the phone (and in the test export).
+
+const reported = new Set();
+const IGNORED_ERRORS = /ResizeObserver loop|^Script error\.?$|Load failed$|No scans left|limit for today|Too many (scans|requests)/;
+
+function reportProblem(kind, message, where = '', stack = '') {
+  const msg = String(message || '').slice(0, 500);
+  if (!msg || reported.has(msg) || IGNORED_ERRORS.test(msg)) return;
+  reported.add(msg);
+  const item = { kind, message: msg, where: String(where).slice(0, 300), stack: String(stack || '').slice(0, 2000), version: APP_VERSION, device: navigator.userAgent.slice(0, 200) };
+  store.set('errorLog', [{ ...item, at: Date.now() }, ...store.get('errorLog', [])].slice(0, 20));
+  if (FIREBASE) cloudCall('report', item, 15000).catch(() => {});
+}
+
+function reportScanErrors(entry) {
+  const errors = (entry.errors || []).filter((m) => !IGNORED_ERRORS.test(m));
+  if (errors.length) reportProblem('scan', errors.join(' | '), `${entry.kind || 'item'} scan, ${entry.serverJob?.cloud ? 'account' : entry.serverJob ? 'own server' : 'own keys'}, ${marketOf(entry).code}`);
+}
+
+window.addEventListener('error', (e) => {
+  if (e.filename && !e.filename.startsWith(location.origin)) return; // extensions and other sites' scripts
+  reportProblem('error', e.message, `${(e.filename || '').split('/').pop()}:${e.lineno || 0}`, e.error?.stack);
+});
+window.addEventListener('unhandledrejection', (e) => reportProblem('error', e.reason?.message || String(e.reason), 'promise', e.reason?.stack));
+
+// "Right model and prices?" under each verdict. The answer stays on the scan (and goes in the test
+// export, for the accuracy set) and, with the backend, goes to the owner with the figures judged.
+const judgeWrong = new Set();
+
+function renderJudge(entry) {
+  const show = Boolean(entry.ai) && !running.has(entry.id) && entry.kind !== 'shelf';
+  $('#judge').hidden = !show;
+  if (!show) return;
+  const j = entry.judged;
+  $('#judge .judge-row').hidden = Boolean(j);
+  $('#judgeDone').hidden = !j;
+  if (j) {
+    $('#judgeDone').textContent = j.verdict === 'right' ? 'You said this was right. Thanks.' : `You said: not quite${j.wrong?.length ? ` (${j.wrong.join(', ')})` : ''}. Thanks, noted.`;
+    $('#judgeMore').hidden = true;
+  }
+}
+
+async function sendJudgement(entry, verdict) {
+  const ai = entry.ai || {};
+  entry.judged = { verdict, wrong: verdict === 'wrong' ? [...judgeWrong] : [], note: $('#judgeNote').value.trim(), at: Date.now() };
+  saveEntry(entry);
+  renderJudge(entry);
+  judgeWrong.clear();
+  $('#judgeNote').value = '';
+  if (!FIREBASE) return;
+  try {
+    await cloudCall('feedback', {
+      verdict,
+      wrong: entry.judged.wrong,
+      note: entry.judged.note,
+      version: APP_VERSION,
+      product: {
+        name: entry.override || ai.product_name || entry.webGuess || '', barcode: entry.barcode || '', market: marketOf(entry).code,
+        currency: curOf(entry), price: toNum(entry.yen), myNew: rangeValue(ai.my_new), myUsed: rangeValue(ai.my_used),
+        cexCash: cexFor(entry).cash, identifiedBy: ai.identified_by || '',
+      },
+    }, 15000);
+    entry.judged.sent = true;
+    saveEntry(entry);
+  } catch {
+    // kept on the phone either way
+  }
+}
+
+$('#judgeYes').addEventListener('click', () => current && sendJudgement(current, 'right'));
+$('#judgeNo').addEventListener('click', () => {
+  $('#judgeMore').hidden = false;
+  $('#judgeNote').focus();
+});
+for (const b of document.querySelectorAll('#judgeOpts [data-wrong]')) {
+  b.addEventListener('click', () => {
+    const on = !judgeWrong.has(b.dataset.wrong);
+    if (on) judgeWrong.add(b.dataset.wrong);
+    else judgeWrong.delete(b.dataset.wrong);
+    b.setAttribute('aria-pressed', String(on));
+  });
+}
+$('#judgeSend').addEventListener('click', () => {
+  if (!current) return;
+  for (const b of document.querySelectorAll('#judgeOpts [data-wrong]')) b.setAttribute('aria-pressed', 'false');
+  sendJudgement(current, 'wrong');
+});
+
+// Feedback from Settings: to the backend, or as a GitHub issue when there's no backend.
+$('#feedbackBtn').addEventListener('click', () => {
+  $('#settingsDialog').close();
+  $('#feedbackMsg').textContent = '';
+  $('#feedbackSheet').showModal();
+});
+$('#feedbackClose').addEventListener('click', () => $('#feedbackSheet').close());
+$('#feedbackSend').addEventListener('click', async () => {
+  const note = $('#feedbackText').value.trim();
+  const msg = $('#feedbackMsg');
+  msg.classList.remove('ok');
+  if (!note) {
+    msg.textContent = 'Write something first.';
+    return;
+  }
+  if (!FIREBASE) {
+    window.open(`https://github.com/SpidyLoke/shopping/issues/new?title=${encodeURIComponent('Feedback')}&body=${encodeURIComponent(`${note}\n\n(app ${APP_VERSION})`)}`, '_blank', 'noopener');
+    return;
+  }
+  msg.textContent = 'Sending…';
+  try {
+    await cloudCall('feedback', { type: 'general', note, version: APP_VERSION }, 15000);
+    $('#feedbackText').value = '';
+    msg.classList.add('ok');
+    msg.textContent = 'Sent. Thank you!';
+  } catch (e) {
+    msg.textContent = e.message;
+  }
+});
+
+// The owner's dashboard.
+const dayMonth = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+
+async function openStats() {
+  $('#settingsDialog').close();
+  $('#statsBody').replaceChildren(el('p', { class: 'muted small' }, 'Loading…'));
+  $('#statsSheet').showModal();
+  try {
+    const s = await cloudCall('stats', {}, 20000);
+    const tile = (label, value) => el('div', {}, el('p', { class: 'stat-label' }, label), el('p', { class: 'stat-value' }, String(value)));
+    const cachedShare = s.week.scans ? `${Math.round((s.week.cached / s.week.scans) * 100)}%` : '–';
+    $('#statsBody').replaceChildren(
+      el('div', { class: 'stats-grid' },
+        tile('Scans today', s.today.scans || 0), tile('Scans 7 days', s.week.scans), tile('Free from cache', cachedShare),
+        tile('Accounts', s.users), tile('Paying', s.paying.passes + s.paying.monthly), tile('Accuracy', s.accuracy == null ? '–' : `${s.accuracy}%`)),
+      el('p', { class: 'muted small' }, `${s.paying.passes} on a trip pass, ${s.paying.monthly} monthly. Accuracy is the share of results testers marked right (${s.week.right} right, ${s.week.wrong} not quite this week). ${s.week.errors} errors this week.`),
+      el('h3', {}, 'Latest feedback'),
+      s.feedback.length ? el('ul', { class: 'stats-list' }, ...s.feedback.map((f) => el('li', {},
+        f.type === 'general' ? f.note : `${f.verdict === 'right' ? 'Right' : `Not quite${f.wrong?.length ? ` (${f.wrong.join(', ')})` : ''}`}: ${f.product?.name || '?'}${f.note ? `. "${f.note}"` : ''}`,
+        el('small', {}, `${dayMonth.format(f.at)} · ${f.account || ''} · ${f.version || ''}`)))) : el('p', { class: 'muted small' }, 'None yet.'),
+      el('h3', {}, 'Latest errors'),
+      s.reports.length ? el('ul', { class: 'stats-list' }, ...s.reports.map((r) => el('li', {}, r.message,
+        el('small', {}, `${dayMonth.format(r.at)} · ${r.kind} · ${r.where || ''} · ${r.version || ''} · ${(r.device || '').replace(/^Mozilla\/5\.0 \(([^)]*)\).*$/, '$1').slice(0, 60)}`)))) : el('p', { class: 'muted small' }, 'None. Nice.'),
+    );
+  } catch (e) {
+    $('#statsBody').replaceChildren(el('p', { class: 'small account-msg' }, e.message));
+  }
+}
+
+$('#statsBtn').addEventListener('click', openStats);
+$('#statsClose').addEventListener('click', () => $('#statsSheet').close());
+
+// Install tip on Home: iPhone has no install button, so say how; Android offers one.
+let installPrompt = null;
+
+function renderInstallTip() {
+  const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
+  const show = !standalone && !store.get('installDismissed') && (ios || installPrompt);
+  $('#installTip').hidden = !show;
+  if (!show) return;
+  $('#installText').textContent = ios ? 'Install it: tap Share, then Add to Home Screen. It opens like an app and works offline.' : 'Install Kaimono as an app for quicker scanning.';
+  $('#installBtn').hidden = !installPrompt;
+}
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  installPrompt = e;
+  renderInstallTip();
+});
+$('#installBtn').addEventListener('click', async () => {
+  if (!installPrompt) return;
+  installPrompt.prompt();
+  await installPrompt.userChoice.catch(() => null);
+  installPrompt = null;
+  renderInstallTip();
+});
+$('#installClose').addEventListener('click', () => {
+  store.set('installDismissed', true);
+  renderInstallTip();
 });
 
 // ---------- account and payments ----------

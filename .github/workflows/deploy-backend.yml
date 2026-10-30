@@ -164,12 +164,28 @@ jobs:
             echo "Customer portal set up."
           fi
 
+      - name: Backend settings from repository variables
+        env:
+          OWNER_UIDS: ${{ vars.OWNER_UIDS }}
+          FREE_SCANS: ${{ vars.FREE_SCANS }}
+          PRO_SCANS: ${{ vars.PRO_SCANS }}
+          PASS_SCANS: ${{ vars.PASS_SCANS }}
+          PASS_DAYS: ${{ vars.PASS_DAYS }}
+          DAILY_SCANS: ${{ vars.DAILY_SCANS }}
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
+        run: |
+          : > functions/.env
+          for name in OWNER_UIDS FREE_SCANS PRO_SCANS PASS_SCANS PASS_DAYS DAILY_SCANS GEMINI_MODEL; do
+            value="${!name}"
+            if [ -n "$value" ]; then echo "$name=$value" >> functions/.env; echo "$name set"; fi
+          done
+
       - name: Deploy functions and database rules
         run: $FIREBASE deploy --only functions,firestore:rules --project "$PROJECT" --non-interactive --force
 
       - name: Old scan results and counters delete themselves
         run: |
-          for group in jobs ipDaily; do
+          for group in jobs ipDaily reports feedback events; do
             gcloud firestore fields ttls update expireAt --collection-group="$group" --enable-ttl --async --project "$PROJECT" \
               || echo "::warning::TTL for $group not set (it may already be on)."
           done
