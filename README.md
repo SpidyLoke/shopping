@@ -244,6 +244,8 @@ Shipping, luggage allowance and warranty aren't factored in. Gemini flags Japan-
   - **One-hand mode:** bigger buttons, the content on Home sits lower, Back moves just above the tab bar and Settings opens from the bottom with Save at the bottom.
   - **Built-in camera** on or off.
 - **Clear history:** deletes all saved scans from the phone.
+- **How it works · About · Privacy · Terms** at the bottom. The first time the app opens (with no scans yet) a short intro explains it and that prices are estimates; **How it works** shows it again.
+- **Scan with** (once the backend is set up): **Kaimono** or **My keys**, with scans left this month and the anonymous **Account ID** to quote if you want the backend's record deleted.
 - **API keys** and **Background scanning** fold away once set up. Saved keys and tokens are never shown or refilled; the box shows a hint like "Saved · AIza…x9Q2", and leaving it empty keeps what's saved. With no password-style fields and no form, iPhone doesn't offer to save a password. The × at the top closes Settings without saving.
 
 ## Kaimono backend (Firebase)
@@ -259,16 +261,19 @@ Optional. With it, people scan without their own Google keys: the backend (`func
 
 **Cost:** Gemini 3 Flash's Google Search grounding is billed per search query (about US$14 per 1,000 after a free monthly allowance), and a scan runs several, so roughly RM 0.20 to 0.40 a scan; Vision is about US$1.50 per 1,000 photos. Cached barcode scans skip the search.
 
-**Setting it up (once, about 30 minutes):**
-1. [Firebase console](https://console.firebase.google.com/) → **Add project** (e.g. `kaimono-check`). Switch it to the **Blaze** (pay as you go) plan: Cloud Functions need it. Then in Google Cloud → Billing → **Budgets & alerts**, set a monthly budget with email alerts (e.g. RM 50).
-2. **Build → Authentication → Get started → Sign-in method → Anonymous → Enable.**
-3. **Build → Firestore Database → Create database**, production mode, location **asia-southeast1 (Singapore)**.
-4. In [Google Cloud Console](https://console.cloud.google.com/) for the same project: enable **Cloud Vision API** and **Generative Language API**, then **Credentials → Create API key**, restricted to those two APIs (no website restriction: only the backend uses it).
-5. On a computer: `npm install -g firebase-tools`, `firebase login`, then in this repo `firebase use --add` and pick the project.
-6. `firebase functions:secrets:set VISION_KEY` and `firebase functions:secrets:set GEMINI_KEY`, pasting the key from step 4 for both (or separate keys).
-7. `firebase deploy --only functions,firestore`.
-8. Firestore → **TTL policies**: add `expireAt` for collection groups `jobs` and `ipDaily`, so old scan results and counters delete themselves.
-9. Project settings → **Your apps → Web app** (`</>`), register it, copy the `firebaseConfig` object into `firebase-config.js` (`export const FIREBASE = { … };`), commit and push. These values are public by design. In Google Cloud → Credentials, restrict that web key to `spidyloke.github.io/*`.
+**Setting it up from a phone (once, about 20 minutes).** A GitHub Actions workflow (`.github/workflows/deploy-backend.yml`) does the parts that would need a computer.
+
+1. [Firebase console](https://console.firebase.google.com/) → **Create a project** (e.g. `kaimono-check`; note its **project ID**). Upgrade it to the **Blaze** (pay as you go) plan: Cloud Functions need it. In [Google Cloud → Billing → Budgets & alerts](https://console.cloud.google.com/billing/budgets), add a monthly budget with email alerts (e.g. RM 50).
+2. Firebase console → **Authentication → Get started** (the workflow switches on Anonymous; if its log says it couldn't, tap **Sign-in method → Anonymous → Enable**).
+3. [Google Cloud → IAM → Service accounts](https://console.cloud.google.com/iam-admin/serviceaccounts) (same project) → **Create service account** named `github-deploy`, with the roles **Editor**, **Secret Manager Admin**, **API Keys Admin** and **Service Account User**. Open it → **Keys → Add key → JSON**. The file downloads to your phone.
+4. GitHub → this repository → **Settings → Secrets and variables → Actions**:
+   - **Secrets → New repository secret** `FIREBASE_SERVICE_ACCOUNT`: open the downloaded file in Files, copy all of it, paste. Then delete the file from your phone.
+   - **Variables → New repository variable** `FIREBASE_PROJECT_ID`: the project ID from step 1.
+5. GitHub → **Actions → Deploy backend → Run workflow**. The first run (about 5 minutes) turns on the Google APIs, creates the database in Singapore, makes an API key that only works for Vision and Gemini, deploys, sets up auto-deletion of old scan results and writes the project's web config into `firebase-config.js`. When it's green, reopen the app: Settings shows **Scan with: Kaimono**.
+
+After that, any change to `functions/` redeploys by itself. To use your own keys instead of the generated one, add repository secrets `VISION_KEY` and `GEMINI_KEY` and run the workflow again.
+
+**From a computer instead:** `npm install -g firebase-tools`, `firebase login`, `firebase use --add`, `firebase functions:secrets:set VISION_KEY` and `GEMINI_KEY`, `firebase deploy --only functions,firestore`, then paste the web app config (Project settings → Your apps) into `firebase-config.js`.
 
 Limits and the model are settings (`functions/.env`: `FREE_SCANS`, `PRO_SCANS`, `DAILY_SCANS`, `PER_IP_SCANS`, `FREE_ASKS`, `PRO_ASKS`, `DAILY_ASKS`, `GEMINI_MODEL`, `CACHE_DAYS`); redeploy after changing them. To give someone the paid plan by hand until payments exist, set `plan: "pro"` on their `users/{uid}` document in Firestore.
 
@@ -302,6 +307,8 @@ GitHub Actions runs both on every push (`.github/workflows/test.yml`).
 | `app.js` | Camera, Google API calls, verdict logic, history |
 | `prompt.js` | The scan prompt and barcode reading, shared with the backend |
 | `firebase-config.js` | The Firebase project the app uses for account scans (empty until set up) |
+| `legal/` | Privacy policy and terms of use (linked from the first-run intro, Settings and the About page) |
+| `.github/workflows/deploy-backend.yml` | Sets up and deploys the backend from GitHub, so it needs no computer |
 | `functions/` | Kaimono backend: Cloud Functions for account scans and questions (`core.js` logic, `index.js` wiring) |
 | `firebase.json`, `firestore.rules` | Firebase deploy settings and database rules |
 | `sw.js` | Caches the app so it opens instantly and offline |

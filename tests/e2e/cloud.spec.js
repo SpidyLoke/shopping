@@ -62,6 +62,7 @@ test('Worth it and questions use the backend too; Settings can switch to your ow
   await page.click('#settingsBtn');
   await expect(page.locator('#scanWithGroup')).toBeVisible();
   await expect(page.locator('#quotaStatus')).toHaveText(/scans left this month/);
+  await expect(page.locator('#accountId')).toHaveText('Account ID anon-1');
   await page.click('[data-setting="scanWith"] [data-value="keys"]');
   await expect(page.locator('#quotaStatus')).toHaveText(/your own Google keys/);
   await page.evaluate(() => localStorage.setItem('kc.apiKey', '"K"'));

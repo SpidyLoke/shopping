@@ -1,0 +1,130 @@
+# Deploys the Kaimono backend (functions/ and the database rules) to Firebase, so setting it up
+# needs only a phone browser. Off until the repository variable FIREBASE_PROJECT_ID is set.
+#
+# Needs (GitHub → Settings → Secrets and variables → Actions):
+#   variable FIREBASE_PROJECT_ID       the Firebase project ID, e.g. kaimono-check
+#   secret   FIREBASE_SERVICE_ACCOUNT  the JSON key of a service account with the roles Editor,
+#                                      Secret Manager Admin, API Keys Admin and Service Account User
+#   secrets  VISION_KEY, GEMINI_KEY    optional: your own keys; without them the first run makes one
+#
+# The first run (Actions → Deploy backend → Run workflow) also turns on the Google APIs, creates the
+# database in Singapore, makes the backend's API key, sets up auto-deletion of old scan results and
+# writes the project's web config into firebase-config.js. Later pushes that touch the backend
+# redeploy it.
+
+name: Deploy backend
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['functions/**', 'prompt.js', 'firestore.rules', 'firebase.json', '.github/workflows/deploy-backend.yml']
+
+permissions:
+  contents: write # to commit firebase-config.js on the first run
+
+concurrency: deploy-backend
+
+jobs:
+  deploy:
+    if: vars.FIREBASE_PROJECT_ID != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PROJECT: ${{ vars.FIREBASE_PROJECT_ID }}
+      REGION: asia-southeast1
+      FIREBASE: npx -y firebase-tools@15.34.2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --prefix functions
+
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Turn on the Google APIs the backend uses
+        run: |
+          gcloud services enable --project "$PROJECT" \
+            firebase.googleapis.com firestore.googleapis.com identitytoolkit.googleapis.com \
+            vision.googleapis.com generativelanguage.googleapis.com \
+            secretmanager.googleapis.com apikeys.googleapis.com \
+            cloudfunctions.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com run.googleapis.com eventarc.googleapis.com
+
+      - name: Create the database (first run only)
+        run: |
+          if gcloud firestore databases describe --database='(default)' --project "$PROJECT" >/dev/null 2>&1; then
+            echo "Database already there."
+          else
+            gcloud firestore databases create --database='(default)' --location="$REGION" --type=firestore-native --project "$PROJECT"
+          fi
+
+      - name: Turn on anonymous sign-in
+        run: |
+          reply=$(curl -sS -X PATCH \
+            -H "Authorization: Bearer $(gcloud auth print-access-token)" \
+            -H "X-Goog-User-Project: $PROJECT" -H "Content-Type: application/json" \
+            "https://identitytoolkit.googleapis.com/admin/v2/projects/$PROJECT/config?updateMask=signIn.anonymous.enabled" \
+            -d '{"signIn":{"anonymous":{"enabled":true}}}')
+          if echo "$reply" | grep -q '"anonymous"'; then
+            echo "Anonymous sign-in is on."
+          else
+            echo "::warning::Couldn't turn on anonymous sign-in: open Firebase console → Authentication → Get started → Sign-in method → Anonymous → Enable, then run this again."
+            echo "$reply" | head -c 500
+          fi
+
+      - name: Backend API keys
+        env:
+          VISION_KEY: ${{ secrets.VISION_KEY }}
+          GEMINI_KEY: ${{ secrets.GEMINI_KEY }}
+        run: |
+          set -euo pipefail
+          put() {
+            f="$RUNNER_TEMP/secret"
+            printf '%s' "$2" > "$f"
+            $FIREBASE functions:secrets:set "$1" --data-file "$f" --project "$PROJECT" --non-interactive
+            rm -f "$f"
+          }
+          has() { gcloud secrets describe "$1" --project "$PROJECT" >/dev/null 2>&1; }
+          # Your own keys win when given as repository secrets.
+          if [ -n "${VISION_KEY:-}" ]; then put VISION_KEY "$VISION_KEY"; fi
+          if [ -n "${GEMINI_KEY:-}" ]; then put GEMINI_KEY "$GEMINI_KEY"; fi
+          if has VISION_KEY && has GEMINI_KEY; then echo "Keys already set."; exit 0; fi
+          # Otherwise one key, usable only for Vision and Gemini.
+          name=$(gcloud services api-keys list --project "$PROJECT" --filter="displayName='Kaimono backend'" --format='value(name)' | head -n1)
+          if [ -z "$name" ]; then
+            gcloud services api-keys create --project "$PROJECT" --display-name="Kaimono backend" \
+              --api-target=service=vision.googleapis.com --api-target=service=generativelanguage.googleapis.com
+            name=$(gcloud services api-keys list --project "$PROJECT" --filter="displayName='Kaimono backend'" --format='value(name)' | head -n1)
+          fi
+          key=$(gcloud services api-keys get-key-string "$name" --format='value(keyString)')
+          echo "::add-mask::$key"
+          has VISION_KEY || put VISION_KEY "$key"
+          has GEMINI_KEY || put GEMINI_KEY "$key"
+
+      - name: Deploy functions and database rules
+        run: $FIREBASE deploy --only functions,firestore:rules --project "$PROJECT" --non-interactive --force
+
+      - name: Old scan results and counters delete themselves
+        run: |
+          for group in jobs ipDaily; do
+            gcloud firestore fields ttls update expireAt --collection-group="$group" --enable-ttl --async --project "$PROJECT" \
+              || echo "::warning::TTL for $group not set (it may already be on)."
+          done
+
+      - name: Connect the app to this project (first run only)
+        run: |
+          set -euo pipefail
+          if ! grep -q 'export const FIREBASE = null' firebase-config.js; then echo "Already connected."; exit 0; fi
+          app=$($FIREBASE apps:list WEB --project "$PROJECT" --json | node .github/scripts/firebase-web-config.mjs app-id)
+          if [ -z "$app" ]; then
+            app=$($FIREBASE apps:create WEB "Kaimono Check" --project "$PROJECT" --json | node .github/scripts/firebase-web-config.mjs created-id)
+          fi
+          $FIREBASE apps:sdkconfig WEB "$app" --project "$PROJECT" --json | node .github/scripts/firebase-web-config.mjs write firebase-config.js
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "Connect the app to Firebase project $PROJECT"
+          git push

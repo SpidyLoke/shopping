@@ -60,6 +60,7 @@ async function openApp(page, { settings = {}, history = null, hash = '#/' } = {}
   await page.evaluate(({ settings, history }) => {
     localStorage.setItem('kc.apiKey', '"K"');
     localStorage.setItem('kc.liveCamera', 'false');
+    localStorage.setItem('kc.onboarded', 'true');
     for (const [k, v] of Object.entries(settings)) localStorage.setItem(`kc.${k}`, JSON.stringify(v));
     if (history) localStorage.setItem('kc.history', JSON.stringify(history));
   }, { settings, history });

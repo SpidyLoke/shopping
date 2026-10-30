@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Privacy policy · Kaimono Check</title>
+  <meta name="description" content="What Kaimono Check keeps, what it sends and to whom, and your rights under Malaysia's PDPA.">
+  <link rel="icon" href="../icons/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="legal.css">
+</head>
+<body>
+  <div class="wrap">
+    <div class="top">
+      <a class="brand" href="../"><img src="../icons/icon.svg" alt="" width="26" height="26">Kaimono Check</a>
+      <a href="terms.html">Terms</a>
+    </div>
+
+    <h1>Privacy policy</h1>
+    <p class="dated">Last updated 30 October 2026</p>
+
+    <div class="summary">
+      <p><strong>In short:</strong></p>
+      <ul>
+        <li>Your scans, photos and settings live on your phone, not on our servers.</li>
+        <li>To price an item, its photos and text go to Google (Vision and Gemini). Product names go to CeX's search.</li>
+        <li>With a Kaimono account we keep an anonymous account ID and how many scans you've used. We don't keep your photos.</li>
+        <li>No ads, no tracking, no selling your data.</li>
+      </ul>
+    </div>
+
+    <p>Kaimono Check ("the app", "we") is run by SpidyLoke in Malaysia. This policy explains what personal data the app handles and why, under Malaysia's Personal Data Protection Act 2010 (PDPA). Questions or requests: see <a href="#contact">Contact</a>.</p>
+
+    <h2>On your phone</h2>
+    <p>Everything you scan is saved in the app's storage on your phone: photos, the text read from them, prices, results, notes, favourites, trips, what you bought and sold for, and your settings. If <em>Save location</em> is on, each scan also keeps where you took it. If you scan with your own Google API keys, the keys are stored here too.</p>
+    <p>We can't see any of this. It stays until you delete it (<em>Settings → Clear history</em>, swiping a scan away, or removing the app from your home screen). A backup or test export you make is a file you control; the test export leaves out keys, server details and locations.</p>
+
+    <h2>What is sent, and to whom</h2>
+    <table>
+      <thead><tr><th>When</th><th>What</th><th>Sent to</th></tr></thead>
+      <tbody>
+        <tr><td>You scan or ask a question</td><td>The photos of that item, the text read from them, and your question</td><td>Google Cloud Vision and the Gemini API, either with your own keys or through the Kaimono backend</td></tr>
+        <tr><td>Checking CeX prices</td><td>The product's name (no personal data)</td><td>CeX's site search (search.webuy.io), from your phone and from the backend</td></tr>
+        <tr><td>Saving where you scanned (optional)</td><td>Your location's coordinates, to find the area name</td><td>OpenStreetMap Nominatim</td></tr>
+        <tr><td>Converting currencies</td><td>Which currency (no personal data)</td><td>frankfurter.dev, or open.er-api.com if that's down</td></tr>
+        <tr><td>Your own scan server (optional)</td><td>Your scans, and notifications to the Telegram bot or ntfy topic you set up</td><td>Your own Google Apps Script, Telegram or ntfy</td></tr>
+        <tr><td>Share this find</td><td>A picture you choose to share</td><td>Only where you share it</td></tr>
+      </tbody>
+    </table>
+    <p>Every service also sees your internet address, as any website does. Google's handling of what you send is set by its terms: with the Kaimono backend (a paid Google account), Google doesn't use your photos or questions to improve its products. If you use your own key on Google's free tier, Google's terms let it use what you send to improve its products.</p>
+
+    <h2>With a Kaimono account</h2>
+    <p>When you scan without your own keys, the app signs in anonymously (no name, email or phone number). The backend, on Google Cloud in Singapore, keeps:</p>
+    <ul>
+      <li><strong>An anonymous account ID</strong> for this install, with your plan and how many scans and questions you've used this month. Kept while you use the app.</li>
+      <li><strong>The result of each scan for 6 hours</strong>, so it still reaches you if you close the app mid-scan. Your photos are not stored.</li>
+      <li><strong>A one-way code made from your internet address</strong>, with a count of today's scans, to stop the free allowance being abused. It can't be turned back into the address and is deleted after 2 days.</li>
+      <li><strong>Market prices for a product's barcode for 7 days</strong>, so the next person scanning that product gets them faster. This holds the product and its prices only, nothing about you.</li>
+    </ul>
+    <p>Because the backend is in Singapore, this data is processed outside Malaysia, by Google under its data protection terms.</p>
+
+    <h2>Why we use it</h2>
+    <p>Only to run the app: to read and price what you scan, keep your history on your phone, apply the monthly allowance and keep the service running for everyone. We don't use it for advertising, don't build profiles and don't sell or rent it. There are no analytics or tracking scripts in the app.</p>
+
+    <h2>Your rights</h2>
+    <p>Under the PDPA you can ask for a copy of personal data we hold about you, ask us to correct it, move it elsewhere, or stop processing it. Most of your data is already in your hands: export it with <em>Settings → Back up</em>, and delete it from the app. For data on the backend, contact us from the app and we'll delete your account record. Since accounts are anonymous, we'll ask for a detail only your phone has so we delete the right one.</p>
+
+    <h2>Children</h2>
+    <p>The app is not meant for children under 13, and we don't knowingly hold their data.</p>
+
+    <h2>Security</h2>
+    <p>The backend's API keys never reach your phone; data travels over HTTPS; the database only lets an account read its own allowance. On your phone, your data is as safe as your phone: use a passcode.</p>
+
+    <h2>Changes</h2>
+    <p>If this policy changes in a way that matters, the app will say so before the change applies. The date at the top shows the latest version.</p>
+
+    <h2 id="contact">Contact</h2>
+    <p>Open an issue at <a href="https://github.com/SpidyLoke/shopping/issues">github.com/SpidyLoke/shopping/issues</a>. For a request with personal details, open an issue asking for a private contact and we'll reply there.</p>
+
+    <p class="foot"><a href="terms.html">Terms of use</a> · <a href="../">Back to the app</a></p>
+  </div>
+</body>
+</html>

@@ -228,6 +228,7 @@
           <label class="toggle-pill"><input type="checkbox" id="taxFreeToggle"><span>Tax refund</span></label>
         </div>
 
+        <p class="estimate-note" id="estimateNote" hidden>Estimates from AI and web search. Tap a price to see the listings behind it.</p>
         <div class="search-links" id="searchLinks" hidden>
           <a class="link-pill" id="shopeeLink" target="_blank" rel="noopener">Shopee</a>
           <a class="link-pill" id="carousellLink" target="_blank" rel="noopener">Carousell</a>
@@ -402,6 +403,7 @@
           </div>
         </div>
         <p class="muted small" id="quotaStatus"></p>
+        <p class="muted small account-id" id="accountId" hidden></p>
       </section>
 
       <!-- No form, no password-style fields: either makes iOS offer to save a password. Saved keys show only as a hint. -->
@@ -542,7 +544,12 @@
       </section>
 
       <button class="link danger" type="button" id="clearHistoryBtn">Clear history</button>
-      <a class="link about-link" href="about/">About Kaimono</a>
+      <p class="settings-links">
+        <button class="link" type="button" id="introAgain">How it works</button>
+        <a class="link" href="about/">About</a>
+        <a class="link" href="legal/privacy.html">Privacy</a>
+        <a class="link" href="legal/terms.html">Terms</a>
+      </p>
     </div>
   </dialog>
 
@@ -587,6 +594,19 @@
       <label class="btn btn-ghost" for="trayGallery">Library</label>
       <button class="btn btn-primary" type="button" id="trayGo">Check price</button>
     </div>
+  </dialog>
+  <!-- First run: what it does, and that its prices are estimates -->
+  <dialog class="sheet intro-sheet" id="introSheet" aria-labelledby="introTitle">
+    <p class="eyebrow">Kaimono Check</p>
+    <h2 id="introTitle">Know the profit before you pay</h2>
+    <ol class="intro-steps">
+      <li><strong>Snap the tag.</strong> Or a few photos: the item, its label, the price. A barcode makes the match exact.</li>
+      <li><strong>See what it fetches at home.</strong> CeX's cash offer, used and new prices in Malaysia, and the profit after your card fee.</li>
+      <li><strong>Log what it sold for.</strong> Mark it bought, add the sale price later, and see how the call held up.</li>
+    </ol>
+    <p class="intro-note">Prices are estimates from AI and web search, and can be wrong. Tap any price to check the listings behind it before you buy.</p>
+    <button class="btn btn-primary intro-go" type="button" id="introStart">Start scanning</button>
+    <p class="muted small intro-legal">By using Kaimono you agree to the <a href="legal/terms.html">Terms</a> and <a href="legal/privacy.html">Privacy policy</a>.</p>
   </dialog>
   <!-- Long-press a scan: quick actions -->
   <dialog class="sheet menu-sheet" id="rowMenu" aria-label="Quick actions">

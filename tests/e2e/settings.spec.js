@@ -41,6 +41,7 @@ test('backup then restore into a fresh install brings back scans, photos and key
   await mockApis(fresh);
   fresh.on('dialog', (d) => d.accept());
   await fresh.goto('/');
+  await fresh.keyboard.press('Escape'); // the first-run intro
   await fresh.click('#settingsBtn');
   await Promise.all([fresh.waitForNavigation(), fresh.setInputFiles('#restoreInput', file)]);
   const restored = await fresh.evaluate(async () => {
@@ -73,4 +74,28 @@ test('the testing export has scans and photos but no keys, server details or GPS
   expect(Object.keys(out.data)).toEqual(['kc.history']);
   expect(JSON.parse(out.data['kc.history'])[0].place).toEqual({ store: 'Book Off Akiba' });
   expect(out.images).toEqual({ Kept: 'MAIN' });
+});
+
+test('first run: the intro explains it, says prices are estimates, links the terms, and only shows once', async ({ page }) => {
+  await mockApis(page);
+  await page.goto('/');
+  await expect(page.locator('#introSheet')).toBeVisible();
+  await expect(page.locator('#introSheet')).toContainText('Prices are estimates');
+  await expect(page.locator('#introSheet a[href="legal/terms.html"]')).toBeVisible();
+  await page.click('#introStart');
+  await expect(page.locator('#introSheet')).toBeHidden();
+  await expect(page.locator('#settingsDialog')).toBeVisible(); // no keys yet
+  await page.reload();
+  await expect(page.locator('#introSheet')).toBeHidden();
+  // and from Settings again
+  await page.click('#settingsBtn');
+  await page.click('#introAgain');
+  await expect(page.locator('#introSheet')).toBeVisible();
+});
+
+test('the privacy policy and terms pages load', async ({ page }) => {
+  for (const [path, heading] of [['/legal/privacy.html', 'Privacy policy'], ['/legal/terms.html', 'Terms of use']]) {
+    await page.goto(path);
+    await expect(page.locator('h1')).toHaveText(heading);
+  }
 });

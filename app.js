@@ -6,7 +6,7 @@ import { buildPrompt, findBarcodes, gtinValid } from './prompt.js';
 import { FIREBASE } from './firebase-config.js';
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.10.30-3';
+const APP_VERSION = '2026.10.30-4';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -564,6 +564,7 @@ function connectCloud() {
     const a = auth.getAuth(fb);
     await a.authStateReady();
     if (!a.currentUser) await auth.signInAnonymously(a);
+    if (store.get('cloudUid') !== a.currentUser.uid) store.set('cloudUid', a.currentUser.uid);
     const functions = fns.getFunctions(fb, CLOUD_REGION);
     return (name, data, timeout) => fns.httpsCallable(functions, name, { timeout })(data);
   })().catch((e) => {
@@ -618,6 +619,10 @@ function renderQuota() {
   $('#quotaLine').textContent = text;
   $('#quotaLine').hidden = !text;
   $('#scanWithGroup').hidden = !FIREBASE;
+  // Quoted when asking for the backend's record of this install to be deleted (privacy policy).
+  const uid = cloudOn() ? store.get('cloudUid') : null;
+  $('#accountId').hidden = !uid;
+  $('#accountId').textContent = uid ? `Account ID ${uid}` : '';
   $('#quotaStatus').textContent = cloudOn()
     ? text || 'Scans use Kaimono\'s keys, within a monthly allowance. Scans of a barcode someone checked in the last week are free.'
     : 'Scans use your own Google keys (below) and your own Google bill.';
@@ -3496,6 +3501,7 @@ function renderResult(entry) {
 
   const q = searchQuery(entry);
   $('#searchLinks').hidden = !q;
+  $('#estimateNote').hidden = !entry.ai;
   $('#shopeeLink').href = `https://shopee.com.my/search?keyword=${encodeURIComponent(q)}`;
   $('#carousellLink').href = `https://www.carousell.com.my/search/${encodeURIComponent(q)}`;
   const qJa = entry.ai?.search_query_ja || q;
@@ -4031,6 +4037,17 @@ $('#clearHistoryBtn').addEventListener('click', () => {
 });
 
 // ---------- events ----------
+
+$('#introStart').addEventListener('click', () => {
+  store.set('onboarded', true);
+  $('#introSheet').close();
+  if (!canScan()) openSettings();
+});
+$('#introSheet').addEventListener('cancel', () => store.set('onboarded', true));
+$('#introAgain').addEventListener('click', () => {
+  $('#settingsDialog').close();
+  $('#introSheet').showModal();
+});
 
 $('#settingsBtn').addEventListener('click', openSettings);
 document.querySelectorAll('[data-open-settings]').forEach((b) => b.addEventListener('click', openSettings));
@@ -4591,6 +4608,8 @@ setupPageGestures();
 
 applyLook();
 route();
+// First run: what the app does and that its prices are estimates. Not for anyone who already has scans.
+if (!store.get('onboarded') && !historyEntries().length) $('#introSheet').showModal();
 fetchRate().then(() => {
   renderRate();
   if (current && location.hash.startsWith('#/scan/')) renderPrices(current);

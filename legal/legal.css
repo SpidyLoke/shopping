@@ -1,0 +1,27 @@
+/* Privacy policy and terms: plain reading pages in the app's look. */
+@font-face { font-family: "Geist"; src: url("../fonts/Geist-Variable.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
+:root { --bg: #f4f3ef; --surface: #ffffff; --text: #161830; --muted: #676a7d; --line: rgba(22, 24, 48, 0.1); --accent: #2b3a8c; color-scheme: light; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #0d1020; --surface: #161a30; --text: #e9eaf4; --muted: #9ca2bb; --line: rgba(233, 234, 244, 0.12); --accent: #a6b2ff; color-scheme: dark; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 1rem/1.6 "Geist", -apple-system, system-ui, sans-serif; -webkit-text-size-adjust: 100%; }
+.wrap { max-width: 680px; margin: 0 auto; padding: max(20px, env(safe-area-inset-top)) 16px 64px; }
+.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 28px; }
+.top a { color: var(--accent); font-weight: 600; text-decoration: none; }
+.brand { display: inline-flex; align-items: center; gap: 8px; }
+h1 { font-size: 1.9rem; line-height: 1.15; letter-spacing: -0.02em; margin: 0 0 6px; }
+.dated { color: var(--muted); font-size: 0.9rem; margin: 0 0 24px; }
+.summary { padding: 16px 18px; border-radius: 16px; background: var(--surface); margin: 0 0 28px; }
+.summary p { margin: 0; }
+.summary ul { margin: 8px 0 0; padding-left: 20px; }
+h2 { font-size: 1.15rem; letter-spacing: -0.01em; margin: 32px 0 8px; padding-top: 16px; border-top: 1px solid var(--line); }
+p, li { max-width: 65ch; }
+ul { padding-left: 20px; }
+li + li { margin-top: 4px; }
+a { color: var(--accent); }
+table { width: 100%; border-collapse: collapse; font-size: 0.92rem; margin: 8px 0; }
+th, td { text-align: left; vertical-align: top; padding: 8px 6px; border-bottom: 1px solid var(--line); }
+th { font-weight: 600; color: var(--muted); font-size: 0.82rem; }
+.foot { margin-top: 40px; color: var(--muted); font-size: 0.9rem; }
+@media (max-width: 480px) { table, thead, tbody, tr, th, td { display: block; } thead { display: none; } td { border: 0; padding: 2px 0; } tr { padding: 10px 0; border-bottom: 1px solid var(--line); } td:first-child { font-weight: 600; } }
