@@ -1,3 +1,7 @@
 node_modules/
 test-results/
 playwright-report/
+functions/node_modules/
+functions/.env.local
+.firebase/
+*-debug.log

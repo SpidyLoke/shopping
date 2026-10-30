@@ -2,8 +2,11 @@
 // for Shopee / Carousell Malaysia prices. Everything runs in the browser; the API key
 // lives in localStorage on the user's device only.
 
+import { buildPrompt, findBarcodes, gtinValid } from './prompt.js';
+import { FIREBASE } from './firebase-config.js';
+
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.10.30-2';
+const APP_VERSION = '2026.10.30-3';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -35,6 +38,9 @@ const store = {
 
 const settings = {
   get apiKey() { return store.get('apiKey', ''); },
+  // Kaimono account (the backend's keys, monthly allowance) or your own Google keys; own keys stay
+  // the default for anyone who already has them.
+  get scanWith() { return store.get('scanWith', '') || (this.apiKey ? 'keys' : 'cloud'); },
   // Google won't let a restricted key cover Gemini plus other APIs, so Gemini can have its own key.
   get geminiKey() { return store.get('geminiKey', '') || this.apiKey; },
   get model() { return store.get('model', '') || DEFAULT_MODEL; },
@@ -535,7 +541,93 @@ async function googlePost(url, body, service, key = settings.apiKey, timeoutMs =
 }
 
 // Reads every photo of the item in one request; the text and Google's guesses are pooled.
+// ---------- Kaimono backend (Firebase) ----------
+// Scans and questions go through the backend's keys, within a monthly allowance (functions/).
+// Sign-in is anonymous and automatic for now: the account is this install. Firebase only loads
+// when it's used.
+const FIREBASE_SDK = 'https://www.gstatic.com/firebasejs/12.19.0';
+const CLOUD_REGION = 'asia-southeast1';
+let cloudReady = null;
+
+function cloudOn() {
+  return Boolean(FIREBASE) && settings.scanWith === 'cloud';
+}
+
+function canScan() {
+  return cloudOn() || Boolean(settings.apiKey);
+}
+
+function connectCloud() {
+  cloudReady ||= (async () => {
+    const [app, auth, fns] = await Promise.all(['app', 'auth', 'functions'].map((m) => import(`${FIREBASE_SDK}/firebase-${m}.js`)));
+    const fb = app.initializeApp(FIREBASE);
+    const a = auth.getAuth(fb);
+    await a.authStateReady();
+    if (!a.currentUser) await auth.signInAnonymously(a);
+    const functions = fns.getFunctions(fb, CLOUD_REGION);
+    return (name, data, timeout) => fns.httpsCallable(functions, name, { timeout })(data);
+  })().catch((e) => {
+    cloudReady = null;
+    throw e;
+  });
+  return cloudReady;
+}
+
+// Errors that another try won't fix (allowance used up, bad request) are marked `final`.
+const FINAL_CODES = ['resource-exhausted', 'invalid-argument', 'unauthenticated', 'permission-denied', 'failed-precondition'];
+
+async function cloudCall(name, data, timeout = 60000) {
+  let call;
+  try {
+    call = await connectCloud();
+  } catch (e) {
+    throw new Error(`Kaimono: couldn't connect (${e.message}). Check your signal.`);
+  }
+  try {
+    const { data: out } = await call(name, data, timeout);
+    if (out?.usage) saveUsage(out.usage);
+    if (out?.asks) saveUsage({ asks: out.asks });
+    return out;
+  } catch (e) {
+    const code = String(e.code || '').replace('functions/', '');
+    const err = new Error(FINAL_CODES.includes(code) ? e.message : `Kaimono: ${e.message}`);
+    err.code = code;
+    err.final = FINAL_CODES.includes(code);
+    if (e.details?.reason === 'quota') saveUsage({ used: e.details.used, limit: e.details.limit, plan: e.details.plan, month: e.details.month, resetsAt: e.details.resetsAt });
+    if (e.details?.reason === 'asks') saveUsage({ asks: { used: e.details.used, limit: e.details.limit } });
+    throw err;
+  }
+}
+
+function saveUsage(u) {
+  store.set('cloudUsage', { ...(store.get('cloudUsage') || {}), ...u, at: Date.now() });
+  renderQuota();
+}
+
+// "7 of 10 scans left this month", on Home and in Settings.
+function quotaText() {
+  const u = store.get('cloudUsage');
+  if (!cloudOn() || !u?.limit) return '';
+  const left = u.resetsAt && Date.now() >= u.resetsAt ? u.limit : Math.max(0, u.limit - (u.used || 0));
+  const resets = u.resetsAt ? ` · resets ${new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', timeZone: 'Asia/Kuala_Lumpur' }).format(u.resetsAt)}` : '';
+  return `${left} of ${u.limit} scan${u.limit === 1 ? '' : 's'} left this month${resets}`;
+}
+
+function renderQuota() {
+  const text = quotaText();
+  $('#quotaLine').textContent = text;
+  $('#quotaLine').hidden = !text;
+  $('#scanWithGroup').hidden = !FIREBASE;
+  $('#quotaStatus').textContent = cloudOn()
+    ? text || 'Scans use Kaimono\'s keys, within a monthly allowance. Scans of a barcode someone checked in the last week are free.'
+    : 'Scans use your own Google keys (below) and your own Google bill.';
+}
+
 async function readImage(images) {
+  if (cloudOn()) {
+    const r = await cloudCall('ask', { images: [].concat(images), ocrOnly: true }, 60000);
+    return { ocrText: r.ocrText || '', webGuess: r.webGuess || '' };
+  }
   const list = [].concat(images);
   const data = await googlePost('https://vision.googleapis.com/v1/images:annotate', {
     requests: list.map((content) => ({
@@ -563,131 +655,6 @@ async function translate(text) {
   return { translation: t.translatedText || '', sourceLang: t.detectedSourceLanguage || '' };
 }
 
-// ---------- barcodes ----------
-// JAN/EAN-13, EAN-8 and UPC-A numbers in the tag text, kept only if the check digit is right.
-// Printed numbers are often grouped ("4 902370 548495"), so groups split by one space or hyphen are joined.
-
-function gtinValid(code) {
-  const d = [...code].map(Number);
-  const check = d.pop();
-  const sum = d.reverse().reduce((t, n, i) => t + n * (i % 2 ? 1 : 3), 0);
-  return (10 - (sum % 10)) % 10 === check;
-}
-
-function findBarcodes(text) {
-  const found = [];
-  // Each run of digit groups ("¥3,980 4 902370 548495" gives 980, 4, 902370, 548495) is tried as
-  // every stretch of whole neighbouring groups, so a price or phone number next to it doesn't hide it.
-  for (const run of String(text || '').match(/\d+(?:[ -]\d+)*/g) || []) {
-    const groups = run.split(/[ -]/);
-    for (let i = 0; i < groups.length; i += 1) {
-      let code = '';
-      for (let j = i; j < groups.length && code.length < 13; j += 1) {
-        code += groups[j];
-        // 13-digit codes starting with 2 are the shop's own stock labels (Book Off, Hard Off): they find nothing online.
-        // EAN-8 only as one unbroken number: joined short groups are usually dates or prices.
-        if (![8, 12, 13].includes(code.length) || (code.length === 8 && j > i) || /^0+$/.test(code) || (code.length === 13 && code[0] === '2') || !gtinValid(code) || found.includes(code)) continue;
-        found.push(code);
-      }
-    }
-  }
-  // Japanese JAN codes (45, 49) first, then other 13-digit, then the rest.
-  const rank = (c) => (/^4[59]/.test(c) && c.length === 13 ? 0 : c.length === 13 ? 1 : 2);
-  return found.sort((a, b) => rank(a) - rank(b));
-}
-
-const BARCODE_RULES = (codes) => `BARCODE: a barcode number (JAN/EAN-13, EAN-8 or UPC-A: 8, 12 or 13 digits printed under the bars; Japanese JAN codes start with 45 or 49) pins down the exact product and variant. ${codes.length
-  ? `These barcode numbers were found in the text: ${codes.join(', ')}. Search the first one (in quotes) before anything else`
-  : 'If you can read one in the OCR text or the photo, search it (in quotes) before anything else'}, and trust what it identifies over a visual guess. Put the number you used in "barcode". Ignore barcodes that are the shop's own stock labels (they find nothing). In "identified_by" say what pinned the product down: "barcode", "product code", "label text" or "appearance".
-`;
-
-const CLOTHES_RULES = `CLOTHES: this is clothing, shoes, a bag or another fashion item. Identify it from the whole piece as much as from any text: logos, label and tag wording, product or style numbers (Uniqlo, GU and Muji print one on the tag), collaboration names, distinctive design or print, hardware such as zips and buttons, and fabric. Read the size from the size label or tag and give the rough Malaysian/UK equivalent (Japanese sizes often run a size smaller). Read the main material from the care label if shown.
-For Malaysian prices check the brand's own Malaysian online store if it has one (e.g. uniqlo.com/my), Zalora Malaysia (zalora.com.my), and official brand stores on Shopee and Lazada Malaysia for new; Carousell Malaysia for used. CeX does not sell clothes: return null for cex_my. For second-hand pieces list visible wear (stains, pilling, fading, holes, worn soles) as condition issues, and add a medium-severity issue if anything suggests it may not be genuine. In my_compat give one "Size" entry with the size conversion (status "warn" if it may fit small) instead of voltage or region checks.
-MATCHING CLOTHES: a listing is only the same item if it shows the same product or style code, or clearly the same design: the same model name, the same colourway, and the same prints, logos, embroidery and details. Brand plus garment type is NOT a match: an "adidas MA-1 bomber" in olive with a big ORIGINALS print is a different item from a plain navy one, and so is another season's version. Search by the product code first (e.g. "AY9150"), then brand + model name + colour. For each listing set "exact_model" true only when the code or the full design matches, and say how in "match_note". Base my_new and my_used only on exact matches; if you can only find similar items, list them with exact_model false, use them for the figures, and set "prices_are_similar": true in the clothing key. Put the product code in search_query when there is one.
-Add a "clothing" key to the JSON: { "size_on_tag": "size as printed or null", "size_my": "rough Malaysian/UK size or null", "material": "main fabric or null", "product_code": "product or style number or null", "colour": "colour in English or null", "prices_are_similar": false }.
-`;
-
-function buildPrompt({ ocrText, webGuess, secondHand, focus, override, quick, photos = 1, clothes = false }) {
-  const codes = ocrText && !ocrText.includes('{{') ? findBarcodes(ocrText) : [];
-  return `You are helping a Malaysian shopper decide whether an item is worth buying at the price shown, compared with buying it in Malaysia. They are usually in a shop in Japan, but may be shopping in Malaysia itself (a shop, a market, or a screenshot of a Carousell, Shopee, Mudah or Facebook listing) or in another country.
-
-${photos > 1
-    ? `The ${photos} attached photos all show the same item (for example the whole item, a brand or size label, and the price tag). Use them together.`
-    : 'The attached photo shows a product, box, price tag, shelf label or an online listing.'}
-OCR text from the photo${photos > 1 ? 's' : ''}:
-"""
-${ocrText || '(none detected)'}
-"""
-Google's visual best guess for the photo: "${webGuess || 'none'}"
-${focus ? `\nThe photo shows a whole shelf with several products. Evaluate ONLY this one: "${focus.name}"${focus.yen ? `, priced ${yen(focus.yen)}` : ''}. Ignore every other product in the photo.\n` : ''}${override ? `\nThe shopper has checked the box and confirmed the exact product is: "${override}". Treat that as certain and price that exact model.\n` : ''}${secondHand ? '\nThe shopper is looking at a second-hand item (e.g. Hard Off, 2nd Street or Book Off in Japan, or a used listing). When searching Malaysia, prioritise second-hand listings in similar condition.\n' : ''}
-${quick ? 'QUICK MODE: keep this fast. Only search Shopee and Carousell Malaysia. Skip CeX, Mercari, Yahoo Auctions and the Malaysia compatibility check, and return null or empty lists for cex_my, jp_used_yen and my_compat.\n' : ''}${BARCODE_RULES(codes)}${clothes ? CLOTHES_RULES : ''}
-Tasks:
-1. Identify the exact product: brand, model, size or capacity, and above all the exact variant. Words like Reloaded, Pro, Lite, OLED, Slim, Edge, V2, Mk II, 2nd Gen, Digital Edition or a special edition usually mean a different product at a different price (e.g. "Victrix Pro BFG" and "Victrix Pro BFG Reloaded" are different controllers). Read these words from the box, tag or the product itself and say where you saw them. If the photo doesn't show enough to tell lookalike variants apart, say so and list them with how to tell them apart.
-2. Read the asking price and its currency from the photo or OCR text: ¥ or 円 = JPY, RM = MYR, S$ = SGD, NT$ = TWD, ₩ = KRW, ฿ = THB, HK$ = HKD, US$ = USD, and so on; use the shop's country if no symbol is shown. In Japan, if both tax-inclusive (税込) and tax-exclusive (税抜) prices are shown, use the tax-inclusive one and say whether the number includes Japan's 10% consumption tax. For a listing screenshot use the listed price. Use null if no price is visible.
-3. Use Google Search to find current prices in Malaysia, in RM, for the same product:
-   - New: Shopee Malaysia (shopee.com.my). If Shopee has none, use Lazada Malaysia or official Malaysian retailers.
-   - Second-hand: Carousell Malaysia (carousell.com.my), plus used listings on Shopee Malaysia.
-   Only use Malaysian listings priced in RM. Exclude accessories, cases, spare parts and listings for a lookalike variant: they are a different product, even if most of the name matches. Never invent listings, prices or URLs; if you cannot find any, use null or an empty list.
-   Also check CeX Malaysia (my.webuy.com), which sells graded used stock: search my.webuy.com for the exact model. Its product pages show "WeSell for" (its selling price), "WeBuy for cash" and "WeBuy for voucher" prices in RM.
-   Also search Japan's second-hand market for the same item in comparable condition: Mercari Japan (jp.mercari.com) and Yahoo! Auctions Japan (auctions.yahoo.co.jp), prices in yen.
-   SOURCES: mark a listing "sold": true when it is sold or no longer available (it still shows the going price). The shopper checks every figure against its listings, so in "listings" give the actual listings behind my_new, my_used and jp_used_yen (up to 3 for each), with the listing title copied exactly as shown, its price and its URL. Base each figure only on listings that are the exact same model and variant. If you include a listing you are not sure is the exact model, set "exact_model": false and leave it out of the figure. Do not report a figure with no listing behind it; use null instead.
-4. Read any condition information on the tag or label: the shop's condition grade or rank and what it means on that shop's scale (second-hand chains such as 2nd Street, Hard Off, Book Off, Geo, Sofmap and Surugaya each have their own scale; explain it plainly rather than just saying "good"). If the tag or shelf shows more than one grade (for example separate A and B units of the same item at different prices, or a printed grade legend), list every grade with its price and meaning, and say which one applies to the item photographed if you can tell. Also read every issue, defect or caveat mentioned (e.g. ジャンク, 動作未確認, 通電のみ, 欠品, キズ, 箱なし, 返品不可, 保証なし). Translate each into plain English and rate it: "high" = may not work, sold as-is, no returns or no warranty; "medium" = missing parts, visible damage or heavy wear; "low" = minor cosmetic. List stated positives (e.g. 動作確認済, 美品, 付属品完備) with severity "good". Ignore marketing claims on new-product packaging (e.g. 傷つきにくい means scratch-resistant, not scratched).
-5. Check whether it will work properly in Malaysia: 240V 50Hz mains and Type G three-pin plugs (Japan is 100V with Type A two-pin plugs). If they're already shopping in Malaysia, only flag imported units (e.g. a Japanese 100V version or a Japan-only warranty). Cover only what applies to this product:
-   - Power: does it accept 240V? Many chargers and adapters are 100-240V and only need a plug adapter; 100V-only appliances (rice cookers, hair dryers, some kitchen and beauty gear) need a step-down transformer.
-   - Region: game, Blu-ray or DVD region locks, region-specific online services or apps.
-   - Language: Japanese-only menus, firmware or software.
-   - Warranty: Japan-only domestic warranty (国内専用, 国内保証) versus international warranty honoured in Malaysia.
-   - Other: e.g. forced camera shutter sound on Japanese phones, carrier locks, radio frequency bands, items restricted from import into Malaysia.
-   Rate each "ok", "warn" or "bad". Use an empty list when none of this applies (clothes, snacks, books).
-
-Reply with only a JSON object inside a \`\`\`json code block, with exactly these keys:
-{
-  "product_name": "concise English product name",
-  "brand": "brand or null",
-  "store_name": "shop or chain name if visible in the photo (e.g. HARD OFF, Bic Camera, Don Quijote), else null",
-  "search_query": "best English query to type into Shopee or Carousell: brand + model + variant words",
-  "barcode": "the JAN/EAN/UPC number you searched, or null",
-  "identified_by": "barcode | product code | label text | appearance",
-  "variant": "the exact variant, edition or generation (e.g. Reloaded, OLED, 2nd Gen), or null if there is none",
-  "variant_evidence": "where you saw it, e.g. 'box says Reloaded', or null",
-  "variant_confidence": "high | medium | low",
-  "lookalikes": [
-    { "name": "full name of an easily confused variant", "how_to_tell": "how to tell them apart on the box or product", "typical_price_rm": 0 }
-  ],
-  "search_query_ja": "best Japanese query for Mercari or Yahoo Auctions",
-  "price": 12800,
-  "currency": "ISO code of the asking price, e.g. JPY, MYR, SGD",
-  "shop_country": "ISO country code where they're shopping, e.g. JP, MY",
-  "price_tax_included": true,
-  "price_note": "short note on which price was read, or null",
-  "my_new": { "low": 0, "high": 0, "typical": 0 },
-  "my_used": { "low": 0, "high": 0, "typical": 0 },
-  "jp_used_yen": { "low": 0, "high": 0, "typical": 0 },
-  "cex_my": { "sell_rm": 0, "buy_cash_rm": 0, "buy_voucher_rm": 0, "grade": "CeX grade if shown (A, B, C) or null", "url": "CeX product URL or null" },
-  "listings": [
-    { "platform": "Shopee | Carousell | Lazada | Mercari JP | Yahoo Auctions | Other", "condition": "new | used", "title": "listing title exactly as shown", "price_rm": 0, "price_yen": 0, "url": "listing URL or null", "exact_model": true, "match_note": "how you know it's the same model, or what differs", "sold": false }
-  ],
-  "my_compat": [
-    { "topic": "Power | Region | Language | Warranty | Other", "status": "ok | warn | bad", "note": "short plain-English explanation" }
-  ],
-  "condition": {
-    "is_used": "true if the tag or item shows it is second-hand (中古, a condition grade, ジャンク), otherwise false",
-    "grade": "grade or rank exactly as shown for this item (e.g. B, ランクA, ジャンク), or null",
-    "grade_meaning": "what that grade means on this shop's scale, in plain English, or null",
-    "grade_options": [
-      { "grade": "A", "price_yen": 0, "meaning": "plain-English meaning" }
-    ],
-    "issues": [
-      { "jp": "original Japanese wording", "en": "plain English meaning", "severity": "high | medium | low | good" }
-    ],
-    "missing": ["items stated as missing, in English"]
-  },
-  "confidence": "high | medium | low",
-  "notes": "one or two sentences on matching caveats (Japan-only variant, voltage, region lock, etc.)"
-}
-Use price_rm for Malaysian listings and price_yen for Japanese ones. Use null for any price you could not find. Use an empty issues list if the tag mentions no condition information, an empty grade_options list unless more than one grade is shown, and an empty lookalikes list when nothing is easily confused with it.`;
-}
-
 function parseJson(text) {
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
   const body = fenced ? fenced[1] : text;
@@ -704,6 +671,11 @@ async function askGemini({ images, ...opts }) {
 
 // `images`: one base64 JPEG or a list of them (several photos of the same item).
 async function callGemini(images, prompt, { search = true, raw = false } = {}) {
+  if (cloudOn()) {
+    const r = await cloudCall('ask', { images: [].concat(images || []), prompt, search }, search ? 120000 : 90000);
+    const sources = (r.chunks || []).filter((c) => safeUrl(c.uri)).map((c) => ({ title: c.title, url: c.uri }));
+    return raw ? { text: r.text, sources } : { json: parseJson(r.text), sources };
+  }
   const parts = [];
   for (const data of [].concat(images || [])) parts.push({ inline_data: { mime_type: 'image/jpeg', data } });
   parts.push({ text: prompt });
@@ -1237,7 +1209,7 @@ async function preparePhotos(files) {
 async function startScan(files) {
   files = [].concat(files || []).filter(Boolean);
   if (!files.length) return;
-  if (!settings.apiKey) {
+  if (!canScan()) {
     openSettings();
     return;
   }
@@ -1296,7 +1268,7 @@ async function rescan(id, { quiet = false, before = null, undone = null } = {}) 
   if (running.has(id)) return;
   const entry = findEntry(id);
   if (!entry) return;
-  if (!settings.apiKey) {
+  if (!canScan()) {
     openSettings();
     return;
   }
@@ -1354,7 +1326,7 @@ async function runScan(entry, imageB64, { quiet = false } = {}) {
   running.set(entry.id, entry);
   if (entry.status.translate !== 'done') entry.status.translate = 'skipped'; // ask "Translate tag" instead
   const images = await scanImages(entry, imageB64);
-  if (settings.serverUrl) {
+  if (cloudOn() || settings.serverUrl) {
     await runScanOnServer(entry, images, { quiet });
     return;
   }
@@ -1607,10 +1579,31 @@ function serverJobRequest(entry, images) {
   };
 }
 
+// The Kaimono backend takes the photos and the scan options and builds the prompt itself.
+function cloudJobRequest(entry, images) {
+  return {
+    jobId: entry.serverJob.id,
+    images: [].concat(images),
+    secondHand: Boolean(entry.secondHand),
+    quick: Boolean(entry.quick),
+    clothes: entry.kind === 'clothes',
+    override: entry.override || null,
+    focus: entry.focus ? { name: entry.focus.name, yen: entry.focus.yen ?? null } : null,
+  };
+}
+
+const jobRequest = (entry, images) => (entry.serverJob?.cloud ? cloudJobRequest(entry, images) : serverJobRequest(entry, images));
+
+// A scan job runs on the Kaimono backend or on your own Apps Script server; both answer alike.
+function jobCall(entry, body, timeoutMs) {
+  if (!entry.serverJob?.cloud) return serverCall(body, timeoutMs);
+  return body.action === 'result' ? cloudCall('result', { jobId: body.jobId }, timeoutMs) : cloudCall('scan', body, timeoutMs);
+}
+
 async function runScanOnServer(entry, images, { quiet = false } = {}) {
   running.set(entry.id, entry);
   entry.errors = [];
-  entry.serverJob = { id: uid(), sentAt: Date.now(), done: false };
+  entry.serverJob = { id: uid(), sentAt: Date.now(), done: false, ...(cloudOn() ? { cloud: true } : {}) };
   if (entry.status.vision !== 'done') entry.status.vision = 'active';
   if (!['done', 'skipped'].includes(entry.status.translate)) entry.status.translate = 'active';
   entry.status.search = 'active';
@@ -1619,8 +1612,14 @@ async function runScanOnServer(entry, images, { quiet = false } = {}) {
   const stopAck = watchForReceipt(entry, jobId);
   let out = null;
   try {
-    out = await serverCall(serverJobRequest(entry, images), 330000);
-  } catch {
+    out = await jobCall(entry, jobRequest(entry, images), 330000);
+  } catch (e) {
+    if (e.final) {
+      // Allowance used up or a bad request: sending it again won't help.
+      stopAck();
+      giveUpServerJob(entry, e.message);
+      return;
+    }
     // The app was closed or lost signal mid-request. If the upload got through, the server carries
     // on; if not, the scan is re-sent when the app is back.
     if (entry.serverJob?.id === jobId) entry.serverJob = { ...entry.serverJob, requestFailed: true };
@@ -1638,7 +1637,7 @@ function watchForReceipt(entry, jobId) {
   const check = async () => {
     if (stopped || entry.serverJob?.id !== jobId || entry.serverJob.received) return;
     try {
-      const r = await serverCall({ action: 'result', jobId }, 8000);
+      const r = await jobCall(entry, { action: 'result', jobId }, 8000);
       if (!stopped && (r.status === 'running' || r.status === 'done') && entry.serverJob?.id === jobId) {
         entry.serverJob = { ...entry.serverJob, received: true };
         refresh(entry);
@@ -1688,7 +1687,7 @@ async function applyServerResult(entry, out, { quiet = false } = {}) {
   }
   if (out.cex?.hits) entry.cex = { ...pickCex(out.cex.query, out.cex.hits), checkedAt: Date.now() };
   // Keep the server's timings and ntfy's answer so a missing notification can be explained.
-  entry.serverJob = { ...entry.serverJob, done: true, startedAt: out.startedAt, finishedAt: out.finishedAt, ntfy: out.ntfy || null };
+  entry.serverJob = { ...entry.serverJob, done: true, startedAt: out.startedAt, finishedAt: out.finishedAt, ntfy: out.ntfy || null, cachedAt: out.cached?.at || null };
   await ensureRate(entry);
   running.delete(entry.id);
   const update = () => refresh(entry);
@@ -1704,6 +1703,9 @@ const clock = (t) => new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute:
 // One line on the result saying what the scan server did, to pin down missing notifications.
 function serverReport(job) {
   if (!job?.done) return '';
+  if (job.cloud) {
+    return job.cachedAt ? `Prices from a scan of this barcode on ${new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' }).format(job.cachedAt)}, so this one was free.` : '';
+  }
   if (job.stalled) return `Scan server: started at ${clock(job.startedAt || job.sentAt)} and stopped before finishing, so no notification was sent.`;
   if (!job.finishedAt) return '';
   const took = job.startedAt ? ` (${Math.round((job.finishedAt - job.startedAt) / 1000)}s)` : '';
@@ -1727,7 +1729,7 @@ async function checkServerJob(entry) {
   if (pendingPolls.has(entry.id)) return;
   pendingPolls.add(entry.id);
   try {
-    const out = await serverCall({ action: 'result', jobId: entry.serverJob.id }, 15000);
+    const out = await jobCall(entry, { action: 'result', jobId: entry.serverJob.id }, 15000);
     const age = Date.now() - entry.serverJob.sentAt;
     if (out.status === 'done') {
       await applyServerResult(entry, out);
@@ -1741,7 +1743,7 @@ async function checkServerJob(entry) {
         saveEntry(entry);
         refresh(entry);
         const stopAck = watchForReceipt(entry, jobId);
-        serverCall(serverJobRequest(entry, image), 330000)
+        jobCall(entry, jobRequest(entry, image), 330000)
           .then((res) => (res?.status === 'done' ? applyServerResult(entry, res) : null))
           .catch(() => {
             if (entry.serverJob?.id === jobId && !entry.serverJob.done) {
@@ -1772,7 +1774,7 @@ async function checkServerJob(entry) {
 }
 
 function pollServerJobs() {
-  if (pollTimer || !settings.serverUrl) return;
+  if (pollTimer || (!settings.serverUrl && !FIREBASE)) return;
   const tick = () => {
     if (document.visibilityState !== 'visible') return;
     const pending = pendingServerEntries();
@@ -2001,7 +2003,7 @@ async function checkShelfItem(shelf, item, image, quiet = false) {
 async function checkAllShelf(id) {
   const shelf = findEntry(id);
   if (!shelf || shelfChecking.has(id)) return;
-  if (!settings.apiKey) {
+  if (!canScan()) {
     openSettings();
     return;
   }
@@ -2575,7 +2577,8 @@ function rowActions(entry, isRunning, failed) {
 }
 
 function renderHome() {
-  $('#keyNotice').hidden = Boolean(settings.apiKey);
+  $('#keyNotice').hidden = canScan();
+  renderQuota();
   renderMode();
   const all = historyEntries();
   const favs = all.filter((e) => e.fav).slice(0, 3);
@@ -2744,7 +2747,7 @@ let refreshingFavs = null;
 
 async function refreshFavourites() {
   if (refreshingFavs) return;
-  if (!settings.apiKey) {
+  if (!canScan()) {
     openSettings();
     return;
   }
@@ -3279,7 +3282,7 @@ Answer in plain English in two to four short sentences, specific to this exact m
 async function askQuestion(id, question) {
   const entry = findEntry(id);
   if (!entry || !question || asking.has(id)) return;
-  if (!settings.apiKey) {
+  if (!canScan()) {
     openSettings();
     return;
   }
@@ -3460,9 +3463,10 @@ function renderResult(entry) {
   const onServer = entry.serverJob && !entry.serverJob.done;
   $('#serverHint').hidden = !onServer;
   $('#serverHint').classList.toggle('received', Boolean(onServer && entry.serverJob.received));
-  $('#serverHint').textContent = onServer && entry.serverJob.received
-    ? 'Safe to close. You\'ll get a notification.'
-    : 'Sending to your scan server. Keep the app open.';
+  $('#serverHint').textContent = !onServer ? ''
+    : entry.serverJob.cloud
+      ? (entry.serverJob.received ? 'Safe to close. The result will be here when you\'re back.' : 'Sending… Keep the app open.')
+      : entry.serverJob.received ? 'Safe to close. You\'ll get a notification.' : 'Sending to your scan server. Keep the app open.';
   renderAsk(entry);
   $('#resName').textContent = entry.ai?.product_name || entry.webGuess || (running.has(entry.id) ? 'Reading…' : 'Unidentified item');
   $('#resBrand').textContent = entry.ai?.brand || '';
@@ -3664,7 +3668,7 @@ async function pickBest(ids, need) {
   const items = ids.map(findEntry).filter(Boolean).slice(0, 3);
   const key = pickKey(items);
   if (items.length < 2 || picking.has(key)) return;
-  if (!settings.apiKey) {
+  if (!canScan()) {
     openSettings();
     return;
   }
@@ -3909,6 +3913,8 @@ function openSettings() {
   $('#keysGroup').open = !hasKey;
   $('#serverStatus').textContent = settings.serverUrl ? (settings.telegram?.chatId ? 'On · Telegram' : 'On') : 'Off';
   $('#serverGroup').open = false;
+  renderQuota();
+  if (cloudOn()) cloudCall('usage', {}, 15000).then(saveUsage).catch(() => {});
   $('#settingsDialog').showModal();
 }
 
@@ -4182,6 +4188,7 @@ for (const group of document.querySelectorAll('[data-setting]')) {
       heroFor = null;
       applyLook();
       renderLookControls();
+      renderQuota();
       route(true);
     });
   }
@@ -4252,7 +4259,7 @@ $('#trayGo').addEventListener('click', () => {
   const photos = trayPhotos;
   closeTray();
   if (!photos.length) return;
-  if (!settings.apiKey) {
+  if (!canScan()) {
     openSettings();
     return;
   }

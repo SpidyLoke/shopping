@@ -11,7 +11,7 @@ Phone web app for shopping in Japan. Snap a box, price tag or shelf label and it
 4. Converts the yen price to RM at the day's rate and gives a Buy / Marginal / Skip verdict
 5. Saves every scan to history on your phone
 
-It's a static site on GitHub Pages and installs to your home screen like an app. No server; your API key stays on your device.
+It's a static site on GitHub Pages and installs to your home screen like an app. It scans either with your own Google API keys (they stay on your phone) or, once the Kaimono backend is set up, with a Kaimono account: no keys needed, a monthly allowance of scans (see [Kaimono backend](#kaimono-backend-firebase)).
 
 ### Outside Japan
 
@@ -102,6 +102,8 @@ Repo **Settings → Pages → Build and deployment → Deploy from a branch → 
 - **Search:** History searches item names, brands, stores and areas.
 - **Refresh prices:** on the Favourites list (home or History), one tap re-checks the Malaysian prices for every favourite.
 - **Select:** in History tap **Select** to pick scans, then favourite, mark as bought, delete (with Undo) or compare 2 to 3 of them.
+- **Sold for:** once an item is marked bought, its result has a **Sold for** box. Type what it sold for and it shows what you made against what the app predicted when you bought it (the prediction is kept at that moment, so changing your costs later doesn't rewrite it). The History badge becomes **Made +RM 120** or **Lost RM 20**, a **Sold** chip lists them, and the Trip tab totals what you made against the predictions.
+- **Share this find:** under the verdict (or **Share** in the long-press menu) makes a picture for Stories or a chat: your photo, the product, what you paid, what it fetches in Malaysia (or what it sold for) and the profit. No store, location or other details.
 
 ### Where each price comes from
 
@@ -244,6 +246,34 @@ Shipping, luggage allowance and warranty aren't factored in. Gemini flags Japan-
 - **Clear history:** deletes all saved scans from the phone.
 - **API keys** and **Background scanning** fold away once set up. Saved keys and tokens are never shown or refilled; the box shows a hint like "Saved · AIza…x9Q2", and leaving it empty keeps what's saved. With no password-style fields and no form, iPhone doesn't offer to save a password. The × at the top closes Settings without saving.
 
+## Kaimono backend (Firebase)
+
+Optional. With it, people scan without their own Google keys: the backend (`functions/`) holds the keys, signs each install in anonymously, and gives each a monthly allowance. Until `firebase-config.js` has a project's config, the app only offers own-key scanning and nothing changes.
+
+**What it does**
+- **Scans:** the app sends the photos and scan options; the backend reads them (Vision), builds the same prompt as the app (`prompt.js`, shared), asks Gemini with Google Search and checks CeX. Same result format as the Apps Script server, so background collection works the same way: a scan whose reply was lost is collected afterwards, not run twice.
+- **Questions:** Worth it, Ask, Translate tag, shelf scans and Compare go through it too, with their own allowance.
+- **Allowance:** 10 scans and 40 questions a month on the free plan, 300 and 1,000 on the paid plan (step 5); resets on the 1st, Malaysia time. Home and Settings show what's left. A failed Gemini call gives the scan back.
+- **Barcode cache:** when Gemini identifies a product by its barcode, its Malaysian prices are kept for 7 days. The next scan of that barcode (same condition, new or used) reuses them and only asks Gemini to read the tag, with no search: a fraction of the cost, and free for the user. The result says so.
+- **Bill protection:** a cap on scans across the whole app per day (500) and per connection per day (40), so a bug or someone reinstalling for fresh allowances can't run up the bill.
+
+**Cost:** Gemini 3 Flash's Google Search grounding is billed per search query (about US$14 per 1,000 after a free monthly allowance), and a scan runs several, so roughly RM 0.20 to 0.40 a scan; Vision is about US$1.50 per 1,000 photos. Cached barcode scans skip the search.
+
+**Setting it up (once, about 30 minutes):**
+1. [Firebase console](https://console.firebase.google.com/) → **Add project** (e.g. `kaimono-check`). Switch it to the **Blaze** (pay as you go) plan: Cloud Functions need it. Then in Google Cloud → Billing → **Budgets & alerts**, set a monthly budget with email alerts (e.g. RM 50).
+2. **Build → Authentication → Get started → Sign-in method → Anonymous → Enable.**
+3. **Build → Firestore Database → Create database**, production mode, location **asia-southeast1 (Singapore)**.
+4. In [Google Cloud Console](https://console.cloud.google.com/) for the same project: enable **Cloud Vision API** and **Generative Language API**, then **Credentials → Create API key**, restricted to those two APIs (no website restriction: only the backend uses it).
+5. On a computer: `npm install -g firebase-tools`, `firebase login`, then in this repo `firebase use --add` and pick the project.
+6. `firebase functions:secrets:set VISION_KEY` and `firebase functions:secrets:set GEMINI_KEY`, pasting the key from step 4 for both (or separate keys).
+7. `firebase deploy --only functions,firestore`.
+8. Firestore → **TTL policies**: add `expireAt` for collection groups `jobs` and `ipDaily`, so old scan results and counters delete themselves.
+9. Project settings → **Your apps → Web app** (`</>`), register it, copy the `firebaseConfig` object into `firebase-config.js` (`export const FIREBASE = { … };`), commit and push. These values are public by design. In Google Cloud → Credentials, restrict that web key to `spidyloke.github.io/*`.
+
+Limits and the model are settings (`functions/.env`: `FREE_SCANS`, `PRO_SCANS`, `DAILY_SCANS`, `PER_IP_SCANS`, `FREE_ASKS`, `PRO_ASKS`, `DAILY_ASKS`, `GEMINI_MODEL`, `CACHE_DAYS`); redeploy after changing them. To give someone the paid plan by hand until payments exist, set `plan: "pro"` on their `users/{uid}` document in Firestore.
+
+Sign-in is anonymous: the account is that install. Removing the app from the home screen starts a new one. Proper accounts (Google, Apple, email) come with payments, since paying is the main reason to need one.
+
 ## Development and tests
 
 The app is plain static files (no build step). Tests run the real app in Chromium at phone size with Google, CeX and the exchange rate mocked, so no keys or network are needed:
@@ -256,7 +286,10 @@ npm run serve                     # the app on http://localhost:8124
 ```
 
 - `tests/e2e/`: scanning (one or several photos, clothes, other currencies), deal labels, History gestures and Undo, Settings and backup, the built-in camera, Compare, and background scanning against the real server code.
-- `tests/server/`: the scan server (`server/Code.gs`, `server/Loader.gs`) in a fake Apps Script sandbox.
+- `tests/e2e/cloud.spec.js`: account scans against the real backend code (`functions/core.js`), with the Firebase SDK stubbed and an in-memory Firestore: allowance, barcode cache, a lost reply, questions, switching to own keys.
+- `tests/server/`: the scan server (`server/Code.gs`, `server/Loader.gs`) in a fake Apps Script sandbox, and the Firebase backend's logic (allowance, caps, cache, refunds) with an in-memory Firestore.
+
+`functions/prompt.js` is a copy of `prompt.js` (Firebase deploys only the `functions` folder); a test fails if they differ, and `firebase deploy` copies it again first. After changing `prompt.js`, run `cp prompt.js functions/`.
 
 GitHub Actions runs both on every push (`.github/workflows/test.yml`).
 
@@ -267,5 +300,9 @@ GitHub Actions runs both on every push (`.github/workflows/test.yml`).
 | `index.html` | Page layout |
 | `styles.css` | Styling, light and dark mode |
 | `app.js` | Camera, Google API calls, verdict logic, history |
+| `prompt.js` | The scan prompt and barcode reading, shared with the backend |
+| `firebase-config.js` | The Firebase project the app uses for account scans (empty until set up) |
+| `functions/` | Kaimono backend: Cloud Functions for account scans and questions (`core.js` logic, `index.js` wiring) |
+| `firebase.json`, `firestore.rules` | Firebase deploy settings and database rules |
 | `sw.js` | Caches the app so it opens instantly and offline |
 | `manifest.webmanifest`, `icons/` | Home-screen install |
