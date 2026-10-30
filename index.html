@@ -116,6 +116,7 @@
             <p class="eyebrow" id="resBrand"></p>
             <h1 id="resName">Reading…</h1>
             <p class="muted small" id="resTime"></p>
+            <p class="id-line" id="resIdLine" hidden><svg class="i" viewBox="0 0 256 256" aria-hidden="true"><path d="M230,48V88a6,6,0,0,1-12,0V54H184a6,6,0,0,1,0-12h40A6,6,0,0,1,230,48ZM72,202H38V168a6,6,0,0,0-12,0v40a6,6,0,0,0,6,6H72a6,6,0,0,0,0-12Zm152-40a6,6,0,0,0-6,6v34H184a6,6,0,0,0,0,12h40a6,6,0,0,0,6-6V168A6,6,0,0,0,224,162ZM32,94a6,6,0,0,0,6-6V54H72a6,6,0,0,0,0-12H32a6,6,0,0,0-6,6V88A6,6,0,0,0,32,94ZM80,82a6,6,0,0,0-6,6v80a6,6,0,0,0,12,0V88A6,6,0,0,0,80,82Zm96,92a6,6,0,0,0,6-6V88a6,6,0,0,0-12,0v80A6,6,0,0,0,176,174ZM150,88v80a6,6,0,0,0,12,0V88a6,6,0,0,0-12,0Zm-44,0v80a6,6,0,0,0,12,0V88a6,6,0,0,0-12,0Z"/></svg>Barcode match <span id="resIdCode"></span></p>
           </div>
           <button class="rescan-btn" id="rescanBtn" type="button" aria-label="Rescan" title="Rescan"><svg class="i" viewBox="0 0 256 256" aria-hidden="true"><path d="M222,48V96a6,6,0,0,1-6,6H168a6,6,0,0,1,0-12h33.52L183.47,72a81.51,81.51,0,0,0-57.53-24h-.46A81.5,81.5,0,0,0,68.19,71.28a6,6,0,1,1-8.38-8.58,93.38,93.38,0,0,1,65.67-26.76H126a93.45,93.45,0,0,1,66,27.53l18,18V48a6,6,0,0,1,12,0ZM187.81,184.72a81.5,81.5,0,0,1-57.29,23.34h-.46a81.51,81.51,0,0,1-57.53-24L54.48,166H88a6,6,0,0,0,0-12H40a6,6,0,0,0-6,6v48a6,6,0,0,0,12,0V174.48l18,18.05a93.45,93.45,0,0,0,66,27.53h.52a93.38,93.38,0,0,0,65.67-26.76,6,6,0,1,0-8.38-8.58Z"/></svg></button>
         </div>
@@ -190,7 +191,7 @@
             <p class="price-src" id="myNewSrc"></p>
           </div>
           <div class="price-card">
-            <p class="price-head">MY used</p>
+            <p class="price-head" id="myUsedHead">MY used</p>
             <p class="price-rm" id="myUsed">–</p>
             <p class="price-sub" id="myUsedRange"></p>
             <p class="price-src" id="myUsedSrc"></p>
@@ -453,6 +454,17 @@
         <label class="switch"><input type="checkbox" id="liveCameraToggle" data-setting-toggle="liveCamera"><span>Built-in camera<small>Viewfinder inside the app; off uses the iPhone camera</small></span></label>
       </section>
 
+      <details class="settings-group costs-group" id="costsGroup">
+        <summary><span>Resale costs</span><span class="group-status" id="costsStatus"></span></summary>
+        <p class="muted small">Deal labels show what you'd take home after these.</p>
+        <label class="budget-field"><span>Card fee abroad<small>Bank and network markup on foreign spend</small></span>
+          <span class="rm-input"><input id="fxFeeInput" type="number" inputmode="decimal" min="0" max="10" step="0.05"><span>%</span></span></label>
+        <label class="budget-field"><span>Selling fee<small>Platform cut when you resell (Carousell is free, Shopee isn't)</small></span>
+          <span class="rm-input"><input id="sellFeeInput" type="number" inputmode="decimal" min="0" max="50" step="0.5"><span>%</span></span></label>
+        <label class="budget-field"><span>Extra per item<small>Postage, packaging, excess baggage</small></span>
+          <span class="rm-input"><span>RM</span><input id="extraCostInput" type="number" inputmode="decimal" min="0" step="1"></span></label>
+      </details>
+
       <details class="settings-group" id="serverGroup">
         <summary><span>Background scanning</span><span class="group-status" id="serverStatus"></span></summary>
         <label class="field">
@@ -501,6 +513,10 @@
           <label class="btn btn-small" for="restoreInput">Restore</label>
         </div>
         <input id="restoreInput" type="file" accept="application/json,.json" hidden>
+        <div class="data-row">
+          <span>Scans for testing <small class="muted">no keys or locations</small></span>
+          <button class="btn btn-small" type="button" id="testExportBtn">Export</button>
+        </div>
         <p class="muted small" id="backupStatus" role="status"></p>
       </section>
 

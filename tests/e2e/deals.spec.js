@@ -5,9 +5,9 @@ const { mockApis, openApp, scan } = require('./helpers');
 // ¥10,000 at 0.03 = RM 300 here.
 const at300 = (id, ai, cex) => scan(id, { ...ai, cex_my: cex ? { sell_rm: cex[0], buy_cash_rm: cex[1] } : null }, { yen: 10000 });
 const CASES = [
-  [at300('a', { my_used: { typical: 450 }, my_new: { typical: 600 } }, [500, 350]), 'CeX pays RM 50 more', 'CeX +RM 50'],
-  [at300('bb', { my_used: { typical: 350 }, my_new: { typical: 600 } }, [400, 200]), 'Resells for RM 50 more', 'Resell +RM 50'],
-  [at300('ccc', { my_used: { typical: 380 }, my_new: { typical: 600 } }, [280, 150]), 'Resells for RM 80 more', 'Resell +RM 80'],
+  [at300('a', { my_used: { typical: 450 }, my_new: { typical: 600 } }, [500, 350]), 'RM 50 profit at CeX', 'CeX +RM 50'],
+  [at300('bb', { my_used: { typical: 350 }, my_new: { typical: 600 } }, [400, 200]), 'RM 50 profit reselling', 'Resell +RM 50'],
+  [at300('ccc', { my_used: { typical: 380 }, my_new: { typical: 600 } }, [280, 150]), 'RM 80 profit reselling', 'Resell +RM 80'],
   [at300('dddd', { my_used: { typical: 250 }, my_new: { typical: 400 } }), 'RM 100 under MY new', 'RM 100 off new'],
   [at300('eeeee', { my_new: { typical: 250 } }), 'RM 50 over MY new', 'Dearer here'],
   [at300('ffffff', { my_used: { typical: 500 }, my_new: { typical: 600 }, my_compat: [{ topic: 'Power', status: 'bad', note: '100V only' }] }), null, 'Power issue'],
@@ -15,7 +15,7 @@ const CASES = [
 
 test('the deal label says where the price sits, and row badges carry it', async ({ page }) => {
   await mockApis(page, { rates: { JPY: 0.03 } });
-  await openApp(page, { history: CASES.map(([e]) => e), hash: '#/history' });
+  await openApp(page, { history: CASES.map(([e]) => e), hash: '#/history', settings: { fxFee: 0 } });
   for (const [e, label] of CASES) {
     if (!label) continue;
     await page.goto(`/#/scan/${e.id}`);
@@ -31,6 +31,28 @@ test('the deal label says where the price sits, and row badges carry it', async 
   // Resale profit chip leaves out the 100V item
   await page.click('#historyChips button:has-text("Resale profit")');
   await expect(page.locator('#historyList .history-name')).toHaveText(['a', 'bb', 'ccc']);
+});
+
+test('costs from Settings come off the profit, and MY used says what it rests on', async ({ page }) => {
+  await mockApis(page, { rates: { JPY: 0.03 } });
+  const item = at300('Flip', { my_used: { typical: 400 }, my_new: { typical: 600 }, listings: [
+    { platform: 'Carousell', condition: 'used', title: 'Flip', price_rm: 390, exact_model: true, sold: true },
+    { platform: 'Carousell', condition: 'used', title: 'Flip', price_rm: 410, exact_model: true },
+  ] });
+  await openApp(page, { history: [item] });
+  await page.click('#settingsBtn');
+  await expect(page.locator('#costsStatus')).toHaveText('2% card');
+  await page.click('#costsGroup summary');
+  await page.fill('#sellFeeInput', '10');
+  await page.fill('#extraCostInput', '10');
+  await page.click('#saveSettingsBtn');
+  // RM 300 + RM 6 card fee + RM 10 = RM 316; RM 400 less 10% = RM 360; RM 44 left.
+  await page.goto('/#/scan/Flip');
+  await expect(page.locator('#dealTags .deal').first()).toHaveText('RM 44 profit reselling');
+  await expect(page.locator('#dealTags .deal').first()).toHaveAttribute('title', /sold prices\), RM 360 after the 10% selling fee\. It costs you RM 316 with the RM 6 card fee and RM 10 extra\./);
+  await expect(page.locator('#myUsedHead')).toHaveText('MY used · sold');
+  await page.goto('/#/history');
+  await expect(page.locator('#historyList .history-item .tag')).toHaveText('Resell +RM 44');
 });
 
 test('clothes priced only from a different design say No exact match', async ({ page }) => {

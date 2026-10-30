@@ -107,6 +107,12 @@ Repo **Settings → Pages → Build and deployment → Deploy from a branch → 
 
 Tap **MY new**, **MY used** or **JP used** to see the listings behind that figure: platform, the listing title exactly as posted, its price and a link to open it. Each listing is marked **Same model**, or **Check model** when its title names a different variant (e.g. "Reloaded" when you're looking at the original) or Gemini wasn't sure. The box itself says "check model" when any listing behind it is flagged. If no listings came back, the figure is an estimate, and **Search … yourself** opens the search.
 
+The **MY used** box says what its figure rests on: **sold** when most of the listings behind it have sold (what people actually paid), **asking** when they're still up for sale (asking prices run high). CeX's buy prices are firm offers.
+
+### Barcodes
+
+If the tag or box shows a barcode number (JAN/EAN-13, EAN-8 or UPC), the app picks it out of the text, checks its check digit, and has Gemini search that exact number first: it pins down the exact model and variant better than a photo. Japanese JAN codes (45…, 49…) go first; 13-digit codes starting with 2 are a shop's own stock labels (Book Off, Hard Off) and are skipped. When the product was found by barcode, **Barcode match** and the number show under its name.
+
 ### Exact model check
 
 Gemini reads edition words off the box (Reloaded, Pro, Lite, OLED, V2…) and the result shows the exact model it found and how it knew. When it isn't sure, the box turns amber and lists lookalikes with how to tell them apart; tap **It's …** to re-price the scan as that model. Price matching (CeX, same item at other stores) treats lookalike variants as different products.
@@ -187,12 +193,12 @@ A built-in keyword check flags issues the moment the text is read, so you still 
 
 ### Deal labels
 
-Under Buy / Maybe / Skip, short labels say where the Japan price sits against what the item fetches at home. The one nearest above the Japan price wins:
+Under Buy / Maybe / Skip, short labels say where the price sits against what the item fetches at home, counting what it really costs you: the price plus your card's foreign-spend fee and any extra per item (Settings, **Resale costs**). Resale figures also lose the selling fee. The one nearest above your cost wins; tap a label for the working.
 
 | Label | Means |
 | --- | --- |
-| **CeX pays RM X more** | CeX Malaysia's cash (or voucher) buy price is above what you pay here, so you could sell it straight on |
-| **Resells for RM X more** | It goes for more than this second-hand in Malaysia (Carousell, used Shopee) |
+| **RM X profit at CeX** | CeX Malaysia's cash (or voucher) offer is above what it costs you, so you could sell it straight on |
+| **RM X profit reselling** | It goes for more than it costs you second-hand in Malaysia (Carousell, used Shopee), after the selling fee |
 | **RM X under CeX** | Cheaper than CeX Malaysia's used price |
 | **RM X under MY new** | Only cheaper than buying new at home |
 | **RM X over MY new** | Dearer than new in Malaysia |
@@ -227,6 +233,8 @@ Shipping, luggage allowance and warranty aren't factored in. Gemini flags Japan-
 
 - **Gemini model:** defaults to `gemini-flash-latest`, Google's alias for the current Flash model, so it keeps working when versions retire. Pin a specific model ID here if you prefer.
 - **Back up / Restore:** saves everything (scans, photos, trips, keys and the scan server pairing) to one file you keep in Files, and puts it back. A home-screen app's data is deleted when you remove it from the home screen, so back up first if you reinstall (for example to pick up a new app icon).
+- **Resale costs:** your card's fee on foreign spend (default 2%: Malaysian cards add about 1% at CIMB or HSBC to 2.25% at Maybank; set 0.5% or so for Wise or YouTrip), the platform's selling fee when you resell (Carousell is free to list, Shopee takes a cut) and any extra per item (postage, packaging, excess baggage). Deal labels use them; nothing is charged on a price already in RM.
+- **Scans for testing → Export:** your scans and photos only, with no API keys, server details, Telegram link or GPS pins (store names stay). Safe to send to someone checking how well the app reads tags.
 - **Layout and look** (applies straight away):
   - **Lists:** List, Compact (smaller rows, more on screen) or Grid (big photo tiles).
   - **Results:** Page, or Sheet (your photo fills the top and the result slides up over it).

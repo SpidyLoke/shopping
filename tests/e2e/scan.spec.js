@@ -107,3 +107,25 @@ test('other currencies convert at their own rate, and can be changed by hand', a
   await expect(page.locator('#jpRm')).toHaveText('RM 1,485');
   expect(calls.rates).toEqual(expect.arrayContaining(['USD', 'SGD']));
 });
+
+test('a barcode on the tag is searched first and shown on the result', async ({ page }) => {
+  const calls = await mockApis(page, {
+    vision: () => '中古 ¥3,980 4 902370 548495\n店内 2000123456782',
+    gemini: () => product({ barcode: '4902370548495', identified_by: 'barcode' }),
+  });
+  await openApp(page);
+  await scanFromGallery(page);
+  const prompt = calls.gemini.at(-1).prompt;
+  expect(prompt).toContain('These barcode numbers were found in the text: 4902370548495.');
+  expect(prompt).not.toContain('2000123456782.'); // the shop's own stock label isn't offered
+  await expect(page.locator('#resIdLine')).toBeVisible();
+  await expect(page.locator('#resIdCode')).toHaveText('4902370548495');
+});
+
+test('no barcode line when the product was matched by its looks', async ({ page }) => {
+  await mockApis(page, { gemini: () => product({ barcode: null, identified_by: 'appearance' }) });
+  await openApp(page);
+  await scanFromGallery(page);
+  await expect(page.locator('#resName')).toHaveText('Sony DualSense Controller');
+  await expect(page.locator('#resIdLine')).toBeHidden();
+});

@@ -50,3 +50,27 @@ test('backup then restore into a fresh install brings back scans, photos and key
   });
   expect(restored).toEqual({ scans: 1, key: '"K"', main: 'MAIN', label: 'LABEL' });
 });
+
+test('the testing export has scans and photos but no keys, server details or GPS', async ({ page }, testInfo) => {
+  await mockApis(page);
+  await openApp(page, {
+    history: [scan('Kept', {}, { place: { store: 'Book Off Akiba', lat: 35.7, lng: 139.77, accuracy: 12 }, serverJob: { id: 'j1' } })],
+    settings: { geminiKey: 'AIzaGEMINI9999', serverUrl: 'https://script.google.com/macros/s/X/exec', serverSecret: 'shh', telegram: { token: '123:ABC', chat: '42' }, ntfyTopic: 'mine', ntfyToken: 'tk' },
+  });
+  await page.evaluate(async () => {
+    const db = await new Promise((res) => { const r = indexedDB.open('kaimono', 1); r.onupgradeneeded = () => r.result.createObjectStore('images'); r.onsuccess = () => res(r.result); });
+    await new Promise((res) => { const t = db.transaction('images', 'readwrite'); t.objectStore('images').put('MAIN', 'Kept'); t.oncomplete = res; });
+  });
+  await page.click('#settingsBtn');
+  const [download] = await Promise.all([page.waitForEvent('download'), page.click('#testExportBtn')]);
+  expect(download.suggestedFilename()).toMatch(/^kaimono-test-scans-/);
+  const file = testInfo.outputPath('test.json');
+  await download.saveAs(file);
+  const text = require('fs').readFileSync(file, 'utf8');
+  for (const secret of ['"K"', 'AIza', 'script.google', 'shh', '123:ABC', 'mine', '"tk"', '35.7', '139.77', 'serverJob']) expect(text).not.toContain(secret);
+  const out = JSON.parse(text);
+  expect(out.purpose).toBe('test');
+  expect(Object.keys(out.data)).toEqual(['kc.history']);
+  expect(JSON.parse(out.data['kc.history'])[0].place).toEqual({ store: 'Book Off Akiba' });
+  expect(out.images).toEqual({ Kept: 'MAIN' });
+});

@@ -3,7 +3,7 @@
 // lives in localStorage on the user's device only.
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.10.30-1';
+const APP_VERSION = '2026.10.30-2';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -58,6 +58,10 @@ const settings = {
   get textSize() { return store.get('textSize', 'default'); },
   get accent() { return store.get('accent', 'indigo'); },
   get priceFirst() { return store.get('priceFirst', 'rm'); }, // rm | yen
+  // Resale costs. Malaysian cards add about 1% (CIMB, HSBC) to 2.25% (Maybank) on foreign spend.
+  get fxFee() { return store.get('fxFee', 2); },
+  get sellFee() { return store.get('sellFee', 0); },
+  get extraCost() { return store.get('extraCost', 0); },
 };
 
 // Accent colours: [text/icon colour, filled-button colour, text on filled buttons], light then dark.
@@ -559,6 +563,44 @@ async function translate(text) {
   return { translation: t.translatedText || '', sourceLang: t.detectedSourceLanguage || '' };
 }
 
+// ---------- barcodes ----------
+// JAN/EAN-13, EAN-8 and UPC-A numbers in the tag text, kept only if the check digit is right.
+// Printed numbers are often grouped ("4 902370 548495"), so groups split by one space or hyphen are joined.
+
+function gtinValid(code) {
+  const d = [...code].map(Number);
+  const check = d.pop();
+  const sum = d.reverse().reduce((t, n, i) => t + n * (i % 2 ? 1 : 3), 0);
+  return (10 - (sum % 10)) % 10 === check;
+}
+
+function findBarcodes(text) {
+  const found = [];
+  // Each run of digit groups ("¥3,980 4 902370 548495" gives 980, 4, 902370, 548495) is tried as
+  // every stretch of whole neighbouring groups, so a price or phone number next to it doesn't hide it.
+  for (const run of String(text || '').match(/\d+(?:[ -]\d+)*/g) || []) {
+    const groups = run.split(/[ -]/);
+    for (let i = 0; i < groups.length; i += 1) {
+      let code = '';
+      for (let j = i; j < groups.length && code.length < 13; j += 1) {
+        code += groups[j];
+        // 13-digit codes starting with 2 are the shop's own stock labels (Book Off, Hard Off): they find nothing online.
+        // EAN-8 only as one unbroken number: joined short groups are usually dates or prices.
+        if (![8, 12, 13].includes(code.length) || (code.length === 8 && j > i) || /^0+$/.test(code) || (code.length === 13 && code[0] === '2') || !gtinValid(code) || found.includes(code)) continue;
+        found.push(code);
+      }
+    }
+  }
+  // Japanese JAN codes (45, 49) first, then other 13-digit, then the rest.
+  const rank = (c) => (/^4[59]/.test(c) && c.length === 13 ? 0 : c.length === 13 ? 1 : 2);
+  return found.sort((a, b) => rank(a) - rank(b));
+}
+
+const BARCODE_RULES = (codes) => `BARCODE: a barcode number (JAN/EAN-13, EAN-8 or UPC-A: 8, 12 or 13 digits printed under the bars; Japanese JAN codes start with 45 or 49) pins down the exact product and variant. ${codes.length
+  ? `These barcode numbers were found in the text: ${codes.join(', ')}. Search the first one (in quotes) before anything else`
+  : 'If you can read one in the OCR text or the photo, search it (in quotes) before anything else'}, and trust what it identifies over a visual guess. Put the number you used in "barcode". Ignore barcodes that are the shop's own stock labels (they find nothing). In "identified_by" say what pinned the product down: "barcode", "product code", "label text" or "appearance".
+`;
+
 const CLOTHES_RULES = `CLOTHES: this is clothing, shoes, a bag or another fashion item. Identify it from the whole piece as much as from any text: logos, label and tag wording, product or style numbers (Uniqlo, GU and Muji print one on the tag), collaboration names, distinctive design or print, hardware such as zips and buttons, and fabric. Read the size from the size label or tag and give the rough Malaysian/UK equivalent (Japanese sizes often run a size smaller). Read the main material from the care label if shown.
 For Malaysian prices check the brand's own Malaysian online store if it has one (e.g. uniqlo.com/my), Zalora Malaysia (zalora.com.my), and official brand stores on Shopee and Lazada Malaysia for new; Carousell Malaysia for used. CeX does not sell clothes: return null for cex_my. For second-hand pieces list visible wear (stains, pilling, fading, holes, worn soles) as condition issues, and add a medium-severity issue if anything suggests it may not be genuine. In my_compat give one "Size" entry with the size conversion (status "warn" if it may fit small) instead of voltage or region checks.
 MATCHING CLOTHES: a listing is only the same item if it shows the same product or style code, or clearly the same design: the same model name, the same colourway, and the same prints, logos, embroidery and details. Brand plus garment type is NOT a match: an "adidas MA-1 bomber" in olive with a big ORIGINALS print is a different item from a plain navy one, and so is another season's version. Search by the product code first (e.g. "AY9150"), then brand + model name + colour. For each listing set "exact_model" true only when the code or the full design matches, and say how in "match_note". Base my_new and my_used only on exact matches; if you can only find similar items, list them with exact_model false, use them for the figures, and set "prices_are_similar": true in the clothing key. Put the product code in search_query when there is one.
@@ -566,6 +608,7 @@ Add a "clothing" key to the JSON: { "size_on_tag": "size as printed or null", "s
 `;
 
 function buildPrompt({ ocrText, webGuess, secondHand, focus, override, quick, photos = 1, clothes = false }) {
+  const codes = ocrText && !ocrText.includes('{{') ? findBarcodes(ocrText) : [];
   return `You are helping a Malaysian shopper decide whether an item is worth buying at the price shown, compared with buying it in Malaysia. They are usually in a shop in Japan, but may be shopping in Malaysia itself (a shop, a market, or a screenshot of a Carousell, Shopee, Mudah or Facebook listing) or in another country.
 
 ${photos > 1
@@ -577,7 +620,7 @@ ${ocrText || '(none detected)'}
 """
 Google's visual best guess for the photo: "${webGuess || 'none'}"
 ${focus ? `\nThe photo shows a whole shelf with several products. Evaluate ONLY this one: "${focus.name}"${focus.yen ? `, priced ${yen(focus.yen)}` : ''}. Ignore every other product in the photo.\n` : ''}${override ? `\nThe shopper has checked the box and confirmed the exact product is: "${override}". Treat that as certain and price that exact model.\n` : ''}${secondHand ? '\nThe shopper is looking at a second-hand item (e.g. Hard Off, 2nd Street or Book Off in Japan, or a used listing). When searching Malaysia, prioritise second-hand listings in similar condition.\n' : ''}
-${quick ? 'QUICK MODE: keep this fast. Only search Shopee and Carousell Malaysia. Skip CeX, Mercari, Yahoo Auctions and the Malaysia compatibility check, and return null or empty lists for cex_my, jp_used_yen and my_compat.\n' : ''}${clothes ? CLOTHES_RULES : ''}
+${quick ? 'QUICK MODE: keep this fast. Only search Shopee and Carousell Malaysia. Skip CeX, Mercari, Yahoo Auctions and the Malaysia compatibility check, and return null or empty lists for cex_my, jp_used_yen and my_compat.\n' : ''}${BARCODE_RULES(codes)}${clothes ? CLOTHES_RULES : ''}
 Tasks:
 1. Identify the exact product: brand, model, size or capacity, and above all the exact variant. Words like Reloaded, Pro, Lite, OLED, Slim, Edge, V2, Mk II, 2nd Gen, Digital Edition or a special edition usually mean a different product at a different price (e.g. "Victrix Pro BFG" and "Victrix Pro BFG Reloaded" are different controllers). Read these words from the box, tag or the product itself and say where you saw them. If the photo doesn't show enough to tell lookalike variants apart, say so and list them with how to tell them apart.
 2. Read the asking price and its currency from the photo or OCR text: ¥ or 円 = JPY, RM = MYR, S$ = SGD, NT$ = TWD, ₩ = KRW, ฿ = THB, HK$ = HKD, US$ = USD, and so on; use the shop's country if no symbol is shown. In Japan, if both tax-inclusive (税込) and tax-exclusive (税抜) prices are shown, use the tax-inclusive one and say whether the number includes Japan's 10% consumption tax. For a listing screenshot use the listed price. Use null if no price is visible.
@@ -603,6 +646,8 @@ Reply with only a JSON object inside a \`\`\`json code block, with exactly these
   "brand": "brand or null",
   "store_name": "shop or chain name if visible in the photo (e.g. HARD OFF, Bic Camera, Don Quijote), else null",
   "search_query": "best English query to type into Shopee or Carousell: brand + model + variant words",
+  "barcode": "the JAN/EAN/UPC number you searched, or null",
+  "identified_by": "barcode | product code | label text | appearance",
   "variant": "the exact variant, edition or generation (e.g. Reloaded, OLED, 2nd Gen), or null if there is none",
   "variant_evidence": "where you saw it, e.g. 'box says Reloaded', or null",
   "variant_confidence": "high | medium | low",
@@ -1011,6 +1056,25 @@ function foreignVerdict(entry) {
 // Short "deal" labels on top of Buy / Maybe / Skip: where the Japan price sits on the ladder of
 // Malaysian prices (lowest rung first), plus a note when Japan's own second-hand market is cheaper.
 // tone: profit (you could sell it on for more), good, plain, warn.
+// What buying it here really costs: the price, the card's foreign-spend fee (none when it's already
+// in RM) and any extra per item from Settings.
+function landedCost(entry, price) {
+  const card = curOf(entry) === 'MYR' ? 0 : (price * settings.fxFee) / 100;
+  const extra = settings.extraCost || 0;
+  return { total: price + card + extra, card, extra };
+}
+
+function costsSummary() {
+  return [`${settings.fxFee}% card`, settings.sellFee ? `${settings.sellFee}% selling` : null, settings.extraCost ? `RM ${settings.extraCost} extra` : null].filter(Boolean).join(' · ');
+}
+
+// What the MY used figure rests on: sold listings show what people paid, asking prices run high.
+function usedEvidence(entry) {
+  const ls = listingsFor(entry, 'used').filter((l) => listingMatch(entry, l) !== 'similar');
+  if (!ls.length) return null;
+  return ls.filter((l) => l.sold).length * 2 >= ls.length ? 'sold' : 'asking';
+}
+
 function dealTags(entry) {
   const jp = japanPrice(entry).rm;
   if (!jp || !entry.ai) return [];
@@ -1018,28 +1082,35 @@ function dealTags(entry) {
   const cex = cexFor(entry);
   const myUsed = rangeValue(entry.ai.my_used);
   const myNew = rangeValue(entry.ai.my_new);
+  const cost = landedCost(entry, jp);
+  const paid = cost.total;
+  // Reselling on a platform loses its cut; CeX's offers are what you get.
+  const resale = myUsed ? myUsed * (1 - settings.sellFee / 100) : null;
   const whole = (x) => `RM ${Math.round(x).toLocaleString('en-GB')}`;
-  const more = (x) => whole(x - jp);
+  const more = (x) => whole(x - paid);
+  const extras = [cost.card ? `${whole(cost.card)} card fee` : null, cost.extra ? `${whole(cost.extra)} extra` : null].filter(Boolean);
+  const costNote = extras.length ? ` It costs you ${whole(paid)} with the ${extras.join(' and ')}.` : '';
+  const evidence = { sold: 'sold prices', asking: 'asking prices, sold ones usually go for less' }[usedEvidence(entry)] || 'asking prices';
   const ladder = [
-    [cex.cash, () => ({ key: 'cex-flip', tone: 'profit', label: `CeX pays ${more(cex.cash)} more`, short: `CeX +${more(cex.cash)}`, detail: `CeX Malaysia buys it for ${rm(cex.cash)} cash, more than the ${rm(jp)} you'd pay here.` })],
-    [cex.voucher, () => ({ key: 'cex-voucher', tone: 'profit', label: `CeX voucher ${more(cex.voucher)} more`, short: `Voucher +${more(cex.voucher)}`, detail: `CeX Malaysia gives ${rm(cex.voucher)} in voucher for it.` })],
-    [myUsed, () => ({ key: 'resell', tone: 'profit', label: `Resells for ${more(myUsed)} more`, short: `Resell +${more(myUsed)}`, detail: `It goes for about ${rm(myUsed)} second-hand in Malaysia, above the ${rm(jp)} price here.` })],
-    [cex.sell, () => ({ key: 'under-cex', tone: 'good', label: `${more(cex.sell)} under CeX`, short: 'Under CeX', detail: `CeX Malaysia sells it used for ${rm(cex.sell)}.` })],
-    [myNew, () => ({ key: 'under-new', tone: 'plain', label: `${more(myNew)} under MY new`, short: `${more(myNew)} off new`, detail: `New in Malaysia it's about ${rm(myNew)}.` })],
+    [cex.cash, () => ({ key: 'cex-flip', tone: 'profit', label: `${more(cex.cash)} profit at CeX`, short: `CeX +${more(cex.cash)}`, detail: `CeX Malaysia's cash offer is ${rm(cex.cash)}, a firm price.${costNote}` })],
+    [cex.voucher, () => ({ key: 'cex-voucher', tone: 'profit', label: `${more(cex.voucher)} profit in CeX voucher`, short: `Voucher +${more(cex.voucher)}`, detail: `CeX Malaysia offers ${rm(cex.voucher)} in voucher.${costNote}` })],
+    [resale, () => ({ key: 'resell', tone: 'profit', label: `${more(resale)} profit reselling`, short: `Resell +${more(resale)}`, detail: `Used ones go for about ${rm(myUsed)} in Malaysia (${evidence})${settings.sellFee ? `, ${rm(resale)} after the ${settings.sellFee}% selling fee` : ''}.${costNote}` })],
+    [cex.sell, () => ({ key: 'under-cex', tone: 'good', label: `${more(cex.sell)} under CeX`, short: 'Under CeX', detail: `CeX Malaysia sells it used for ${rm(cex.sell)}.${costNote}` })],
+    [myNew, () => ({ key: 'under-new', tone: 'plain', label: `${more(myNew)} under MY new`, short: `${more(myNew)} off new`, detail: `New in Malaysia it's about ${rm(myNew)}.${costNote}` })],
   ];
   const tags = [];
-  // The lowest price that's still above the Japan price is the one that matters.
-  const hit = ladder.filter(([price]) => price && price > jp).sort((a, b) => a[0] - b[0])[0];
+  // The lowest price that's still above what it costs you is the one that matters.
+  const hit = ladder.filter(([price]) => price && price > paid).sort((a, b) => a[0] - b[0])[0];
   if (hit) tags.push(hit[1]());
-  else if (myNew) tags.push({ key: 'over-new', tone: 'warn', label: `${whole(jp - myNew)} over MY new`, short: 'Dearer here', detail: `New in Malaysia it's about ${rm(myNew)}.` });
+  else if (myNew) tags.push({ key: 'over-new', tone: 'warn', label: `${whole(paid - myNew)} over MY new`, short: 'Dearer here', detail: `New in Malaysia it's about ${rm(myNew)}.${costNote}` });
   // Resale profit: a used price at home above what you pay here, on top of the ladder answer.
-  if (hit && hit[1]().key !== 'resell' && myUsed && myUsed > jp && !tags.some((t) => t.tone === 'profit')) {
-    tags.push({ key: 'resell', tone: 'profit', label: `Resells for ${more(myUsed)} more`, short: `Resell +${more(myUsed)}`, detail: `It goes for about ${rm(myUsed)} second-hand in Malaysia.` });
+  if (hit && hit[1]().key !== 'resell' && resale && resale > paid && !tags.some((t) => t.tone === 'profit')) {
+    tags.push(ladder[2][1]());
   }
-  if (cex.sell && cex.sell < jp && myUsed && jp < myUsed) tags.push({ key: 'over-cex', tone: 'warn', label: `${whole(jp - cex.sell)} over CeX`, short: 'Over CeX', detail: `CeX Malaysia sells it used for ${rm(cex.sell)}.` });
-  const resale = jpUsedYen(entry);
-  if (resale && fx(entry) && resale * fx(entry) < jp * 0.85) {
-    tags.push({ key: 'mercari', tone: 'warn', label: 'Cheaper on Mercari', short: 'Mercari cheaper', detail: `Japan second-hand: about ${yen(resale)} (${rm(resale * fx(entry))}).` });
+  if (cex.sell && cex.sell < paid && myUsed && paid < myUsed) tags.push({ key: 'over-cex', tone: 'warn', label: `${whole(paid - cex.sell)} over CeX`, short: 'Over CeX', detail: `CeX Malaysia sells it used for ${rm(cex.sell)}.` });
+  const jpResale = jpUsedYen(entry);
+  if (jpResale && fx(entry) && jpResale * fx(entry) < jp * 0.85) {
+    tags.push({ key: 'mercari', tone: 'warn', label: 'Cheaper on Mercari', short: 'Mercari cheaper', detail: `Japan second-hand: about ${yen(jpResale)} (${rm(jpResale * fx(entry))}).` });
   }
   // A way to make money back comes first.
   return tags.sort((a, b) => (b.tone === 'profit') - (a.tone === 'profit'));
@@ -1410,6 +1481,10 @@ async function searchPrices(entry, images, update) {
 function applyAi(entry, ai, sources) {
   entry.ai = ai;
   entry.sources = sources;
+  const said = String(ai.barcode || '').replace(/\D/g, '');
+  const read = findBarcodes(entry.ocrText);
+  entry.barcode = [8, 12, 13].includes(said.length) && gtinValid(said) ? said : read[0] || null;
+  entry.byBarcode = Boolean(entry.barcode) && (ai.identified_by === 'barcode' || (read.includes(entry.barcode) && ai.identified_by !== 'appearance'));
   // A graded or 中古 tag means a used item even if the app was in New mode; compare it like for like.
   if (ai.condition?.is_used === true && !entry.secondHand && !entry.secondHandEdited) {
     entry.secondHand = true;
@@ -2978,6 +3053,8 @@ function renderSourceLines(entry) {
     $(sel).textContent = !show ? '' : onlySimilar ? 'Similar items only ›' : n ? `${n} listing${n > 1 ? 's' : ''}${flagged ? ' · check model' : ''} ›` : 'Sources ›';
     $(sel).classList.toggle('warn', flagged);
   }
+  const evidence = entry.ai ? usedEvidence(entry) : null;
+  $('#myUsedHead').textContent = evidence ? `MY used · ${evidence}` : 'MY used';
 }
 
 function openSources(kind) {
@@ -3218,6 +3295,8 @@ function renderResult(entry) {
   $('#resName').textContent = entry.ai?.product_name || entry.webGuess || (running.has(entry.id) ? 'Reading…' : 'Unidentified item');
   $('#resBrand').textContent = entry.ai?.brand || '';
   $('#resTime').textContent = clothingLine(entry) || dateFmt.format(entry.createdAt);
+  $('#resIdLine').hidden = !entry.byBarcode;
+  $('#resIdCode').textContent = entry.barcode || '';
 
   renderSteps(entry);
   $('#resError').hidden = entry.errors.length === 0;
@@ -3636,6 +3715,11 @@ function openSettings() {
   $('#ntfyInput').value = settings.ntfyTopic;
   $('#tgTokenInput').value = '';
   $('#backupStatus').textContent = '';
+  $('#fxFeeInput').value = settings.fxFee;
+  $('#sellFeeInput').value = settings.sellFee;
+  $('#extraCostInput').value = settings.extraCost;
+  $('#costsStatus').textContent = costsSummary();
+  $('#costsGroup').open = false;
   renderTelegramStatus();
   $('#serverTestResult').textContent = '';
   // Finished setup folds away; only what still needs doing starts open.
@@ -3655,6 +3739,10 @@ $('#saveSettingsBtn').addEventListener('click', () => {
   store.set('saveLocation', $('#saveLocationToggle').checked);
   store.set('autoInfo', $('#autoInfoToggle').checked);
   store.set('buzz', $('#buzzToggle').checked);
+  for (const [key, sel, max] of [['fxFee', '#fxFeeInput', 10], ['sellFee', '#sellFeeInput', 50], ['extraCost', '#extraCostInput', 100000]]) {
+    const v = toNum($(sel).value);
+    store.set(key, v == null ? 0 : Math.min(Math.max(v, 0), max));
+  }
   saveServerSettings();
   $('#settingsDialog').close();
   route();
@@ -3668,22 +3756,40 @@ $('#geminiKeyRemove').addEventListener('click', () => {
 // A home-screen app keeps its own storage, and removing it from the home screen wipes that storage.
 // Back up first (scans, photos, trips, settings, the scan server pairing), reinstall, then Restore.
 
-async function exportBackup() {
+// A test export keeps only the scans (allowlist, so a key added later can't leak) and drops GPS pins.
+const TEST_EXPORT_KEYS = ['kc.history', 'kc.picks'];
+
+async function exportBackup({ forTesting = false } = {}) {
   const data = {};
   for (let i = 0; i < localStorage.length; i += 1) {
     const k = localStorage.key(i);
-    if (k.startsWith('kc.')) data[k] = localStorage.getItem(k);
+    if (k.startsWith('kc.') && (!forTesting || TEST_EXPORT_KEYS.includes(k))) data[k] = localStorage.getItem(k);
+  }
+  if (forTesting && data['kc.history']) {
+    const scans = JSON.parse(data['kc.history']).map((e) => {
+      const { serverJob, ...rest } = e;
+      if (rest.place) {
+        const { lat, lng, accuracy, ...place } = rest.place;
+        rest.place = place;
+      }
+      return rest;
+    });
+    data['kc.history'] = JSON.stringify(scans);
   }
   const images = {};
   for (const k of (await imageDb.run('readonly', (st) => st.getAllKeys())) || []) images[k] = await imageDb.get(k);
-  const name = `kaimono-backup-${new Date().toISOString().slice(0, 10)}.json`;
-  const blob = new Blob([JSON.stringify({ app: 'kaimono', version: 1, at: Date.now(), data, images })], { type: 'application/json' });
+  const day = new Date().toISOString().slice(0, 10);
+  const name = forTesting ? `kaimono-test-scans-${day}.json` : `kaimono-backup-${day}.json`;
+  const backup = { app: 'kaimono', version: 1, at: Date.now(), data, images };
+  if (forTesting) backup.purpose = 'test';
+  const blob = new Blob([JSON.stringify(backup)], { type: 'application/json' });
   const file = new File([blob], name, { type: 'application/json' });
   const mb = (blob.size / 1e6).toFixed(1);
+  const done = forTesting ? `Exported (${mb} MB). No keys or locations in it.` : `Backed up (${mb} MB).`;
   if (navigator.canShare?.({ files: [file] })) {
     try {
       await navigator.share({ files: [file] });
-      return `Backed up (${mb} MB). Keep the file in Files.`;
+      return forTesting ? done : `${done} Keep the file in Files.`;
     } catch (e) {
       if (e.name === 'AbortError') return '';
     }
@@ -3692,7 +3798,7 @@ async function exportBackup() {
   document.body.append(a);
   a.click();
   a.remove();
-  return `Backed up (${mb} MB).`;
+  return done;
 }
 
 async function importBackup(file) {
@@ -3707,14 +3813,16 @@ async function importBackup(file) {
   return true;
 }
 
-$('#backupBtn').addEventListener('click', async () => {
-  $('#backupStatus').textContent = 'Preparing…';
-  try {
-    $('#backupStatus').textContent = await exportBackup();
-  } catch (e) {
-    $('#backupStatus').textContent = `Backup failed: ${e.message}`;
-  }
-});
+for (const [btn, forTesting] of [['#backupBtn', false], ['#testExportBtn', true]]) {
+  $(btn).addEventListener('click', async () => {
+    $('#backupStatus').textContent = 'Preparing…';
+    try {
+      $('#backupStatus').textContent = await exportBackup({ forTesting });
+    } catch (e) {
+      $('#backupStatus').textContent = `${forTesting ? 'Export' : 'Backup'} failed: ${e.message}`;
+    }
+  });
+}
 $('#restoreInput').addEventListener('change', async (e) => {
   const file = e.target.files?.[0];
   e.target.value = '';

@@ -1006,6 +1006,8 @@ div.history-item { cursor: default; }
   box-shadow: var(--shadow);
 }
 .budget-field { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-weight: 600; }
+.budget-field small { display: block; font-size: 12px; font-weight: 400; color: var(--muted); }
+.costs-group .rm-input input { width: 56px; text-align: right; }
 .rm-input {
   display: flex;
   align-items: center;
@@ -1291,6 +1293,7 @@ dialog.sheet[open] { animation: sheet-up 0.4s var(--ease) both; }
 
 .data-row { display: flex; align-items: center; gap: 8px; min-height: 48px; font-weight: 600; }
 .data-row > span { margin-right: auto; }
+.data-row small { display: block; font-weight: 400; font-size: 12px; }
 .data-group { padding-bottom: 6px; }
 #backupStatus:empty { display: none; }
 .place-row .link { text-decoration: none; }
@@ -1652,3 +1655,8 @@ dialog.camera::backdrop { background: #000; }
 .currency-pick select { position: absolute; inset: 0; width: 100%; opacity: 0; cursor: pointer; font-size: 16px; }
 /* Shopping in Malaysia: the asking price is already in RM, so no conversion line */
 .prices.local .price-main-rm .price-rm { display: none; }
+
+/* Barcode match under the product name */
+.id-line { display: flex; align-items: center; gap: 5px; white-space: nowrap; margin-top: 4px; font-size: 12px; font-weight: 600; color: var(--accent); }
+.id-line .i { width: 15px; height: 15px; flex: none; }
+.id-line span { font-weight: 400; color: var(--muted); font-variant-numeric: tabular-nums; }
