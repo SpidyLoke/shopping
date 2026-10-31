@@ -154,7 +154,7 @@ async function google(fetch, url, body, label, ms = 60000) {
 
 // Gemini is sometimes briefly overloaded ("high demand", 503, or a 429 that isn't about money).
 // Those pass: retry after a short wait, then try the lighter model once.
-export const busy = (e) => [429, 500, 503].includes(e.status) && !/prepay|credit|billing|quota exceeded for/i.test(e.message);
+export const busy = (e) => [429, 500, 503, 504].includes(e.status) && !/prepay|credit|billing|quota exceeded for/i.test(e.message);
 const RETRY_WAITS = [2000, 6000];
 const GEMINI_MS = 100000; // grounded search usually answers in 20 to 60 seconds
 const SCAN_BUDGET = 270000; // the scan function stops at 300 seconds
@@ -188,8 +188,11 @@ async function askGemini({ fetch, keys, model, fallbackModel, clock = Date.now, 
       d = await call(tries[i]);
       break;
     } catch (e) {
-      if (!busy(e) || i === tries.length - 1 || clock() + (RETRY_WAITS[i] || 0) + geminiMs > deadline) throw e;
-      if (RETRY_WAITS[i]) await sleep(RETRY_WAITS[i]);
+      // A call that hung (504) won't do better a second time: go straight to the lighter model.
+      const next = e.status === 504 && tries[tries.length - 1] !== tries[i] ? tries.length - 1 : i + 1;
+      if (!busy(e) || next >= tries.length || clock() + (RETRY_WAITS[i] || 0) + geminiMs > deadline) throw e;
+      if (e.status !== 504 && RETRY_WAITS[i]) await sleep(RETRY_WAITS[i]);
+      i = next - 1;
     }
   }
   const cand = d.candidates?.[0] || {};

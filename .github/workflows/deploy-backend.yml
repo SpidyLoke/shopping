@@ -191,6 +191,13 @@ jobs:
       - name: Deploy functions and database rules
         run: $FIREBASE deploy --only functions,firestore:rules --project "$PROJECT" --non-interactive --force
 
+      - name: Let the app call every function
+        run: |
+          for fn in scan ask result usage report feedback stats plans checkout portal stripeWebhook; do
+            gcloud functions add-invoker-policy-binding "$fn" --region="$REGION" --member=allUsers --project "$PROJECT" >/dev/null 2>&1 \
+              || echo "::warning::$fn: couldn't set public access"
+          done
+
       - name: Old scan results and counters delete themselves
         run: |
           for group in jobs ipDaily reports feedback events; do

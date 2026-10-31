@@ -125,6 +125,14 @@ if [ "$deployed" != true ]; then
 fi
 ok "Deployed"
 
+# A function made on a retry can be left without public access, and then the app is turned away
+# before it runs ("internal" in the app). The app's sign-in token is still checked inside each one.
+say "7b. Let the app call every function"
+for fn in scan ask result usage report feedback stats plans checkout portal stripeWebhook; do
+  gcloud functions add-invoker-policy-binding "$fn" --region="$REGION" --member=allUsers --project "$PROJECT" >/dev/null 2>&1 \
+    && echo "  $fn ✓" || warn "  $fn: couldn't set public access (it may not exist yet)"
+done
+
 say "8. Old scan results and counters delete themselves"
 for group in jobs ipDaily reports feedback events; do
   gcloud firestore fields ttls update expireAt --collection-group="$group" --enable-ttl --async --project "$PROJECT" >/dev/null 2>&1 || true

@@ -277,3 +277,22 @@ test('a Gemini call that hangs gives up with a clear message instead of holding 
   assert.match(out.geminiError, /no answer after 0.03s/);
   assert.equal(out.usage.used, 0, 'given back');
 });
+
+test('a Gemini call that hangs goes straight to the lighter model', async () => {
+  const { core, prompts } = await load();
+  const db = fakeDb();
+  const seen = [];
+  const fetch = async (url, opt) => {
+    if (url.startsWith('https://vision')) return json(200, { responses: [{ fullTextAnnotation: { text: '¥3,000' } }] });
+    const m = url.match(/models\/([^:]+)/)[1];
+    seen.push(m);
+    if (m === 'main') return new Promise((resolve, reject) => opt.signal.addEventListener('abort', () => reject(opt.signal.reason)));
+    return json(200, fenced({ product_name: 'from lite' }));
+  };
+  const deps = { db, fetch, prompts, keys: { vision: 'V', gemini: 'G' }, model: 'main', fallbackModel: 'lite', geminiMs: 30, sleep: async () => {}, limits: LIMITS };
+  const alive = setInterval(() => {}, 5);
+  const out = await core.runScan({ images: [IMG] }, { uid: 'u1', deps });
+  clearInterval(alive);
+  assert.deepEqual(seen, ['main', 'lite']);
+  assert.match(out.gemini.text, /from lite/);
+});
