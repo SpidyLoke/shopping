@@ -284,6 +284,14 @@ Optional. With it, people scan without their own Google keys: the backend (`func
 
 **Cost:** Gemini 3 Flash's Google Search grounding is billed per search query (about US$14 per 1,000 after a free monthly allowance), and a scan runs several, so roughly RM 0.20 to 0.40 a scan; Vision is about US$1.50 per 1,000 photos. Cached barcode scans skip the search.
 
+**Quickest: Google Cloud Shell (works on a phone).** Create the Firebase project, switch it to **Blaze**, tap **Authentication → Get started**, then open Cloud Shell (the `>_` button in the Firebase or Google Cloud console, with the project selected) and paste:
+
+```
+git clone https://github.com/SpidyLoke/shopping.git && cd shopping && bash scripts/cloud-shell-setup.sh
+```
+
+It does everything below (APIs, database, sign-in, API key, deploy, auto-delete, web app) as you, with no service account, and prints the web config to put in `firebase-config.js`. Run it again any time; it skips what's done.
+
 **Setting it up from a phone (once, about 20 minutes).** A GitHub Actions workflow (`.github/workflows/deploy-backend.yml`) does the parts that would need a computer.
 
 1. [Firebase console](https://console.firebase.google.com/) → **Create a project** (e.g. `kaimono-check`; note its **project ID**). Upgrade it to the **Blaze** (pay as you go) plan: Cloud Functions need it. In [Google Cloud → Billing → Budgets & alerts](https://console.cloud.google.com/billing/budgets), add a monthly budget with email alerts (e.g. RM 50).
