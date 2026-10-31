@@ -133,6 +133,22 @@ for fn in scan ask result usage report feedback stats plans checkout portal stri
     && echo "  $fn ✓" || warn "  $fn: couldn't set public access (it may not exist yet)"
 done
 
+# Call each function the way the app does, minus the sign-in: a working one answers "unauthenticated"
+# (401). 403 means Google blocks the app before the function runs; 404 means it doesn't exist.
+say "7c. Can the app reach each function?"
+blocked=0
+for fn in scan ask result usage report feedback stats plans checkout portal; do
+  code=$(curl -s -o /dev/null -w '%{http_code}' -m 20 -X POST "https://$REGION-$PROJECT.cloudfunctions.net/$fn" \
+    -H 'Content-Type: application/json' -H 'Origin: https://spidyloke.github.io' -d '{"data":{}}' || echo 000)
+  case "$code" in
+    401|400|200) echo "  $fn ✓ ($code)" ;;
+    403) warn "  $fn ✗ blocked (403)"; blocked=1 ;;
+    404) warn "  $fn ✗ missing (404)"; blocked=1 ;;
+    *) warn "  $fn ? answered $code"; blocked=1 ;;
+  esac
+done
+[ "$blocked" = 0 ] && ok "Every function answers" || warn "Some functions can't be reached: screenshot this for Claude"
+
 say "8. Old scan results and counters delete themselves"
 for group in jobs ipDaily reports feedback events; do
   gcloud firestore fields ttls update expireAt --collection-group="$group" --enable-ttl --async --project "$PROJECT" >/dev/null 2>&1 || true
