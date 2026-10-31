@@ -125,6 +125,10 @@ done
 ok "Auto-delete set"
 
 say "9. The app's web config"
+if ! grep -q 'export const FIREBASE = null' firebase-config.js; then
+  ok "The app is already connected (firebase-config.js). All done."
+  exit 0
+fi
 app=$($FIREBASE apps:list WEB --project "$PROJECT" --json | node .github/scripts/firebase-web-config.mjs app-id)
 if [ -z "$app" ]; then
   app=$($FIREBASE apps:create WEB "Kaimono Check" --project "$PROJECT" --json | node .github/scripts/firebase-web-config.mjs created-id)
