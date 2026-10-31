@@ -7,7 +7,7 @@
 //   DAILY_SCANS   most scans the whole app runs in a day, so a bug or abuse can't run up the bill (default 500)
 //   PER_IP_SCANS  most scans from one connection in a day (default 40)
 //   FREE_ASKS, PRO_ASKS, DAILY_ASKS  the same for questions (Worth it, Ask, shelf, Compare): 40, 1000, 2000
-//   GEMINI_MODEL  (default gemini-flash-latest)
+//   GEMINI_MODEL  (default gemini-flash-latest); GEMINI_FALLBACK_MODEL when it's overloaded (gemini-flash-lite-latest)
 //   CACHE_DAYS    how long a barcode's market prices are reused (default 7)
 //   PASS_SCANS, PASS_DAYS  what a trip pass gives (default 60 scans over 14 days)
 //   APP_URL       where Stripe sends people back to (default https://spidyloke.github.io/shopping/)
@@ -40,6 +40,7 @@ const FREE_ASKS = defineInt('FREE_ASKS', { default: 40 });
 const PRO_ASKS = defineInt('PRO_ASKS', { default: 1000 });
 const DAILY_ASKS = defineInt('DAILY_ASKS', { default: 2000 });
 const GEMINI_MODEL = defineString('GEMINI_MODEL', { default: 'gemini-flash-latest' });
+const GEMINI_FALLBACK_MODEL = defineString('GEMINI_FALLBACK_MODEL', { default: 'gemini-flash-lite-latest' });
 const CACHE_DAYS = defineInt('CACHE_DAYS', { default: 7 });
 const PASS_SCANS = defineInt('PASS_SCANS', { default: 60 });
 const PASS_DAYS = defineInt('PASS_DAYS', { default: 14 });
@@ -74,6 +75,7 @@ const deps = () => ({
   prompts,
   keys: { vision: VISION_KEY.value(), gemini: GEMINI_KEY.value() },
   model: GEMINI_MODEL.value(),
+  fallbackModel: GEMINI_FALLBACK_MODEL.value(),
   cacheDays: CACHE_DAYS.value(),
   limits: {
     free: FREE_SCANS.value(), pro: PRO_SCANS.value(), pass: PASS_SCANS.value(), daily: DAILY_SCANS.value(), perIp: PER_IP_SCANS.value(),

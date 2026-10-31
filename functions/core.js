@@ -139,9 +139,14 @@ function checkInput(input) {
 async function google(fetch, url, body, label) {
   const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(`${label}: ${data.error?.message || `HTTP ${res.status}`}`);
+  if (!res.ok) throw Object.assign(new Error(`${label}: ${data.error?.message || `HTTP ${res.status}`}`), { status: res.status });
   return data;
 }
+
+// Gemini is sometimes briefly overloaded ("high demand", 503, or a 429 that isn't about money).
+// Those pass: retry after a short wait, then try the lighter model once.
+export const busy = (e) => [429, 500, 503].includes(e.status) && !/prepay|credit|billing|quota exceeded for/i.test(e.message);
+const RETRY_WAITS = [2000, 6000];
 
 async function readPhotos({ fetch, keys }, images) {
   const d = await google(fetch, `https://vision.googleapis.com/v1/images:annotate?key=${encodeURIComponent(keys.vision)}`, {
@@ -160,10 +165,21 @@ async function readPhotos({ fetch, keys }, images) {
   };
 }
 
-async function askGemini({ fetch, keys, model }, images, prompt, search) {
+async function askGemini({ fetch, keys, model, fallbackModel, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }, images, prompt, search) {
   const body = { contents: [{ role: 'user', parts: [...images.map((data) => ({ inline_data: { mime_type: 'image/jpeg', data } })), { text: prompt }] }] };
   if (search) body.tools = [{ google_search: {} }];
-  const d = await google(fetch, `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(keys.gemini)}`, body, 'Gemini');
+  const call = (m) => google(fetch, `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(m)}:generateContent?key=${encodeURIComponent(keys.gemini)}`, body, 'Gemini');
+  const tries = [model, model, model, ...(fallbackModel && fallbackModel !== model ? [fallbackModel] : [])];
+  let d;
+  for (let i = 0; i < tries.length; i += 1) {
+    try {
+      d = await call(tries[i]);
+      break;
+    } catch (e) {
+      if (!busy(e) || i === tries.length - 1) throw e;
+      if (RETRY_WAITS[i]) await sleep(RETRY_WAITS[i]);
+    }
+  }
   const cand = d.candidates?.[0] || {};
   const text = (cand.content?.parts || []).filter((p) => !p.thought).map((p) => p.text || '').join('');
   if (!text) throw new Error(`Gemini returned no answer (${cand.finishReason || d.promptFeedback?.blockReason || 'no reason given'}).`);

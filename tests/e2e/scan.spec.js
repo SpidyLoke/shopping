@@ -129,3 +129,16 @@ test('no barcode line when the product was matched by its looks', async ({ page 
   await expect(page.locator('#resName')).toHaveText('Sony DualSense Controller');
   await expect(page.locator('#resIdLine')).toBeHidden();
 });
+
+test('Gemini briefly overloaded: the scan waits and retries instead of failing', async ({ page }) => {
+  const calls = await mockApis(page);
+  let busy = 1;
+  await page.route('https://generativelanguage.googleapis.com/**', (r) => (busy-- > 0
+    ? r.fulfill({ status: 503, json: { error: { message: 'This model is currently experiencing high demand.' } } })
+    : r.fallback()));
+  await openApp(page);
+  await scanFromGallery(page);
+  await expect(page.locator('#resName')).toHaveText('Sony DualSense Controller');
+  await expect(page.locator('#resError')).toBeHidden();
+  expect(calls.gemini).toHaveLength(1); // the one that got through
+});

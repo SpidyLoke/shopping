@@ -197,3 +197,32 @@ test('home country: the prompt, a separate barcode cache and CeX only where it c
   assert.ok(odd.cached, 'anything odd counts as Malaysia, so the Malaysian cache answers it');
   assert.equal([...db.docs.keys()].filter((k) => k.startsWith('products/')).length, 2);
 });
+
+test('Gemini overloaded: retried, then the lighter model; out of credit is not retried', async () => {
+  const { core, prompts } = await load();
+  const db = fakeDb();
+  const seen = [];
+  let fail = 3;
+  const fetch = async (url, opt) => {
+    if (url.startsWith('https://vision')) return json(200, { responses: [{ fullTextAnnotation: { text: '¥3,000' } }] });
+    seen.push(url.match(/models\/([^:]+)/)[1]);
+    if (fail > 0) {
+      fail -= 1;
+      return json(503, { error: { message: 'This model is currently experiencing high demand.' } });
+    }
+    return json(200, fenced({ product_name: 'x' }));
+  };
+  const deps = { db, fetch, prompts, keys: { vision: 'V', gemini: 'G' }, model: 'main', fallbackModel: 'lite', sleep: async () => {}, limits: LIMITS };
+  const out = await core.runScan({ images: [IMG] }, { uid: 'u1', deps });
+  assert.match(out.gemini.text, /"x"/);
+  assert.deepEqual(seen, ['main', 'main', 'main', 'lite']);
+  assert.equal(out.usage.used, 1);
+
+  seen.length = 0;
+  const broke = { ...deps, fetch: async (url) => (url.startsWith('https://vision')
+    ? json(200, { responses: [{ fullTextAnnotation: { text: '¥3,000' } }] })
+    : (seen.push(1), json(429, { error: { message: 'Your prepayment credits are depleted.' } }))) };
+  const out2 = await core.runScan({ images: [IMG] }, { uid: 'u2', deps: broke });
+  assert.match(out2.geminiError, /prepayment/);
+  assert.equal(seen.length, 1, 'no retries when the account is out of credit');
+});

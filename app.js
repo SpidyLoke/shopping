@@ -6,7 +6,7 @@ import { buildPrompt, findBarcodes, gtinValid, MARKETS, marketFor } from './prom
 import { FIREBASE } from './firebase-config.js';
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.10.31-1';
+const APP_VERSION = '2026.10.31-2';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -565,9 +565,14 @@ async function googlePost(url, body, service, key = settings.apiKey, timeoutMs =
   } catch {
     // non-JSON error body
   }
-  if (!res.ok) throw new Error(`${service}: ${data?.error?.message || `HTTP ${res.status}`}`);
+  if (!res.ok) throw Object.assign(new Error(`${service}: ${data?.error?.message || `HTTP ${res.status}`}`), { status: res.status });
   return data;
 }
+
+// Gemini is sometimes briefly overloaded ("high demand", 503, or a 429 that isn't about money): wait
+// and retry, then try the lighter model once (as the backend does).
+const FALLBACK_MODEL = 'gemini-flash-lite-latest';
+const geminiBusy = (e) => [429, 500, 503].includes(e.status) && !/prepay|credit|billing|quota exceeded for/i.test(e.message);
 
 // Reads every photo of the item in one request; the text and Google's guesses are pooled.
 // ---------- Kaimono backend (Firebase) ----------
@@ -749,13 +754,25 @@ async function callGemini(images, prompt, { search = true, raw = false } = {}) {
   parts.push({ text: prompt });
   const body = { contents: [{ role: 'user', parts }] };
   if (search) body.tools = [{ google_search: {} }];
-  const data = await googlePost(
-    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(settings.model)}:generateContent`,
+  const call = (model) => googlePost(
+    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
     body,
     'Gemini',
     settings.geminiKey,
     search ? 90000 : 60000, // grounded search regularly takes 20-40s
   );
+  const tries = [settings.model, settings.model, settings.model, ...(settings.model !== FALLBACK_MODEL ? [FALLBACK_MODEL] : [])];
+  const waits = [2000, 6000];
+  let data;
+  for (let i = 0; i < tries.length; i += 1) {
+    try {
+      data = await call(tries[i]);
+      break;
+    } catch (e) {
+      if (!geminiBusy(e) || i === tries.length - 1) throw e;
+      if (waits[i]) await new Promise((r) => setTimeout(r, waits[i]));
+    }
+  }
   const cand = data.candidates?.[0];
   const text = (cand?.content?.parts || []).filter((p) => !p.thought).map((p) => p.text || '').join('');
   if (!text) {
