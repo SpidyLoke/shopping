@@ -226,3 +226,54 @@ test('Gemini overloaded: retried, then the lighter model; out of credit is not r
   assert.match(out2.geminiError, /prepayment/);
   assert.equal(seen.length, 1, 'no retries when the account is out of credit');
 });
+
+const APPLE = { endpoint: 'https://web.push.apple.com/QAbc123', keys: { p256dh: 'B'.repeat(40), auth: 'a'.repeat(22) } };
+
+test('notifications: only real push services are saved; a finished scan sends one; a dead one is forgotten', async () => {
+  const { core, db, deps, scan } = await setup();
+  await assert.rejects(core.savePushSubscription({ subscription: { ...APPLE, endpoint: 'https://evil.example/x' } }, { uid: 'u1', deps }), (e) => e.code === 'invalid-argument');
+  await core.savePushSubscription({ subscription: APPLE }, { uid: 'u1', deps });
+  assert.equal(db.docs.get('users/u1').push.endpoint, APPLE.endpoint);
+  const sent = [];
+  deps.push = async (sub, payload) => { sent.push({ sub, payload }); };
+  await scan({ notify: true, entryId: 'e42', jobId: 'j1' });
+  assert.equal(sent.length, 1);
+  assert.deepEqual(sent[0].payload, { title: 'Scan ready', body: 'Sony DualSense: tap to see if it\'s worth buying.', tag: 'e42', url: '#/scan/e42' });
+  await scan({ jobId: 'j2' });
+  assert.equal(sent.length, 1, 'no notification unless asked for');
+  deps.push = async () => { throw Object.assign(new Error('gone'), { statusCode: 410 }); };
+  await scan({ notify: true, entryId: 'e43', jobId: 'j3' });
+  assert.equal(db.docs.get('users/u1').push, null);
+});
+
+test('Notify me while a scan is already running', async () => {
+  const { core, db, deps, scan } = await setup();
+  await core.savePushSubscription({ subscription: APPLE }, { uid: 'u1', deps });
+  const sent = [];
+  deps.push = async (sub, payload) => { sent.push(payload); };
+  const fetch0 = deps.fetch;
+  deps.fetch = async (url, opt) => {
+    if (url.startsWith('https://generativelanguage')) assert.deepEqual(await core.requestNotify({ jobId: 'run1', entryId: 'e7' }, { uid: 'u1', deps }), { status: 'running' });
+    return fetch0(url, opt);
+  };
+  await scan({ jobId: 'run1', entryId: 'e7' });
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].tag, 'e7');
+  assert.deepEqual(await core.requestNotify({ jobId: 'run1' }, { uid: 'u1', deps }), { status: 'done' });
+  assert.deepEqual(await core.requestNotify({ jobId: 'run1' }, { uid: 'someone', deps }), { status: 'unknown' });
+});
+
+test('a Gemini call that hangs gives up with a clear message instead of holding the scan', async () => {
+  const { core, prompts } = await load();
+  const db = fakeDb();
+  const fetch = async (url, opt) => {
+    if (url.startsWith('https://vision')) return json(200, { responses: [{ fullTextAnnotation: { text: '¥3,000' } }] });
+    return new Promise((resolve, reject) => opt.signal.addEventListener('abort', () => reject(opt.signal.reason)));
+  };
+  const deps = { db, fetch, prompts, keys: { vision: 'V', gemini: 'G' }, model: 'main', fallbackModel: 'lite', geminiMs: 30, sleep: async () => {}, limits: LIMITS };
+  const alive = setInterval(() => {}, 5); // AbortSignal.timeout's timers don't hold a script open (a server is always open)
+  const out = await core.runScan({ images: [IMG] }, { uid: 'u1', deps });
+  clearInterval(alive);
+  assert.match(out.geminiError, /no answer after 0.03s/);
+  assert.equal(out.usage.used, 0, 'given back');
+});

@@ -6,7 +6,7 @@ import { buildPrompt, findBarcodes, gtinValid, MARKETS, marketFor } from './prom
 import { FIREBASE } from './firebase-config.js';
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.10.31-3';
+const APP_VERSION = '2026.10.31-4';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -42,6 +42,8 @@ const settings = {
   // the default for anyone who already has them.
   // Home country: where prices are compared and things resold (prompt.js MARKETS).
   get homeMarket() { return MARKETS[store.get('homeMarket', 'MY')] ? store.get('homeMarket', 'MY') : 'MY'; },
+  // "Your scan is ready" notifications (Web Push from the backend), set up on this phone.
+  get notify() { return store.get('notify', false); },
   get scanWith() { return store.get('scanWith', '') || (this.apiKey ? 'keys' : 'cloud'); },
   // Google won't let a restricted key cover Gemini plus other APIs, so Gemini can have its own key.
   get geminiKey() { return store.get('geminiKey', '') || this.apiKey; },
@@ -641,6 +643,69 @@ async function cloudCall(name, data, timeout = 60000) {
   }
 }
 
+// ---------- "your scan is ready" notifications ----------
+// iPhones allow Web Push only for apps on the Home Screen (iOS 16.4+), after a tap that asks.
+
+function pushSupported() {
+  return Boolean(FIREBASE) && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+}
+
+const notificationsOn = () => settings.notify && pushSupported() && Notification.permission === 'granted';
+
+function vapidBytes(b64) {
+  const s = atob((b64 + '='.repeat((4 - (b64.length % 4)) % 4)).replace(/-/g, '+').replace(/_/g, '/'));
+  return Uint8Array.from(s, (c) => c.charCodeAt(0));
+}
+
+async function enableNotifications() {
+  if (!pushSupported()) {
+    const c = installContext();
+    if (c.ios && !c.standalone) {
+      alert('On iPhone, notifications only work once Kaimono is on your Home Screen. Add it first, then turn this on in the app.');
+      openInstallGuide();
+    } else alert('This browser can\'t show notifications from Kaimono.');
+    return false;
+  }
+  if (await Notification.requestPermission() !== 'granted') {
+    alert('Notifications are off for Kaimono. Turn them on in Settings → Notifications → Kaimono, then try again.');
+    return false;
+  }
+  try {
+    const { vapidPublic } = await cloudCall('usage', {}, 15000);
+    if (!vapidPublic) throw new Error('the backend needs updating (run the setup again)');
+    const reg = await navigator.serviceWorker.ready;
+    const sub = (await reg.pushManager.getSubscription()) || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: vapidBytes(vapidPublic) });
+    await cloudCall('pushSubscribe', { subscription: sub.toJSON() }, 15000);
+    store.set('notify', true);
+    return true;
+  } catch (e) {
+    alert(`Couldn't turn notifications on: ${e.message}`);
+    return false;
+  }
+}
+
+async function disableNotifications() {
+  store.set('notify', false);
+  try {
+    const reg = await navigator.serviceWorker?.getRegistration();
+    await (await reg?.pushManager.getSubscription())?.unsubscribe();
+    await cloudCall('pushSubscribe', { remove: true }, 15000);
+  } catch {
+    // off on this phone either way
+  }
+}
+
+// A result seen in the app doesn't need its notification any more.
+function clearScanNotification(tag) {
+  const close = () => navigator.serviceWorker?.getRegistration()
+    .then((reg) => reg?.getNotifications({ tag }))
+    .then((list) => list?.forEach((n) => n.close()))
+    .catch(() => {});
+  if (document.visibilityState !== 'visible') return;
+  close();
+  setTimeout(close, 4000);
+}
+
 function saveUsage(u) {
   store.set('cloudUsage', { ...(store.get('cloudUsage') || {}), ...u, at: Date.now() });
   renderQuota();
@@ -687,6 +752,8 @@ function renderQuota() {
   $('#upgradeBtn').textContent = plan === 'pass' ? 'Extend' : 'Upgrade';
   $('#manageBtn').hidden = plan !== 'pro';
   $('#statsBtn').hidden = !u.owner;
+  $('#notifyRow').hidden = !cloudOn() || !FIREBASE;
+  $('#notifyToggle').checked = notificationsOn();
   // Quoted when asking for the backend's record of this install to be deleted (privacy policy).
   const uid = cloudOn() ? store.get('cloudUid') : null;
   $('#accountId').hidden = !uid;
@@ -1684,6 +1751,8 @@ function cloudJobRequest(entry, images) {
     override: entry.override || null,
     focus: entry.focus ? { name: entry.focus.name, yen: entry.focus.yen ?? null } : null,
     market: marketOf(entry).code,
+    entryId: entry.id,
+    notify: Boolean(entry.serverJob.notify),
   };
 }
 
@@ -1698,7 +1767,7 @@ function jobCall(entry, body, timeoutMs) {
 async function runScanOnServer(entry, images, { quiet = false } = {}) {
   running.set(entry.id, entry);
   entry.errors = [];
-  entry.serverJob = { id: uid(), sentAt: Date.now(), done: false, ...(cloudOn() ? { cloud: true } : {}) };
+  entry.serverJob = { id: uid(), sentAt: Date.now(), done: false, ...(cloudOn() ? { cloud: true, notify: notificationsOn() } : {}) };
   if (entry.status.vision !== 'done') entry.status.vision = 'active';
   if (!['done', 'skipped'].includes(entry.status.translate)) entry.status.translate = 'active';
   entry.status.search = 'active';
@@ -1727,20 +1796,34 @@ async function runScanOnServer(entry, images, { quiet = false } = {}) {
 
 // While the photo uploads, ask the server whether it has started the job, so the app can say
 // when it's safe to close. The server marks a job "running" the moment it arrives.
+// Errors here used to be swallowed, so a backend that couldn't be reached looked like a slow scan
+// that never ended. Now, after a minute and a half of failed check-ins, the scan says why and stops.
+const RECEIPT_GIVE_UP_MS = 90000;
+
 function watchForReceipt(entry, jobId) {
   let stopped = false;
+  let lastError = null;
   const check = async () => {
-    if (stopped || entry.serverJob?.id !== jobId || entry.serverJob.received) return;
+    if (stopped || entry.serverJob?.id !== jobId || entry.serverJob.received || entry.serverJob.done) return;
     try {
       const r = await jobCall(entry, { action: 'result', jobId }, 8000);
+      lastError = null;
       if (!stopped && (r.status === 'running' || r.status === 'done') && entry.serverJob?.id === jobId) {
         entry.serverJob = { ...entry.serverJob, received: true };
         refresh(entry);
         navigator.vibrate?.(30);
         return;
       }
-    } catch {
-      // try again shortly
+    } catch (e) {
+      lastError = e.message;
+      if (e.final) {
+        giveUpServerJob(entry, e.message);
+        return;
+      }
+    }
+    if (!stopped && lastError && Date.now() - entry.serverJob.sentAt > RECEIPT_GIVE_UP_MS && entry.serverJob?.id === jobId) {
+      giveUpServerJob(entry, `Kaimono couldn't reach its server (${lastError.replace(/^Kaimono: /, '')}). Tap ↻ to try again.`);
+      return;
     }
     if (!stopped) setTimeout(check, 1500);
   };
@@ -1749,7 +1832,14 @@ function watchForReceipt(entry, jobId) {
 }
 
 async function applyServerResult(entry, out, { quiet = false } = {}) {
-  if (entry.serverJob?.done) return; // already collected (the request and a poll can both come back)
+  // Already collected (the request and a poll can both come back). A scan given up on while the
+  // backend couldn't be reached is still taken if its result turns up after all.
+  if (entry.serverJob?.done && !entry.serverJob.gaveUp) return;
+  if (entry.serverJob?.gaveUp) {
+    entry.errors = (entry.errors || []).filter((m) => !m.startsWith('Kaimono'));
+    entry.serverJob = { ...entry.serverJob, gaveUp: false };
+  }
+  clearScanNotification(entry.id);
   if (out.vision) {
     Object.assign(entry, out.vision);
     entry.status.vision = 'done';
@@ -1812,7 +1902,7 @@ function serverReport(job) {
 function giveUpServerJob(entry, message) {
   for (const k of Object.keys(entry.status)) if (entry.status[k] === 'active') entry.status[k] = 'failed';
   entry.errors.push(message);
-  entry.serverJob = { ...entry.serverJob, done: true };
+  entry.serverJob = { ...entry.serverJob, done: true, gaveUp: true };
   running.delete(entry.id);
   reportScanErrors(entry);
   refresh(entry);
@@ -1863,8 +1953,11 @@ async function checkServerJob(entry) {
         giveUpServerJob(entry, `Scan server: started the scan at ${clock(out.startedAt || entry.serverJob.sentAt)} but never finished it. Tap ↻ to try again.`);
       }
     }
-  } catch {
-    // offline or the server is busy: try again on the next tick
+  } catch (e) {
+    // Offline or the server is busy: try again on the next tick, but not forever.
+    if (entry.serverJob && !entry.serverJob.done && Date.now() - entry.serverJob.sentAt > 5 * 60 * 1000) {
+      giveUpServerJob(entry, `${entry.serverJob.cloud ? 'Kaimono' : 'Scan server'} couldn't be reached (${e.message.replace(/^(Kaimono|Scan server): /, '')}). Tap ↻ to try again.`);
+    }
   } finally {
     pendingPolls.delete(entry.id);
   }
@@ -3641,10 +3734,14 @@ function renderResultIn(entry) {
   const onServer = entry.serverJob && !entry.serverJob.done;
   $('#serverHint').hidden = !onServer;
   $('#serverHint').classList.toggle('received', Boolean(onServer && entry.serverJob.received));
+  const notifying = entry.serverJob?.notify && settings.notify;
   $('#serverHint').textContent = !onServer ? ''
     : entry.serverJob.cloud
-      ? (entry.serverJob.received ? 'Safe to close. The result will be here when you\'re back.' : 'Sending… Keep the app open.')
+      ? (entry.serverJob.received
+        ? (notifying ? 'Safe to close. You\'ll get a notification when it\'s ready.' : 'Safe to close. The result will be here when you\'re back.')
+        : 'Sending… Keep the app open for a moment.')
       : entry.serverJob.received ? 'Safe to close. You\'ll get a notification.' : 'Sending to your scan server. Keep the app open.';
+  $('#notifyMeBtn').hidden = !(onServer && entry.serverJob.cloud && !settings.notify && pushSupported());
   renderAsk(entry);
   $('#resName').textContent = entry.ai?.product_name || entry.webGuess || (running.has(entry.id) ? 'Reading…' : 'Unidentified item');
   $('#resBrand').textContent = entry.ai?.brand || '';
@@ -4629,6 +4726,20 @@ async function openStats() {
 }
 
 $('#statsBtn').addEventListener('click', openStats);
+$('#notifyToggle').addEventListener('change', async (e) => {
+  if (e.target.checked) e.target.checked = await enableNotifications();
+  else await disableNotifications();
+});
+$('#notifyMeBtn').addEventListener('click', async () => {
+  if (!(await enableNotifications())) return;
+  // The scan already running gets the notification too.
+  if (current?.serverJob?.cloud && !current.serverJob.done) {
+    current.serverJob = { ...current.serverJob, notify: true };
+    saveEntry(current);
+    cloudCall('notifyMe', { jobId: current.serverJob.id, entryId: current.id }, 15000).catch(() => {});
+  }
+  refresh(current);
+});
 $('#statsClose').addEventListener('click', () => $('#statsSheet').close());
 
 // Install tip on Home: iPhone has no install button, so say how; Android offers one.

@@ -1,5 +1,5 @@
 // Caches the app shell so it opens instantly (and offline) in Japan. API calls are never cached.
-const CACHE = 'kaimono-v39';
+const CACHE = 'kaimono-v40';
 const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'prompt.js', 'firebase-config.js', 'tour/sample-tag.svg', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'fonts/Geist-Variable.woff2'];
 
 self.addEventListener('install', (e) => {
@@ -29,4 +29,32 @@ self.addEventListener('fetch', (e) => {
       })
       .catch(() => caches.match(e.request, { ignoreSearch: true })),
   );
+});
+
+// "Your scan is ready" (Web Push from the backend), so the app can be closed while a scan runs.
+self.addEventListener('push', (e) => {
+  let msg = {};
+  try {
+    msg = e.data ? e.data.json() : {};
+  } catch {
+    msg = { body: e.data?.text() };
+  }
+  e.waitUntil(self.registration.showNotification(msg.title || 'Kaimono', {
+    body: msg.body || 'Your scan is ready.',
+    tag: msg.tag || 'scan',
+    icon: 'icons/icon-192.png',
+    badge: 'icons/icon-192.png',
+    data: { url: msg.url || '#/' },
+  }));
+});
+
+// Tapping it opens the scan: in the app if it's open, otherwise by launching it.
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const url = new URL(e.notification.data?.url || '#/', self.registration.scope).href;
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((wins) => {
+    const win = wins.find((w) => w.url.startsWith(self.registration.scope));
+    if (win) return win.focus().then((w) => w.navigate(url));
+    return self.clients.openWindow(url);
+  }));
 });

@@ -133,11 +133,20 @@ function checkInput(input) {
     override: text(input.override, 200),
     focus,
     market: typeof input.market === 'string' && /^[A-Z]{2}$/.test(input.market) ? input.market : 'MY',
+    notify: input.notify === true,
+    entryId: text(input.entryId, 40)?.replace(/[^\w-]/g, '') || null,
   };
 }
 
-async function google(fetch, url, body, label) {
-  const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+// Every call to Google has a time limit, so one that hangs can't hold a scan until the function dies.
+async function google(fetch, url, body, label, ms = 60000) {
+  let res;
+  try {
+    res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(ms) });
+  } catch (e) {
+    if (e.name === 'TimeoutError' || e.name === 'AbortError') throw Object.assign(new Error(`${label}: no answer after ${ms / 1000}s`), { status: 504 });
+    throw e;
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw Object.assign(new Error(`${label}: ${data.error?.message || `HTTP ${res.status}`}`), { status: res.status });
   return data;
@@ -147,6 +156,8 @@ async function google(fetch, url, body, label) {
 // Those pass: retry after a short wait, then try the lighter model once.
 export const busy = (e) => [429, 500, 503].includes(e.status) && !/prepay|credit|billing|quota exceeded for/i.test(e.message);
 const RETRY_WAITS = [2000, 6000];
+const GEMINI_MS = 100000; // grounded search usually answers in 20 to 60 seconds
+const SCAN_BUDGET = 270000; // the scan function stops at 300 seconds
 
 async function readPhotos({ fetch, keys }, images) {
   const d = await google(fetch, `https://vision.googleapis.com/v1/images:annotate?key=${encodeURIComponent(keys.vision)}`, {
@@ -155,7 +166,7 @@ async function readPhotos({ fetch, keys }, images) {
       features: [{ type: 'DOCUMENT_TEXT_DETECTION' }, { type: 'WEB_DETECTION', maxResults: 5 }],
       imageContext: { languageHints: ['ja', 'en'] },
     })),
-  }, 'Vision');
+  }, 'Vision', 45000);
   const ok = (d.responses || []).filter((r) => !r.error);
   if (!ok.length) throw new Error(`Vision: ${d.responses?.[0]?.error?.message || 'no answer'}`);
   const guesses = [...new Set(ok.map((r) => r.webDetection?.bestGuessLabels?.[0]?.label).filter(Boolean))];
@@ -165,10 +176,11 @@ async function readPhotos({ fetch, keys }, images) {
   };
 }
 
-async function askGemini({ fetch, keys, model, fallbackModel, sleep = (ms) => new Promise((r) => setTimeout(r, ms)) }, images, prompt, search) {
+// `deadline`: retries stop when another try couldn't finish before it (the function's own time limit).
+async function askGemini({ fetch, keys, model, fallbackModel, clock = Date.now, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), geminiMs = GEMINI_MS }, images, prompt, search, deadline = Infinity) {
   const body = { contents: [{ role: 'user', parts: [...images.map((data) => ({ inline_data: { mime_type: 'image/jpeg', data } })), { text: prompt }] }] };
   if (search) body.tools = [{ google_search: {} }];
-  const call = (m) => google(fetch, `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(m)}:generateContent?key=${encodeURIComponent(keys.gemini)}`, body, 'Gemini');
+  const call = (m) => google(fetch, `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(m)}:generateContent?key=${encodeURIComponent(keys.gemini)}`, body, 'Gemini', geminiMs);
   const tries = [model, model, model, ...(fallbackModel && fallbackModel !== model ? [fallbackModel] : [])];
   let d;
   for (let i = 0; i < tries.length; i += 1) {
@@ -176,7 +188,7 @@ async function askGemini({ fetch, keys, model, fallbackModel, sleep = (ms) => ne
       d = await call(tries[i]);
       break;
     } catch (e) {
-      if (!busy(e) || i === tries.length - 1) throw e;
+      if (!busy(e) || i === tries.length - 1 || clock() + (RETRY_WAITS[i] || 0) + geminiMs > deadline) throw e;
       if (RETRY_WAITS[i]) await sleep(RETRY_WAITS[i]);
     }
   }
@@ -204,7 +216,7 @@ const fence = (obj) => `\`\`\`json\n${JSON.stringify(obj)}\n\`\`\``;
 
 async function cexLookup({ fetch, cexIndex }, query) {
   const params = `query=${encodeURIComponent(query)}&hitsPerPage=30&filters=${encodeURIComponent('boxVisibilityOnWeb=1')}`;
-  const res = await fetch(CEX_SEARCH, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: JSON.stringify({ requests: [{ indexName: cexIndex, params }] }) });
+  const res = await fetch(CEX_SEARCH, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: JSON.stringify({ requests: [{ indexName: cexIndex, params }] }), signal: AbortSignal.timeout(10000) });
   if (!res.ok) throw new Error(`CeX: HTTP ${res.status}`);
   const d = await res.json();
   const hits = (d.results?.[0]?.hits || []).map((h) => ({
@@ -246,7 +258,7 @@ export async function runScan(rawInput, { uid, ipHash = null, deps }) {
   let ai = null;
   try {
     if (cached) {
-      const g = await askGemini(deps, images, prompts.buildTagPrompt({ ocrText: ocr, photos: images.length, productName: cached.market.product_name }), false);
+      const g = await askGemini(deps, images, prompts.buildTagPrompt({ ocrText: ocr, photos: images.length, productName: cached.market.product_name }), false, now + SCAN_BUDGET);
       const tag = parseJson(g.text) || {};
       ai = { ...cached.market };
       for (const k of prompts.TAG_KEYS) if (k in tag) ai[k] = tag[k];
@@ -260,7 +272,7 @@ export async function runScan(rawInput, { uid, ipHash = null, deps }) {
         ocrText: ocr, webGuess: guess, secondHand: input.secondHand, focus: input.focus, override: input.override,
         quick: input.quick, photos: images.length, clothes: input.clothes, market: market.code,
       });
-      out.gemini = await askGemini(deps, images, prompt, true);
+      out.gemini = await askGemini(deps, images, prompt, true, now + SCAN_BUDGET);
       ai = parseJson(out.gemini.text);
       // Only keep it when Gemini says the barcode is what pinned the product down.
       const matched = ai && (String(ai.barcode || '').replace(/\D/g, '') === barcode || ai.identified_by === 'barcode');
@@ -288,8 +300,81 @@ export async function runScan(rawInput, { uid, ipHash = null, deps }) {
   out.status = 'done';
   out.finishedAt = clock();
   out.usage = usage;
-  if (jobPath) await db.set(jobPath, { uid, out, expireAt: new Date(now + JOB_TTL) });
+  // "Notify me" can also be asked for while the scan runs (requestNotify), so look at the job first.
+  const job = jobPath ? await db.get(jobPath) : null;
+  if (jobPath) await db.set(jobPath, { uid, out, expireAt: new Date(now + JOB_TTL), ...(job?.notify ? { notify: true } : {}) });
+  if (input.notify || job?.notify) await notifyDone(deps, uid, input.entryId || job?.entryId, ai);
   return out;
+}
+
+// ---------- "your scan is ready" ----------
+// With notifications on, the phone can be closed mid-scan: the backend sends a Web Push when the
+// result is in. Only push services' own addresses are accepted.
+
+const PUSH_HOSTS = /(^|\.)(push\.apple\.com|fcm\.googleapis\.com|push\.services\.mozilla\.com|notify\.windows\.com)$/;
+
+export async function savePushSubscription(input, { uid, deps }) {
+  const { db } = deps;
+  const sub = input?.subscription;
+  if (input?.remove) {
+    await db.txn(async (t) => {
+      const user = (await t.get(`users/${uid}`)) || {};
+      t.set(`users/${uid}`, { ...user, push: null });
+    });
+    return { saved: false };
+  }
+  let host = '';
+  try {
+    const u = new URL(sub?.endpoint);
+    host = u.protocol === 'https:' ? u.hostname : '';
+  } catch {
+    // not a URL
+  }
+  const key = (v) => typeof v === 'string' && v.length > 10 && v.length < 200;
+  if (!PUSH_HOSTS.test(host) || !key(sub?.keys?.p256dh) || !key(sub?.keys?.auth)) throw new ScanError('invalid-argument', 'Not a push subscription.');
+  await db.txn(async (t) => {
+    const user = (await t.get(`users/${uid}`)) || {};
+    t.set(`users/${uid}`, { ...user, push: { endpoint: sub.endpoint, keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth } }, pushAt: (deps.clock || Date.now)() });
+  });
+  return { saved: true };
+}
+
+// "Notify me" tapped while a scan is already running.
+export async function requestNotify(input, { uid, deps }) {
+  const jobId = String(input?.jobId || '').replace(/[^\w-]/g, '');
+  const entryId = String(input?.entryId || '').replace(/[^\w-]/g, '').slice(0, 40) || null;
+  if (!jobId) throw new ScanError('invalid-argument', 'Missing jobId.');
+  return deps.db.txn(async (t) => {
+    const path = `jobs/${uid}-${jobId}`;
+    const job = await t.get(path);
+    if (!job || job.uid !== uid) return { status: 'unknown' };
+    if (job.out?.status === 'done') return { status: 'done' };
+    t.set(path, { ...job, notify: true, entryId });
+    return { status: 'running' };
+  });
+}
+
+async function notifyDone(deps, uid, entryId, ai) {
+  if (!deps.push) return;
+  const user = await deps.db.get(`users/${uid}`);
+  if (!user?.push) return;
+  const name = ai?.product_name;
+  try {
+    await deps.push(user.push, {
+      title: name ? 'Scan ready' : 'Scan didn\'t finish',
+      body: name ? `${name}: tap to see if it's worth buying.` : 'Tap to open it and try again.',
+      tag: entryId || 'scan',
+      url: entryId ? `#/scan/${entryId}` : '#/',
+    });
+  } catch (e) {
+    // The phone unsubscribed or the app was removed: forget it.
+    if (e.statusCode === 404 || e.statusCode === 410) {
+      await deps.db.txn(async (t) => {
+        const u = (await t.get(`users/${uid}`)) || {};
+        t.set(`users/${uid}`, { ...u, push: null });
+      });
+    }
+  }
 }
 
 // ---------- asks ----------
@@ -330,7 +415,7 @@ export async function runAsk(input, { uid, ipHash = null, deps }) {
   }
   const asks = await reserveAsk(db, { uid, ipHash, now, limits });
   try {
-    const out = ocrOnly ? await readPhotos(deps, images) : await askGemini(deps, images, input.prompt, input.search === true);
+    const out = ocrOnly ? await readPhotos(deps, images) : await askGemini(deps, images, input.prompt, input.search === true, now + 150000);
     return { ...out, asks };
   } catch (e) {
     await db.txn(async (t) => {

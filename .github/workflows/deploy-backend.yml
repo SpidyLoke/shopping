@@ -94,6 +94,12 @@ jobs:
           # Your own keys win when given as repository secrets.
           if [ -n "${VISION_KEY:-}" ]; then put VISION_KEY "$VISION_KEY"; fi
           if [ -n "${GEMINI_KEY:-}" ]; then put GEMINI_KEY "$GEMINI_KEY"; fi
+          # The key pair for "your scan is ready" notifications (Web Push).
+          if ! has VAPID_PUBLIC_KEY || ! has VAPID_PRIVATE_KEY; then
+            pair=$(npx -y web-push@3.6.7 generate-vapid-keys --json)
+            put VAPID_PUBLIC_KEY "$(printf '%s' "$pair" | jq -r .publicKey)"
+            put VAPID_PRIVATE_KEY "$(printf '%s' "$pair" | jq -r .privateKey)"
+          fi
           if has VISION_KEY && has GEMINI_KEY; then echo "Keys already set."; exit 0; fi
           # Otherwise one key, usable only for Vision and Gemini.
           name=$(gcloud services api-keys list --project "$PROJECT" --filter="displayName='Kaimono backend'" --format='value(name)' | head -n1)

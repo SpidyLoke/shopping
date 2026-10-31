@@ -1821,3 +1821,4 @@ dialog.install-guide::backdrop { background: var(--bg); }
 .coach-actions { display: flex; align-items: center; gap: 12px; }
 .coach-count { margin-left: auto; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .install-head h2:focus { outline: none; }
+.notify-me { display: block; margin: -4px 0 12px; padding: 0 2px; text-align: left; }

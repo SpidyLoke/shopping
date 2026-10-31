@@ -92,6 +92,13 @@ else
   secret_set GEMINI_KEY || put_secret GEMINI_KEY "$key"
   ok "Key made (only works for Vision and Gemini) and stored as secrets"
 fi
+# The key pair for "your scan is ready" notifications (Web Push).
+if ! secret_set VAPID_PUBLIC_KEY || ! secret_set VAPID_PRIVATE_KEY; then
+  pair=$(npx -y web-push@3.6.7 generate-vapid-keys --json)
+  put_secret VAPID_PUBLIC_KEY "$(printf '%s' "$pair" | node -e "let s='';process.stdin.on('data',(d)=>{s+=d}).on('end',()=>process.stdout.write(JSON.parse(s).publicKey))")"
+  put_secret VAPID_PRIVATE_KEY "$(printf '%s' "$pair" | node -e "let s='';process.stdin.on('data',(d)=>{s+=d}).on('end',()=>process.stdout.write(JSON.parse(s).privateKey))")"
+  ok "Notification keys made"
+fi
 # Payments stay off until a Stripe key is added (the Deploy backend workflow, or this script's step 10).
 secret_set STRIPE_SECRET_KEY || put_secret STRIPE_SECRET_KEY unset
 secret_set STRIPE_WEBHOOK_SECRET || put_secret STRIPE_WEBHOOK_SECRET unset

@@ -78,13 +78,13 @@ const stripe = {
 };
 
 // dropReplies: how many scan replies are lost on the way back (the app was closed mid-scan).
-async function mockCloud(page, { ocr = '税込 ¥11,480 4948872415545', gemini = () => product({ barcode: '4948872415545', identified_by: 'barcode' }), limits = {}, dropReplies = 0, owners = [] } = {}) {
+async function mockCloud(page, { ocr = '税込 ¥11,480 4948872415545', gemini = () => product({ barcode: '4948872415545', identified_by: 'barcode' }), limits = {}, dropReplies = 0, owners = [], scanHangs = false, failResult = false } = {}) {
   const core = await import(path.join(ROOT, 'functions', 'core.js'));
   const billing = await import(path.join(ROOT, 'functions', 'billing.js'));
   const ops = await import(path.join(ROOT, 'functions', 'ops.js'));
   const prompts = await import(path.join(ROOT, 'prompt.js'));
   const db = fakeDb();
-  const calls = { scan: [], ask: [], result: 0, gemini: [], regions: new Set(), checkout: [], uids: new Set() };
+  const calls = { scan: [], ask: [], result: 0, gemini: [], regions: new Set(), checkout: [], uids: new Set(), pushes: [] };
   let drops = dropReplies;
   const fetch = async (url, opt) => {
     const body = JSON.parse(opt.body);
@@ -94,7 +94,7 @@ async function mockCloud(page, { ocr = '税込 ¥11,480 4948872415545', gemini =
     const answer = await gemini(prompt);
     return ok({ candidates: [{ content: { parts: [{ text: typeof answer === 'string' ? answer : `\`\`\`json\n${JSON.stringify(answer)}\n\`\`\`` }] } }] });
   };
-  const deps = { db, fetch, prompts, keys: { vision: 'V', gemini: 'G' }, model: 'm', cexLookup: false, limits: { free: 10, pro: 300, pass: 60, daily: 100, perIp: 40, freeAsks: 40, proAsks: 1000, dailyAsks: 100, ...limits } };
+  const deps = { db, fetch, prompts, push: async (sub, payload) => { calls.pushes.push({ sub, payload }); }, keys: { vision: 'V', gemini: 'G' }, model: 'm', cexLookup: false, limits: { free: 10, pro: 300, pass: 60, daily: 100, perIp: 40, freeAsks: 40, proAsks: 1000, dailyAsks: 100, ...limits } };
   await page.route('**/firebase-config.js', (r) => r.fulfill({ contentType: 'text/javascript', body: `export const FIREBASE = ${JSON.stringify(CONFIG)};` }));
   for (const [m, body] of Object.entries(STUBS)) await page.route(`${SDK}/firebase-${m}.js`, (r) => r.fulfill({ contentType: 'text/javascript', headers: { 'access-control-allow-origin': '*' }, body }));
   await page.route('**/__cloud/*', async (r) => {
@@ -110,16 +110,23 @@ async function mockCloud(page, { ocr = '税込 ¥11,480 4948872415545', gemini =
       if (name === 'ask') calls.ask.push(data);
       if (name === 'result') calls.result += 1;
       if (name === 'checkout') calls.checkout.push({ uid, ...data });
+      if (name === 'scan' && scanHangs) { // received and running, never answers
+        await db.set(`jobs/${uid}-${data.jobId}`, { uid, out: { status: 'running', startedAt: Date.now() } });
+        return;
+      }
+      if (name === 'result' && failResult) throw Object.assign(new Error('INTERNAL'), { code: 'internal' });
       const out = name === 'scan' ? await core.runScan(data, ctx)
         : name === 'ask' ? await core.runAsk(data, ctx)
           : name === 'result' ? await core.jobResult(data, ctx)
             : name === 'plans' ? await billing.listPlans(pay)
               : name === 'checkout' ? await billing.createCheckout(data, { uid, email: user?.email, anonymous: user?.isAnonymous }, pay)
                 : name === 'portal' ? await billing.createPortal({ uid }, pay)
+                  : name === 'pushSubscribe' ? await core.savePushSubscription(data, { uid, deps })
+                  : name === 'notifyMe' ? await core.requestNotify(data, { uid, deps })
                   : name === 'report' ? await ops.saveReport(data, { uid, deps: { db } })
                     : name === 'feedback' ? await ops.saveFeedback(data, { uid, deps: { db } })
                       : name === 'stats' ? await ops.ownerStats({ uid }, { deps: { db }, owners })
-                        : { ...(await core.usageFor(uid, deps)), owner: ops.isOwner(uid, owners) };
+                        : { ...(await core.usageFor(uid, deps)), owner: ops.isOwner(uid, owners), vapidPublic: 'BEu4iKN6ZmWbTestPublicKey_-123' };
       if (name === 'scan' && drops > 0) {
         drops -= 1;
         await r.abort('connectionreset');

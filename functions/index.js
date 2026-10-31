@@ -13,7 +13,8 @@
 //   APP_URL       where Stripe sends people back to (default https://spidyloke.github.io/shopping/)
 //   OWNER_UIDS    account IDs (Settings shows yours) that may open the beta dashboard, comma-separated
 // Secrets (firebase functions:secrets:set NAME): VISION_KEY, GEMINI_KEY, STRIPE_SECRET_KEY and
-// STRIPE_WEBHOOK_SECRET (the Deploy backend workflow sets the Stripe ones, or "unset" until then).
+// STRIPE_WEBHOOK_SECRET (the Deploy backend workflow sets the Stripe ones, or "unset" until then),
+// VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY (the setup makes them) for "your scan is ready" notifications.
 // ENFORCE_APP_CHECK=true in functions/.env turns on App Check once the app is registered for it.
 
 import { initializeApp } from 'firebase-admin/app';
@@ -23,12 +24,15 @@ import { defineInt, defineSecret, defineString } from 'firebase-functions/params
 import { createHash } from 'node:crypto';
 import * as prompts from './prompt.js';
 import Stripe from 'stripe';
-import { runScan, runAsk, jobResult, usageFor, ScanError } from './core.js';
+import webpush from 'web-push';
+import { runScan, runAsk, jobResult, usageFor, savePushSubscription, requestNotify, ScanError } from './core.js';
 import { listPlans, createCheckout, createPortal, handleEvent } from './billing.js';
 import { saveReport, saveFeedback, ownerStats, isOwner } from './ops.js';
 
 initializeApp();
 const firestore = getFirestore();
+// A field left undefined (say, a CeX row missing a price) is dropped rather than failing the write.
+firestore.settings({ ignoreUndefinedProperties: true });
 
 const VISION_KEY = defineSecret('VISION_KEY');
 const GEMINI_KEY = defineSecret('GEMINI_KEY');
@@ -48,6 +52,8 @@ const APP_URL = defineString('APP_URL', { default: 'https://spidyloke.github.io/
 const OWNER_UIDS = defineString('OWNER_UIDS', { default: '' });
 const owners = () => OWNER_UIDS.value().split(',').map((x) => x.trim()).filter(Boolean);
 const STRIPE_SECRET_KEY = defineSecret('STRIPE_SECRET_KEY');
+const VAPID_PUBLIC_KEY = defineSecret('VAPID_PUBLIC_KEY');
+const VAPID_PRIVATE_KEY = defineSecret('VAPID_PRIVATE_KEY');
 const STRIPE_WEBHOOK_SECRET = defineSecret('STRIPE_WEBHOOK_SECRET');
 
 // Firestore behind the small get / set / transaction interface core.js uses.
@@ -69,18 +75,25 @@ const db = {
   recent: async (collection, n) => (await firestore.collection(collection).orderBy('at', 'desc').limit(n).get()).docs.map((d) => d.data()),
 };
 
+// Plan limits: read by functions that don't have the API keys, so kept apart from deps().
+const limits = () => ({
+  free: FREE_SCANS.value(), pro: PRO_SCANS.value(), pass: PASS_SCANS.value(), daily: DAILY_SCANS.value(), perIp: PER_IP_SCANS.value(),
+  freeAsks: FREE_ASKS.value(), proAsks: PRO_ASKS.value(), dailyAsks: DAILY_ASKS.value(),
+});
+
 const deps = () => ({
   db,
   fetch,
   prompts,
   keys: { vision: VISION_KEY.value(), gemini: GEMINI_KEY.value() },
   model: GEMINI_MODEL.value(),
+  push: (subscription, payload) => webpush.sendNotification(subscription, JSON.stringify(payload), {
+    TTL: 6 * 60 * 60,
+    vapidDetails: { subject: APP_URL.value(), publicKey: VAPID_PUBLIC_KEY.value(), privateKey: VAPID_PRIVATE_KEY.value() },
+  }),
   fallbackModel: GEMINI_FALLBACK_MODEL.value(),
   cacheDays: CACHE_DAYS.value(),
-  limits: {
-    free: FREE_SCANS.value(), pro: PRO_SCANS.value(), pass: PASS_SCANS.value(), daily: DAILY_SCANS.value(), perIp: PER_IP_SCANS.value(),
-    freeAsks: FREE_ASKS.value(), proAsks: PRO_ASKS.value(), dailyAsks: DAILY_ASKS.value(),
-  },
+  limits: limits(),
 });
 
 // Singapore is the closest region to Malaysia.
@@ -98,10 +111,29 @@ const hashIp = (ip) => (ip ? createHash('sha256').update(`${process.env.GCLOUD_P
 
 const asHttps = (e) => (e instanceof ScanError ? new HttpsError(e.code, e.message, e.details) : e);
 
-export const scan = onCall({ ...options, secrets: [VISION_KEY, GEMINI_KEY], timeoutSeconds: 300, memory: '512MiB' }, async (req) => {
+export const scan = onCall({ ...options, secrets: [VISION_KEY, GEMINI_KEY, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY], timeoutSeconds: 300, memory: '512MiB' }, async (req) => {
   const uid = signedIn(req);
   try {
     return await runScan(req.data, { uid, ipHash: hashIp(req.rawRequest?.ip), deps: deps() });
+  } catch (e) {
+    if (!(e instanceof ScanError)) console.error('scan', e); // shows in Functions → Logs
+    throw asHttps(e);
+  }
+});
+
+export const notifyMe = onCall(options, async (req) => {
+  const uid = signedIn(req);
+  try {
+    return await requestNotify(req.data, { uid, deps: { db } });
+  } catch (e) {
+    throw asHttps(e);
+  }
+});
+
+export const pushSubscribe = onCall(options, async (req) => {
+  const uid = signedIn(req);
+  try {
+    return await savePushSubscription(req.data, { uid, deps: { db } });
   } catch (e) {
     throw asHttps(e);
   }
@@ -125,9 +157,9 @@ export const result = onCall(options, async (req) => {
   }
 });
 
-export const usage = onCall(options, async (req) => {
+export const usage = onCall({ ...options, secrets: [VAPID_PUBLIC_KEY] }, async (req) => {
   const uid = signedIn(req);
-  return { ...(await usageFor(uid, { db, limits: deps().limits })), owner: isOwner(uid, owners()) };
+  return { ...(await usageFor(uid, { db, limits: limits() })), owner: isOwner(uid, owners()), vapidPublic: VAPID_PUBLIC_KEY.value() };
 });
 
 // ---------- beta ----------
@@ -152,7 +184,7 @@ const stripeClient = () => {
   const key = STRIPE_SECRET_KEY.value();
   return key && (key.startsWith('sk_') || key.startsWith('rk_')) ? new Stripe(key) : null;
 };
-const billing = () => ({ stripe: stripeClient(), db, appUrl: APP_URL.value(), passDays: PASS_DAYS.value(), limits: deps().limits });
+const billing = () => ({ stripe: stripeClient(), db, appUrl: APP_URL.value(), passDays: PASS_DAYS.value(), limits: limits() });
 const paying = { ...options, secrets: [STRIPE_SECRET_KEY] };
 
 export const plans = onCall(paying, async (req) => {
