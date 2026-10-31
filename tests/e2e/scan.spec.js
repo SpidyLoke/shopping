@@ -142,3 +142,27 @@ test('Gemini briefly overloaded: the scan waits and retries instead of failing',
   await expect(page.locator('#resError')).toBeHidden();
   expect(calls.gemini).toHaveLength(1); // the one that got through
 });
+
+test('CeX: a single-digit model number has to match (Retroid Pocket 6 is not the G2)', async ({ page }) => {
+  await mockApis(page, {
+    gemini: () => product({ product_name: 'Retroid Pocket 6 Handheld Console', search_query: 'Retroid Pocket 6', price: 1100, currency: 'MYR' }),
+    cexHits: [
+      { boxId: 'G2', boxName: 'Retroid Pocket G2, C', sellPrice: 630, cashPriceCalculated: 380, exchangePriceCalculated: 450 },
+      { boxId: 'RP5', boxName: 'Retroid Pocket 5, B', sellPrice: 1050, cashPriceCalculated: 600, exchangePriceCalculated: 700 },
+    ],
+  });
+  await openApp(page);
+  await scanFromGallery(page);
+  await expect(page.locator('#resName')).toHaveText('Retroid Pocket 6 Handheld Console');
+  await expect(page.locator('#cexSell')).toHaveText('–');
+});
+
+test('CeX: the right single-digit model still matches', async ({ page }) => {
+  await mockApis(page, {
+    gemini: () => product({ product_name: 'Retroid Pocket 6', search_query: 'Retroid Pocket 6' }),
+    cexHits: [{ boxId: 'RP6', boxName: 'Retroid Pocket 6 8GB/128GB, B', sellPrice: 1150, cashPriceCalculated: 700, exchangePriceCalculated: 820 }],
+  });
+  await openApp(page);
+  await scanFromGallery(page);
+  await expect(page.locator('#cexSell')).toHaveText('RM 1,150');
+});

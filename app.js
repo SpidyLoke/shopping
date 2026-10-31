@@ -6,7 +6,7 @@ import { buildPrompt, findBarcodes, gtinValid, MARKETS, marketFor } from './prom
 import { FIREBASE } from './firebase-config.js';
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.10.31-2';
+const APP_VERSION = '2026.10.31-3';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -517,7 +517,7 @@ function distanceFromHere(entry) {
 
 function productTokens(entry) {
   const text = (entry.ai?.search_query || entry.ai?.product_name || '').normalize('NFKC').toLowerCase();
-  return new Set(text.split(/[^a-z0-9\u3040-\u30ff\u4e00-\u9fff]+/).filter((t) => t.length > 1));
+  return new Set(text.split(/[^a-z0-9\u3040-\u30ff\u4e00-\u9fff]+/).filter((t) => t.length > 1 || /\d/.test(t)));
 }
 
 // Words that mark a different, differently priced model in the same line ("BFG Pro" vs "BFG Pro Reloaded",
@@ -792,8 +792,9 @@ async function callGemini(images, prompt, { search = true, raw = false } = {}) {
 // It's unofficial and may be region-locked, so Gemini's web search stays as the fallback.
 const CEX_SEARCH = 'https://search.webuy.io/1/indexes/*/queries';
 
+// Single letters are noise, but a single digit is often the model ("Retroid Pocket 6", "Switch 2").
 function words(text) {
-  return new Set((text || '').normalize('NFKC').toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length > 1));
+  return new Set((text || '').normalize('NFKC').toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length > 1 || /\d/.test(t)));
 }
 
 const ACCESSORY_WORDS = ['case', 'cover', 'cable', 'charger', 'adapter', 'adaptor', 'stand', 'skin', 'strap', 'protector',
