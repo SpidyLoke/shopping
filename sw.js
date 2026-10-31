@@ -1,5 +1,5 @@
 // Caches the app shell so it opens instantly (and offline) in Japan. API calls are never cached.
-const CACHE = 'kaimono-v36';
+const CACHE = 'kaimono-v37';
 const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'prompt.js', 'firebase-config.js', 'tour/sample-tag.svg', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'fonts/Geist-Variable.woff2'];
 
 self.addEventListener('install', (e) => {

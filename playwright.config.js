@@ -17,6 +17,8 @@ module.exports = defineConfig({
     geolocation: { latitude: 35.7295, longitude: 139.7109 },
     launchOptions: { args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] },
     trace: 'retain-on-failure',
+    // The service worker would fetch files (firebase-config.js) past the tests' stubs.
+    serviceWorkers: 'block',
   },
   webServer: {
     command: 'node tests/serve.mjs',

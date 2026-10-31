@@ -27,6 +27,8 @@ const geminiReply = (json) => ({ candidates: [{ content: { parts: [{ text: `\`\`
  */
 async function mockApis(page, { gemini = () => product(), vision = () => '税込 ¥11,480', cexHits = [], rates = { JPY: 0.0278, USD: 4.4, SGD: 3.3 } } = {}) {
   const calls = { gemini: [], vision: [], cex: 0, rates: [] };
+  // No Kaimono backend unless a test asks for one (cloud.js); the real project's config stays out.
+  await page.route('**/firebase-config.js', (r) => r.fulfill({ contentType: 'text/javascript', body: 'export const FIREBASE = null;' }));
   // rates: { JPY: 0.03 } is yen to ringgit; { 'JPY>SGD': 0.009 } for another home currency.
   await page.route('https://api.frankfurter.dev/**', (r) => {
     const q = new URL(r.request().url()).searchParams;
