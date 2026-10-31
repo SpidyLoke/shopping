@@ -98,7 +98,24 @@ secret_set STRIPE_WEBHOOK_SECRET || put_secret STRIPE_WEBHOOK_SECRET unset
 
 say "7. Deploy (3 to 5 minutes the first time)"
 npm ci --prefix functions --no-audit --no-fund >/dev/null
-$FIREBASE deploy --only functions,firestore:rules --project "$PROJECT" --non-interactive --force
+# A new project's first deploy often fails on a few functions while Google finishes setting up its
+# service accounts, or because it creates too many at once. Another go a minute later usually works.
+deployed=false
+for attempt in 1 2 3; do
+  if $FIREBASE deploy --only functions,firestore:rules --project "$PROJECT" --non-interactive --force; then
+    deployed=true
+    break
+  fi
+  if [ "$attempt" -lt 3 ]; then
+    warn "Some functions didn't deploy (attempt $attempt of 3). Trying again in 90 seconds…"
+    sleep 90
+  fi
+done
+if [ "$deployed" != true ]; then
+  warn "The deploy still failed. Google's reason (screenshot this for Claude):"
+  grep -iE "denied|permission|quota|failed|error" firebase-debug.log | grep -viE "^\s*$|debug\] >" | tail -n 15 || true
+  exit 1
+fi
 ok "Deployed"
 
 say "8. Old scan results and counters delete themselves"
