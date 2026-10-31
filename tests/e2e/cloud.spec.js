@@ -69,7 +69,7 @@ test('Worth it and questions use the backend too; Settings can switch to your ow
   await expect(page.locator('#quotaStatus')).toHaveText(/your own Google keys/);
   await expect(page.locator('#keysGroup')).toBeVisible();
   await page.evaluate(() => localStorage.setItem('kc.apiKey', '"K"'));
-  await page.click('#saveSettingsBtn');
+  await page.click('#backBtn');
   await page.fill('#askInput', 'And the charger?');
   await page.click('#askForm button[type="submit"]');
   await expect.poll(() => google.gemini.length).toBe(1);

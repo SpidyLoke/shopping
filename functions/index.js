@@ -121,24 +121,6 @@ export const scan = onCall({ ...options, secrets: [VISION_KEY, GEMINI_KEY, VAPID
   }
 });
 
-export const notifyMe = onCall(options, async (req) => {
-  const uid = signedIn(req);
-  try {
-    return await requestNotify(req.data, { uid, deps: { db } });
-  } catch (e) {
-    throw asHttps(e);
-  }
-});
-
-export const pushSubscribe = onCall(options, async (req) => {
-  const uid = signedIn(req);
-  try {
-    return await savePushSubscription(req.data, { uid, deps: { db } });
-  } catch (e) {
-    throw asHttps(e);
-  }
-});
-
 export const ask = onCall({ ...options, secrets: [VISION_KEY, GEMINI_KEY], timeoutSeconds: 180 }, async (req) => {
   const uid = signedIn(req);
   try {
@@ -148,18 +130,31 @@ export const ask = onCall({ ...options, secrets: [VISION_KEY, GEMINI_KEY], timeo
   }
 });
 
+// Also takes { notify: true }: "Notify me" on a scan that's already running. (Folded in here rather
+// than a function of its own: a new project's first deploy often fails to create new functions.)
 export const result = onCall(options, async (req) => {
   const uid = signedIn(req);
   try {
+    if (req.data?.notify) return await requestNotify(req.data, { uid, deps: { db } });
     return await jobResult(req.data, { uid, deps: { db } });
   } catch (e) {
     throw asHttps(e);
   }
 });
 
+// Also saves or removes this phone's notification address ({ subscription } or { removePush: true }).
 export const usage = onCall({ ...options, secrets: [VAPID_PUBLIC_KEY] }, async (req) => {
   const uid = signedIn(req);
-  return { ...(await usageFor(uid, { db, limits: limits() })), owner: isOwner(uid, owners()), vapidPublic: VAPID_PUBLIC_KEY.value() };
+  let push;
+  if (req.data?.subscription || req.data?.removePush) {
+    try {
+      push = await savePushSubscription({ subscription: req.data.subscription, remove: req.data.removePush === true }, { uid, deps: { db } });
+    } catch (e) {
+      console.error('push subscription', e);
+      push = { saved: false, error: e.message };
+    }
+  }
+  return { ...(await usageFor(uid, { db, limits: limits() })), owner: isOwner(uid, owners()), vapidPublic: VAPID_PUBLIC_KEY.value(), push };
 });
 
 // ---------- beta ----------

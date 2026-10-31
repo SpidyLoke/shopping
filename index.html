@@ -427,191 +427,190 @@
 
     <!-- Shelf -->
     <section class="view" id="shelfView" hidden></section>
-  </main>
+    <!-- Settings: a page; every change saves as it is made -->
+    <section class="view settings-view" id="settingsView" hidden>
+      <div class="settings-form" id="settingsForm">
+        <div class="section-head page-head">
+          <h1>Settings</h1>
+          <span class="muted small settings-saved" id="settingsSaved" aria-live="polite"></span>
+        </div>
 
-  <!-- Settings -->
-  <dialog id="settingsDialog">
-    <div class="settings-form" id="settingsForm">
-      <div class="dialog-head">
-        <button class="icon-btn" type="button" id="settingsClose" aria-label="Close without saving"><svg class="i" viewBox="0 0 256 256" aria-hidden="true"><path d="M204.24,195.76a6,6,0,1,1-8.48,8.48L128,136.49,60.24,204.24a6,6,0,0,1-8.48-8.48L119.51,128,51.76,60.24a6,6,0,0,1,8.48-8.48L128,119.51l67.76-67.75a6,6,0,0,1,8.48,8.48L136.49,128Z"/></svg></button>
-        <h2>Settings</h2>
-        <button class="btn btn-small btn-primary" type="button" id="saveSettingsBtn">Save</button>
-      </div>
+        <section class="settings-group scan-with" id="scanWithGroup" hidden>
+          <div class="setting-row"><span>Scan with</span>
+            <div class="segmented" role="radiogroup" aria-label="Scan with" data-setting="scanWith">
+              <button type="button" role="radio" data-value="cloud" aria-checked="false">Kaimono</button>
+              <button type="button" role="radio" data-value="keys" aria-checked="false">My keys</button>
+            </div>
+          </div>
+          <p class="muted small" id="quotaStatus"></p>
+          <div class="account-box" id="accountBox" hidden>
+            <div class="data-row">
+              <span id="accountLine">Not signed in<small>An account keeps your plan if you change phones</small></span>
+              <button class="btn btn-small" type="button" id="accountBtn">Sign in</button>
+            </div>
+            <div class="data-row">
+              <span id="planLine">Free plan</span>
+              <button class="btn btn-small btn-primary" type="button" id="upgradeBtn">Upgrade</button>
+              <button class="btn btn-small" type="button" id="manageBtn" hidden>Manage</button>
+            </div>
+          </div>
+          <label class="switch" id="notifyRow" hidden><input type="checkbox" id="notifyToggle"><span>Notify me when a scan is ready<small>Close the app while it checks; a notification brings you back</small></span></label>
+          <p class="muted small account-id" id="accountId" hidden></p>
+          <button class="btn btn-small" type="button" id="statsBtn" hidden>Beta dashboard</button>
+        </section>
 
-      <section class="settings-group scan-with" id="scanWithGroup" hidden>
-        <div class="setting-row"><span>Scan with</span>
-          <div class="segmented" role="radiogroup" aria-label="Scan with" data-setting="scanWith">
-            <button type="button" role="radio" data-value="cloud" aria-checked="false">Kaimono</button>
-            <button type="button" role="radio" data-value="keys" aria-checked="false">My keys</button>
-          </div>
-        </div>
-        <p class="muted small" id="quotaStatus"></p>
-        <div class="account-box" id="accountBox" hidden>
-          <div class="data-row">
-            <span id="accountLine">Not signed in<small>An account keeps your plan if you change phones</small></span>
-            <button class="btn btn-small" type="button" id="accountBtn">Sign in</button>
-          </div>
-          <div class="data-row">
-            <span id="planLine">Free plan</span>
-            <button class="btn btn-small btn-primary" type="button" id="upgradeBtn">Upgrade</button>
-            <button class="btn btn-small" type="button" id="manageBtn" hidden>Manage</button>
-          </div>
-        </div>
-        <label class="switch" id="notifyRow" hidden><input type="checkbox" id="notifyToggle"><span>Notify me when a scan is ready<small>Close the app while it checks; a notification brings you back</small></span></label>
-        <p class="muted small account-id" id="accountId" hidden></p>
-        <button class="btn btn-small" type="button" id="statsBtn" hidden>Beta dashboard</button>
-      </section>
-
-      <!-- No form, no password-style fields: either makes iOS offer to save a password. Saved keys show only as a hint. -->
-      <details class="settings-group" id="keysGroup">
-        <summary><span>API keys</span><span class="group-status" id="keysStatus"></span></summary>
-        <label class="field">
-          <span>Google Cloud key</span>
-          <input id="apiKeyInput" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-1p-ignore data-lpignore="true" placeholder="AIza…">
-        </label>
-        <label class="field">
-          <span>Gemini key <small>blank uses the Cloud key</small> <button class="link small" type="button" id="geminiKeyRemove" hidden>Remove</button></span>
-          <input id="geminiKeyInput" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-1p-ignore data-lpignore="true" placeholder="AIza…">
-        </label>
-        <label class="field">
-          <span>Gemini model</span>
-          <input id="modelInput" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="gemini-flash-latest">
-        </label>
-      </details>
-
-      <section class="settings-group">
-        <label class="setting-row home-setting"><span>Home country<small>Where you'd buy it or resell it. New scans are priced for it; earlier ones keep theirs.</small></span>
-          <select id="homeMarketSelect" aria-label="Home country"></select>
-        </label>
-        <label class="switch"><input type="checkbox" id="defaultTaxFree"><span>Tax refund by default</span></label>
-        <label class="switch"><input type="checkbox" id="saveLocationToggle"><span>Save store location</span></label>
-        <label class="switch"><input type="checkbox" id="autoInfoToggle"><span>Product info on every scan</span></label>
-        <label class="switch"><input type="checkbox" id="buzzToggle"><span>Buzz when done</span></label>
-      </section>
-
-      <section class="settings-group look-group">
-        <h3 class="group-title">Layout and look <small>changes apply straight away</small></h3>
-        <div class="setting-row"><span>Lists</span>
-          <div class="segmented" role="radiogroup" aria-label="Lists" data-setting="listStyle">
-            <button type="button" role="radio" data-value="list" aria-checked="false">List</button>
-            <button type="button" role="radio" data-value="compact" aria-checked="false">Compact</button>
-            <button type="button" role="radio" data-value="grid" aria-checked="false">Grid</button>
-          </div>
-        </div>
-        <div class="setting-row"><span>Results</span>
-          <div class="segmented" role="radiogroup" aria-label="Results" data-setting="resultStyle">
-            <button type="button" role="radio" data-value="page" aria-checked="false">Page</button>
-            <button type="button" role="radio" data-value="sheet" aria-checked="false">Sheet</button>
-          </div>
-        </div>
-        <div class="setting-row"><span>Theme</span>
-          <div class="segmented" role="radiogroup" aria-label="Theme" data-setting="theme">
-            <button type="button" role="radio" data-value="auto" aria-checked="false">Auto</button>
-            <button type="button" role="radio" data-value="light" aria-checked="false">Light</button>
-            <button type="button" role="radio" data-value="dark" aria-checked="false">Dark</button>
-          </div>
-        </div>
-        <div class="setting-row"><span>Text</span>
-          <div class="segmented" role="radiogroup" aria-label="Text" data-setting="textSize">
-            <button type="button" role="radio" data-value="small" aria-checked="false">Small</button>
-            <button type="button" role="radio" data-value="default" aria-checked="false">Default</button>
-            <button type="button" role="radio" data-value="large" aria-checked="false">Large</button>
-          </div>
-        </div>
-        <div class="setting-row"><span>Show first</span>
-          <div class="segmented" role="radiogroup" aria-label="Show first" data-setting="priceFirst">
-            <button type="button" role="radio" data-value="rm" aria-checked="false" class="home-sym">RM</button>
-            <button type="button" role="radio" data-value="yen" aria-checked="false">¥</button>
-          </div>
-        </div>
-        <div class="setting-row"><span>Colour</span>
-          <div class="swatches" role="radiogroup" aria-label="Colour" data-setting="accent">
-            <button type="button" role="radio" data-value="indigo" aria-checked="false" aria-label="Indigo" style="--sw: #2b3a8c"></button>
-            <button type="button" role="radio" data-value="green" aria-checked="false" aria-label="Green" style="--sw: #1d7a50"></button>
-            <button type="button" role="radio" data-value="red" aria-checked="false" aria-label="Red" style="--sw: #c41e3a"></button>
-            <button type="button" role="radio" data-value="black" aria-checked="false" aria-label="Black" style="--sw: #161830"></button>
-          </div>
-        </div>
-        <label class="switch"><input type="checkbox" id="oneHandToggle" data-setting-toggle="oneHand"><span>One-hand mode<small>Bigger buttons, Back and Save within thumb reach</small></span></label>
-        <label class="switch"><input type="checkbox" id="liveCameraToggle" data-setting-toggle="liveCamera"><span>Built-in camera<small>Viewfinder inside the app; off uses the iPhone camera</small></span></label>
-      </section>
-
-      <details class="settings-group costs-group" id="costsGroup">
-        <summary><span>Resale costs</span><span class="group-status" id="costsStatus"></span></summary>
-        <p class="muted small">Deal labels show what you'd take home after these.</p>
-        <label class="budget-field"><span>Card fee abroad<small>Bank and network markup on foreign spend</small></span>
-          <span class="rm-input"><input id="fxFeeInput" type="number" inputmode="decimal" min="0" max="10" step="0.05"><span>%</span></span></label>
-        <label class="budget-field"><span>Selling fee<small>Platform cut when you resell (Carousell is free, Shopee isn't)</small></span>
-          <span class="rm-input"><input id="sellFeeInput" type="number" inputmode="decimal" min="0" max="50" step="0.5"><span>%</span></span></label>
-        <label class="budget-field"><span>Extra per item<small>Postage, packaging, excess baggage</small></span>
-          <span class="rm-input"><span class="home-sym">RM</span><input id="extraCostInput" type="number" inputmode="decimal" min="0" step="1"></span></label>
-      </details>
-
-      <details class="settings-group" id="serverGroup">
-        <summary><span>Background scanning</span><span class="group-status" id="serverStatus"></span></summary>
-        <label class="field">
-          <span>Scan server URL</span>
-          <input id="serverUrlInput" type="text" inputmode="url" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="https://script.google.com/…/exec">
-        </label>
-        <div class="field">
-          <span>Telegram</span>
-          <div id="tgSetup">
-            <ol class="steps-text">
-              <li>@BotFather, <code>/newbot</code>, copy the token</li>
-              <li>Open your bot, tap Start</li>
-              <li>Paste the token, tap Link</li>
-            </ol>
-            <span class="inline-row">
-              <input id="tgTokenInput" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-1p-ignore data-lpignore="true" placeholder="Bot token" aria-label="Telegram bot token">
-              <button class="btn btn-small btn-primary" type="button" id="tgLink">Link</button>
-            </span>
-          </div>
-          <small id="tgStatus" role="status"></small>
-          <button class="link small" type="button" id="tgUnlink" hidden>Unlink</button>
-        </div>
-        <details class="ntfy-alt">
-          <summary>Use ntfy instead</summary>
+        <!-- No form, no password-style fields: either makes iOS offer to save a password. Saved keys show only as a hint. -->
+        <details class="settings-group" id="keysGroup">
+          <summary><span>API keys</span><span class="group-status" id="keysStatus"></span></summary>
           <label class="field">
-            <span>ntfy topic</span>
-            <span class="inline-row">
-              <input id="ntfyInput" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="kaimono-…">
-              <button class="btn btn-small" type="button" id="ntfyNew">New</button>
-              <button class="btn btn-small" type="button" id="ntfyCopy">Copy</button>
-            </span>
+            <span>Google Cloud key</span>
+            <input id="apiKeyInput" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-1p-ignore data-lpignore="true" placeholder="AIza…">
           </label>
           <label class="field">
-            <span>ntfy access token</span>
-            <input id="ntfyTokenInput" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-1p-ignore data-lpignore="true" placeholder="tk_…">
+            <span>Gemini key <small>blank uses the Cloud key</small> <button class="link small" type="button" id="geminiKeyRemove" hidden>Remove</button></span>
+            <input id="geminiKeyInput" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-1p-ignore data-lpignore="true" placeholder="AIza…">
+          </label>
+          <label class="field">
+            <span>Gemini model</span>
+            <input id="modelInput" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="gemini-flash-latest">
           </label>
         </details>
-        <button class="btn btn-small" type="button" id="serverTest">Test notifications</button>
-        <p class="small" id="serverTestResult" role="status"></p>
-      </details>
 
-      <section class="settings-group data-group">
-        <div class="data-row">
-          <span>Your data</span>
-          <button class="btn btn-small" type="button" id="backupBtn">Back up</button>
-          <label class="btn btn-small" for="restoreInput">Restore</label>
-        </div>
-        <input id="restoreInput" type="file" accept="application/json,.json" hidden>
-        <div class="data-row">
-          <span>Scans for testing <small class="muted">no keys or locations</small></span>
-          <button class="btn btn-small" type="button" id="testExportBtn">Export</button>
-        </div>
-        <p class="muted small" id="backupStatus" role="status"></p>
-      </section>
+        <section class="settings-group">
+          <label class="setting-row home-setting"><span>Home country<small>Where you'd buy it or resell it. New scans are priced for it; earlier ones keep theirs.</small></span>
+            <select id="homeMarketSelect" aria-label="Home country"></select>
+          </label>
+          <label class="switch"><input type="checkbox" id="defaultTaxFree"><span>Tax refund by default</span></label>
+          <label class="switch"><input type="checkbox" id="saveLocationToggle"><span>Save store location</span></label>
+          <label class="switch"><input type="checkbox" id="autoInfoToggle"><span>Product info on every scan</span></label>
+          <label class="switch"><input type="checkbox" id="buzzToggle"><span>Buzz when done</span></label>
+        </section>
 
-      <button class="link danger" type="button" id="clearHistoryBtn">Clear history</button>
-      <p class="settings-links">
-        <button class="link" type="button" id="introAgain">How it works</button>
-        <button class="link" type="button" id="feedbackBtn">Send feedback</button>
-        <a class="link" href="about/">About</a>
-        <a class="link" href="legal/privacy.html">Privacy</a>
-        <a class="link" href="legal/terms.html">Terms</a>
-      </p>
-    </div>
-  </dialog>
+        <section class="settings-group look-group">
+          <h3 class="group-title">Layout and look <small>changes apply straight away</small></h3>
+          <div class="setting-row"><span>Lists</span>
+            <div class="segmented" role="radiogroup" aria-label="Lists" data-setting="listStyle">
+              <button type="button" role="radio" data-value="list" aria-checked="false">List</button>
+              <button type="button" role="radio" data-value="compact" aria-checked="false">Compact</button>
+              <button type="button" role="radio" data-value="grid" aria-checked="false">Grid</button>
+            </div>
+          </div>
+          <div class="setting-row"><span>Results</span>
+            <div class="segmented" role="radiogroup" aria-label="Results" data-setting="resultStyle">
+              <button type="button" role="radio" data-value="page" aria-checked="false">Page</button>
+              <button type="button" role="radio" data-value="sheet" aria-checked="false">Sheet</button>
+            </div>
+          </div>
+          <div class="setting-row"><span>Theme</span>
+            <div class="segmented" role="radiogroup" aria-label="Theme" data-setting="theme">
+              <button type="button" role="radio" data-value="auto" aria-checked="false">Auto</button>
+              <button type="button" role="radio" data-value="light" aria-checked="false">Light</button>
+              <button type="button" role="radio" data-value="dark" aria-checked="false">Dark</button>
+            </div>
+          </div>
+          <div class="setting-row"><span>Text</span>
+            <div class="segmented" role="radiogroup" aria-label="Text" data-setting="textSize">
+              <button type="button" role="radio" data-value="small" aria-checked="false">Small</button>
+              <button type="button" role="radio" data-value="default" aria-checked="false">Default</button>
+              <button type="button" role="radio" data-value="large" aria-checked="false">Large</button>
+            </div>
+          </div>
+          <div class="setting-row"><span>Show first</span>
+            <div class="segmented" role="radiogroup" aria-label="Show first" data-setting="priceFirst">
+              <button type="button" role="radio" data-value="rm" aria-checked="false" class="home-sym">RM</button>
+              <button type="button" role="radio" data-value="yen" aria-checked="false">¥</button>
+            </div>
+          </div>
+          <div class="setting-row"><span>Colour</span>
+            <div class="swatches" role="radiogroup" aria-label="Colour" data-setting="accent">
+              <button type="button" role="radio" data-value="indigo" aria-checked="false" aria-label="Indigo" style="--sw: #2b3a8c"></button>
+              <button type="button" role="radio" data-value="green" aria-checked="false" aria-label="Green" style="--sw: #1d7a50"></button>
+              <button type="button" role="radio" data-value="red" aria-checked="false" aria-label="Red" style="--sw: #c41e3a"></button>
+              <button type="button" role="radio" data-value="black" aria-checked="false" aria-label="Black" style="--sw: #161830"></button>
+            </div>
+          </div>
+          <label class="switch"><input type="checkbox" id="oneHandToggle" data-setting-toggle="oneHand"><span>One-hand mode<small>Bigger buttons, Back and Save within thumb reach</small></span></label>
+          <label class="switch"><input type="checkbox" id="liveCameraToggle" data-setting-toggle="liveCamera"><span>Built-in camera<small>Viewfinder inside the app; off uses the iPhone camera</small></span></label>
+        </section>
+
+        <details class="settings-group costs-group" id="costsGroup">
+          <summary><span>Resale costs</span><span class="group-status" id="costsStatus"></span></summary>
+          <p class="muted small">Deal labels show what you'd take home after these.</p>
+          <label class="budget-field"><span>Card fee abroad<small>Bank and network markup on foreign spend</small></span>
+            <span class="rm-input"><input id="fxFeeInput" type="number" inputmode="decimal" min="0" max="10" step="0.05"><span>%</span></span></label>
+          <label class="budget-field"><span>Selling fee<small>Platform cut when you resell (Carousell is free, Shopee isn't)</small></span>
+            <span class="rm-input"><input id="sellFeeInput" type="number" inputmode="decimal" min="0" max="50" step="0.5"><span>%</span></span></label>
+          <label class="budget-field"><span>Extra per item<small>Postage, packaging, excess baggage</small></span>
+            <span class="rm-input"><span class="home-sym">RM</span><input id="extraCostInput" type="number" inputmode="decimal" min="0" step="1"></span></label>
+        </details>
+
+        <details class="settings-group" id="serverGroup">
+          <summary><span>Background scanning</span><span class="group-status" id="serverStatus"></span></summary>
+          <label class="field">
+            <span>Scan server URL</span>
+            <input id="serverUrlInput" type="text" inputmode="url" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="https://script.google.com/…/exec">
+          </label>
+          <div class="field">
+            <span>Telegram</span>
+            <div id="tgSetup">
+              <ol class="steps-text">
+                <li>@BotFather, <code>/newbot</code>, copy the token</li>
+                <li>Open your bot, tap Start</li>
+                <li>Paste the token, tap Link</li>
+              </ol>
+              <span class="inline-row">
+                <input id="tgTokenInput" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-1p-ignore data-lpignore="true" placeholder="Bot token" aria-label="Telegram bot token">
+                <button class="btn btn-small btn-primary" type="button" id="tgLink">Link</button>
+              </span>
+            </div>
+            <small id="tgStatus" role="status"></small>
+            <button class="link small" type="button" id="tgUnlink" hidden>Unlink</button>
+          </div>
+          <details class="ntfy-alt">
+            <summary>Use ntfy instead</summary>
+            <label class="field">
+              <span>ntfy topic</span>
+              <span class="inline-row">
+                <input id="ntfyInput" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="kaimono-…">
+                <button class="btn btn-small" type="button" id="ntfyNew">New</button>
+                <button class="btn btn-small" type="button" id="ntfyCopy">Copy</button>
+              </span>
+            </label>
+            <label class="field">
+              <span>ntfy access token</span>
+              <input id="ntfyTokenInput" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" data-1p-ignore data-lpignore="true" placeholder="tk_…">
+            </label>
+          </details>
+          <button class="btn btn-small" type="button" id="serverTest">Test notifications</button>
+          <p class="small" id="serverTestResult" role="status"></p>
+        </details>
+
+        <section class="settings-group data-group">
+          <div class="data-row">
+            <span>Your data</span>
+            <button class="btn btn-small" type="button" id="backupBtn">Back up</button>
+            <label class="btn btn-small" for="restoreInput">Restore</label>
+          </div>
+          <input id="restoreInput" type="file" accept="application/json,.json" hidden>
+          <div class="data-row">
+            <span>Scans for testing <small class="muted">no keys or locations</small></span>
+            <button class="btn btn-small" type="button" id="testExportBtn">Export</button>
+          </div>
+          <p class="muted small" id="backupStatus" role="status"></p>
+        </section>
+
+        <button class="link danger" type="button" id="clearHistoryBtn">Clear history</button>
+        <p class="settings-links">
+          <button class="link" type="button" id="introAgain">How it works</button>
+          <button class="link" type="button" id="feedbackBtn">Send feedback</button>
+          <a class="link" href="about/">About</a>
+          <a class="link" href="legal/privacy.html">Privacy</a>
+          <a class="link" href="legal/terms.html">Terms</a>
+        </p>
+      </div>
+    </section>
+  </main>
+
 
   <!-- Built-in camera (Settings, Built-in camera): a viewfinder inside the app -->
   <dialog class="camera" id="cameraView" aria-label="Camera">

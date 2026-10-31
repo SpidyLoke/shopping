@@ -264,7 +264,7 @@ Shipping, luggage allowance and warranty aren't factored in. Gemini flags Japan-
 - **How it works · About · Privacy · Terms** at the bottom. The first time the app opens (with no scans yet) a short intro explains it and that prices are estimates; **How it works** shows it again.
 - **Home country:** see [Home country](#home-country).
 - **Scan with** (once the backend is set up): **Kaimono** or **My keys**, with scans left this month and the anonymous **Account ID** to quote if you want the backend's record deleted.
-- **API keys** and **Background scanning** fold away once set up. Saved keys and tokens are never shown or refilled; the box shows a hint like "Saved · AIza…x9Q2", and leaving it empty keeps what's saved. With no password-style fields and no form, iPhone doesn't offer to save a password. The × at the top closes Settings without saving.
+- **API keys** and **Background scanning** fold away once set up. Saved keys and tokens are never shown or refilled; the box shows a hint like "Saved · AIza…x9Q2", and leaving it empty keeps what's saved. With no password-style fields and no form, iPhone doesn't offer to save a password. Settings is a page of its own (the Settings tab): every change saves as it's made, and typed fields save when you leave them.
 
 ## Kaimono backend (Firebase)
 

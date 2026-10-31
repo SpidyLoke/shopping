@@ -6,7 +6,7 @@ import { buildPrompt, findBarcodes, gtinValid, MARKETS, marketFor } from './prom
 import { FIREBASE } from './firebase-config.js';
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.10.31-5';
+const APP_VERSION = '2026.10.31-6';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -675,7 +675,8 @@ async function enableNotifications() {
     if (!vapidPublic) throw new Error('the backend needs updating (run the setup again)');
     const reg = await navigator.serviceWorker.ready;
     const sub = (await reg.pushManager.getSubscription()) || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: vapidBytes(vapidPublic) });
-    await cloudCall('pushSubscribe', { subscription: sub.toJSON() }, 15000);
+    const r = await cloudCall('usage', { subscription: sub.toJSON() }, 15000);
+    if (!r.push?.saved) throw new Error(r.push?.error || 'the backend needs updating (run the setup again)');
     store.set('notify', true);
     return true;
   } catch (e) {
@@ -689,7 +690,7 @@ async function disableNotifications() {
   try {
     const reg = await navigator.serviceWorker?.getRegistration();
     await (await reg?.pushManager.getSubscription())?.unsubscribe();
-    await cloudCall('pushSubscribe', { remove: true }, 15000);
+    await cloudCall('usage', { removePush: true }, 15000);
   } catch {
     // off on this phone either way
   }
@@ -2337,7 +2338,7 @@ function renderShelf(shelf) {
 
 // ---------- rendering ----------
 
-const views = ['homeView', 'resultView', 'historyView', 'tripView', 'compareView', 'shelfView'];
+const views = ['homeView', 'resultView', 'historyView', 'tripView', 'compareView', 'shelfView', 'settingsView'];
 
 function show(viewId, keepScroll = false) {
   const changed = $(`#${viewId}`).hidden;
@@ -4103,12 +4104,14 @@ function renderCompare(ids) {
 
 // keepScroll: re-render the current view in place (e.g. after tapping ♥) without jumping to the top.
 function renderNav(hash) {
-  const active = hash.startsWith('#/history') || hash.startsWith('#/compare') ? 'history' : hash.startsWith('#/trip') ? 'trip' : 'home';
+  const active = hash.startsWith('#/history') || hash.startsWith('#/compare') ? 'history' : hash.startsWith('#/trip') ? 'trip' : hash.startsWith('#/settings') ? 'settings' : 'home';
   for (const b of document.querySelectorAll('.bottom-nav [data-nav]')) {
     if (b.dataset.nav === active) b.setAttribute('aria-current', 'page');
     else b.removeAttribute('aria-current');
   }
 }
+
+let lastRoute = null;
 
 function route(keepScroll = false) {
   if (location.hash === '#/upgraded') {
@@ -4116,6 +4119,10 @@ function route(keepScroll = false) {
     afterPayment();
   }
   const hash = location.hash || '#/';
+  // Leaving Settings keeps anything typed but not yet confirmed.
+  if (lastRoute === '#/settings' && hash !== '#/settings') commitSettings();
+  const entering = hash === '#/settings' && lastRoute !== '#/settings';
+  lastRoute = hash;
   renderNav(hash);
   trackNav(hash);
   const home = hash === '#/' || hash === '#';
@@ -4146,6 +4153,11 @@ function route(keepScroll = false) {
   if (cmp) {
     renderCompare(cmp[1].split(','));
     show('compareView', keepScroll);
+    return;
+  }
+  if (hash === '#/settings') {
+    renderSettings(entering);
+    show('settingsView', keepScroll);
     return;
   }
   if (hash.startsWith('#/trip')) {
@@ -4187,7 +4199,14 @@ function saveSecretFields() {
   }
 }
 
+// Settings is a page (#/settings). Every change saves as it's made; typed fields save when they lose
+// focus or when you leave the page.
 function openSettings() {
+  if (location.hash === '#/settings') renderSettings(false);
+  else location.hash = '#/settings';
+}
+
+function renderSettings(fresh = true) {
   renderSecretFields();
   renderLookControls();
   $('#modelInput').value = store.get('model', '') || DEFAULT_MODEL;
@@ -4203,23 +4222,27 @@ function openSettings() {
   $('#sellFeeInput').value = settings.sellFee;
   $('#extraCostInput').value = settings.extraCost;
   $('#costsStatus').textContent = costsSummary();
-  $('#costsGroup').open = false;
   renderTelegramStatus();
-  $('#serverTestResult').textContent = '';
-  // Finished setup folds away; only what still needs doing starts open.
   const hasKey = Boolean(settings.apiKey);
   $('#keysStatus').textContent = hasKey ? 'Set' : 'Needed';
-  $('#keysGroup').open = !hasKey;
   $('#serverStatus').textContent = settings.serverUrl ? (settings.telegram?.chatId ? 'On · Telegram' : 'On') : 'Off';
-  $('#serverGroup').open = false;
+  if (fresh) {
+    // Finished setup folds away; only what still needs doing starts open.
+    $('#costsGroup').open = false;
+    $('#keysGroup').open = !hasKey;
+    $('#serverGroup').open = false;
+    $('#serverTestResult').textContent = '';
+    $('#settingsSaved').textContent = '';
+    if (cloudOn()) cloudCall('usage', {}, 15000).then(saveUsage).catch(() => {});
+  }
   renderQuota();
   renderHomeSelect();
   renderHomeSymbols();
-  if (cloudOn()) cloudCall('usage', {}, 15000).then(saveUsage).catch(() => {});
-  $('#settingsDialog').showModal();
 }
 
-$('#saveSettingsBtn').addEventListener('click', () => {
+let savedTimer = null;
+
+function commitSettings() {
   saveSecretFields();
   const model = $('#modelInput').value.trim();
   store.set('model', model && model !== DEFAULT_MODEL ? model : '');
@@ -4232,9 +4255,19 @@ $('#saveSettingsBtn').addEventListener('click', () => {
     store.set(key, v == null ? 0 : Math.min(Math.max(v, 0), max));
   }
   saveServerSettings();
-  $('#settingsDialog').close();
-  route();
-});
+}
+
+// Each field saves itself; "Saved" flashes by the title.
+for (const sel of ['#defaultTaxFree', '#saveLocationToggle', '#autoInfoToggle', '#buzzToggle', '#modelInput', '#fxFeeInput', '#sellFeeInput',
+  '#extraCostInput', '#apiKeyInput', '#geminiKeyInput', '#ntfyTokenInput', '#serverUrlInput', '#ntfyInput']) {
+  $(sel).addEventListener('change', () => {
+    commitSettings();
+    renderSettings(false);
+    $('#settingsSaved').textContent = 'Saved';
+    clearTimeout(savedTimer);
+    savedTimer = setTimeout(() => { $('#settingsSaved').textContent = ''; }, 1600);
+  });
+}
 $('#geminiKeyRemove').addEventListener('click', () => {
   store.set('geminiKey', '');
   renderSecretFields();
@@ -4326,7 +4359,6 @@ $('#clearHistoryBtn').addEventListener('click', () => {
   if (!confirm('Delete all saved scans?')) return;
   store.set('history', []);
   imageDb.clear();
-  $('#settingsDialog').close();
   location.hash = '#/';
   route();
 });
@@ -4682,7 +4714,6 @@ $('#judgeSend').addEventListener('click', () => {
 
 // Feedback from Settings: to the backend, or as a GitHub issue when there's no backend.
 $('#feedbackBtn').addEventListener('click', () => {
-  $('#settingsDialog').close();
   $('#feedbackMsg').textContent = '';
   $('#feedbackSheet').showModal();
 });
@@ -4714,7 +4745,6 @@ $('#feedbackSend').addEventListener('click', async () => {
 const dayMonth = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 
 async function openStats() {
-  $('#settingsDialog').close();
   $('#statsBody').replaceChildren(el('p', { class: 'muted small' }, 'Loading…'));
   $('#statsSheet').showModal();
   try {
@@ -4750,7 +4780,7 @@ $('#notifyMeBtn').addEventListener('click', async () => {
   if (current?.serverJob?.cloud && !current.serverJob.done) {
     current.serverJob = { ...current.serverJob, notify: true };
     saveEntry(current);
-    cloudCall('notifyMe', { jobId: current.serverJob.id, entryId: current.id }, 15000).catch(() => {});
+    cloudCall('result', { jobId: current.serverJob.id, entryId: current.id, notify: true }, 15000).catch(() => {});
   }
   refresh(current);
 });
@@ -4888,7 +4918,6 @@ async function signOutAccount() {
 const fmtPrice = (p) => `${p.currency === 'MYR' ? 'RM ' : `${p.currency} `}${p.amount.toFixed(2)}`;
 
 async function openUpgrade() {
-  if ($('#settingsDialog').open) $('#settingsDialog').close();
   $('#upgradeMsg').textContent = 'Loading prices…';
   $('#planList').replaceChildren();
   $('#upgradeSheet').showModal();
@@ -4970,10 +4999,7 @@ $('#accountClose').addEventListener('click', () => {
 $('#upgradeClose').addEventListener('click', () => $('#upgradeSheet').close());
 $('#accountBtn').addEventListener('click', () => {
   if (store.get('cloudEmail')) signOutAccount();
-  else {
-    $('#settingsDialog').close();
-    openAccount('signin');
-  }
+  else openAccount('signin');
 });
 $('#upgradeBtn').addEventListener('click', openUpgrade);
 $('#manageBtn').addEventListener('click', openPortal);
@@ -5156,7 +5182,6 @@ $('#addPhotoInput').addEventListener('change', (e) => {
   e.target.value = '';
   if (current && files.length) addPhotos(current.id, files);
 });
-$('#settingsClose').addEventListener('click', () => $('#settingsDialog').close());
 
 function renderLookControls() {
   for (const group of document.querySelectorAll('[data-setting]')) {

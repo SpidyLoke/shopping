@@ -117,16 +117,17 @@ async function mockCloud(page, { ocr = '税込 ¥11,480 4948872415545', gemini =
       if (name === 'result' && failResult) throw Object.assign(new Error('INTERNAL'), { code: 'internal' });
       const out = name === 'scan' ? await core.runScan(data, ctx)
         : name === 'ask' ? await core.runAsk(data, ctx)
-          : name === 'result' ? await core.jobResult(data, ctx)
+          : name === 'result' ? await (data.notify ? core.requestNotify(data, ctx) : core.jobResult(data, ctx))
             : name === 'plans' ? await billing.listPlans(pay)
               : name === 'checkout' ? await billing.createCheckout(data, { uid, email: user?.email, anonymous: user?.isAnonymous }, pay)
                 : name === 'portal' ? await billing.createPortal({ uid }, pay)
-                  : name === 'pushSubscribe' ? await core.savePushSubscription(data, { uid, deps })
-                  : name === 'notifyMe' ? await core.requestNotify(data, { uid, deps })
                   : name === 'report' ? await ops.saveReport(data, { uid, deps: { db } })
                     : name === 'feedback' ? await ops.saveFeedback(data, { uid, deps: { db } })
                       : name === 'stats' ? await ops.ownerStats({ uid }, { deps: { db }, owners })
-                        : { ...(await core.usageFor(uid, deps)), owner: ops.isOwner(uid, owners), vapidPublic: 'BEu4iKN6ZmWbTestPublicKey_-123' };
+                        : {
+                          push: data.subscription || data.removePush ? await core.savePushSubscription({ subscription: data.subscription, remove: data.removePush }, ctx) : undefined,
+                          ...(await core.usageFor(uid, deps)), owner: ops.isOwner(uid, owners), vapidPublic: 'BEu4iKN6ZmWbTestPublicKey_-123',
+                        };
       if (name === 'scan' && drops > 0) {
         drops -= 1;
         await r.abort('connectionreset');

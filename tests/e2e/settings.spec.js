@@ -6,8 +6,28 @@ test('no form or password field (iPhone would offer to save a password)', async 
   await mockApis(page);
   await openApp(page);
   await page.click('#settingsBtn');
-  await expect(page.locator('#settingsDialog form')).toHaveCount(0);
-  await expect(page.locator('#settingsDialog input[type="password"]')).toHaveCount(0);
+  await expect(page.locator('#settingsView form')).toHaveCount(0);
+  await expect(page.locator('#settingsView input[type="password"]')).toHaveCount(0);
+});
+
+test('Settings is a page: its tab lights up, every change saves straight away, Back leaves it', async ({ page }) => {
+  await mockApis(page);
+  await openApp(page);
+  await page.click('#settingsBtn');
+  await expect(page).toHaveURL(/#\/settings$/);
+  await expect(page.locator('#settingsView')).toBeVisible();
+  await expect(page.locator('#homeView')).toBeHidden();
+  await expect(page.locator('#settingsBtn')).toHaveAttribute('aria-current', 'page');
+  await page.click('label:has(#buzzToggle)');
+  await expect(page.locator('#settingsSaved')).toHaveText('Saved');
+  expect(await page.evaluate(() => localStorage.getItem('kc.buzz'))).toBe('false');
+  await page.click('#costsGroup summary');
+  await page.fill('#fxFeeInput', '1.5');
+  await page.click('#backBtn'); // leaving keeps what was typed
+  await expect(page.locator('#homeView')).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem('kc.fxFee'))).toBe('1.5');
+  await page.click('#settingsBtn');
+  await expect(page.locator('#fxFeeInput')).toHaveValue('1.5');
 });
 
 test('saved keys are never refilled and an empty box keeps them', async ({ page }) => {
@@ -17,11 +37,10 @@ test('saved keys are never refilled and an empty box keeps them', async ({ page 
   await page.click('#keysGroup summary');
   await page.fill('#apiKeyInput', 'AIzaCLOUD1234');
   await page.fill('#geminiKeyInput', 'AIzaGEMINI9999');
-  await page.click('#saveSettingsBtn');
-  await page.click('#settingsBtn');
+  await page.click('#settingsView h1');
   await expect(page.locator('#apiKeyInput')).toHaveValue('');
   await expect(page.locator('#apiKeyInput')).toHaveAttribute('placeholder', 'Saved · AIza…1234');
-  await page.click('#saveSettingsBtn');
+  await page.click('#backBtn');
   expect(await page.evaluate(() => [localStorage.getItem('kc.apiKey'), localStorage.getItem('kc.geminiKey')])).toEqual(['"AIzaCLOUD1234"', '"AIzaGEMINI9999"']);
 });
 
@@ -111,7 +130,7 @@ test('first run: the intro, then a walkthrough with a sample tag that uses no sc
   await expect(page.locator('#coachNext')).toHaveText('Start scanning');
   await page.click('#coachNext');
   await expect(page.locator('#coach')).toBeHidden();
-  await expect(page.locator('#settingsDialog')).toBeVisible(); // no keys yet
+  await expect(page.locator('#settingsView')).toBeVisible(); // no keys yet
   const left = await page.evaluate(() => ({ history: JSON.parse(localStorage.getItem('kc.history') || '[]').length, done: localStorage.getItem('kc.tourDone') }));
   expect(left).toEqual({ history: 0, done: 'true' });
   expect(calls.gemini).toHaveLength(0);

@@ -10,8 +10,7 @@ test('with Singapore as home, scans search Singapore, show S$ and skip CeX', asy
   await openApp(page, { history: [scan('Old', { my_new: { typical: 600 } }, { yen: 10000 })] });
   await page.click('#settingsBtn');
   await page.selectOption('#homeMarketSelect', 'SG');
-  await expect(page.locator('#settingsDialog .home-sym').first()).toHaveText('S$');
-  await page.click('#saveSettingsBtn');
+  await expect(page.locator('#settingsView .home-sym').first()).toHaveText('S$');
   await scanFromGallery(page);
   const prompt = calls.gemini.at(-1).prompt;
   expect(prompt).toContain('a shopper from Singapore');

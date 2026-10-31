@@ -1822,3 +1822,8 @@ dialog.install-guide::backdrop { background: var(--bg); }
 .coach-count { margin-left: auto; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .install-head h2:focus { outline: none; }
 .notify-me { display: block; margin: -4px 0 12px; padding: 0 2px; text-align: left; }
+
+/* Settings as a page */
+.settings-view #settingsForm { padding: 0 0 24px; }
+.settings-saved { color: var(--good); font-weight: 600; transition: opacity 0.3s; }
+.settings-saved:empty { opacity: 0; }

@@ -45,7 +45,7 @@ test('costs from Settings come off the profit, and MY used says what it rests on
   await page.click('#costsGroup summary');
   await page.fill('#sellFeeInput', '10');
   await page.fill('#extraCostInput', '10');
-  await page.click('#saveSettingsBtn');
+  await page.click('#settingsView h1'); // typed fields save when they lose focus
   // RM 300 + RM 6 card fee + RM 10 = RM 316; RM 400 less 10% = RM 360; RM 44 left.
   await page.goto('/#/scan/Flip');
   await expect(page.locator('#dealTags .deal').first()).toHaveText('RM 44 profit reselling');
