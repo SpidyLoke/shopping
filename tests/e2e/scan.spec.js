@@ -166,3 +166,23 @@ test('CeX: the right single-digit model still matches', async ({ page }) => {
   await scanFromGallery(page);
   await expect(page.locator('#cexSell')).toHaveText('RM 1,150');
 });
+
+test('CeX: the same model number from another brand is not a match (Xtrfy M4 is not the Aorus M4)', async ({ page }) => {
+  await mockApis(page, {
+    gemini: () => product({ product_name: 'Xtrfy M4 RGB Ultra-Light Wired Gaming Mouse', search_query: 'Xtrfy M4 RGB wired gaming mouse' }),
+    cexHits: [{ boxId: 'A1', boxName: 'Aorus M4 RGB Wired Gaming Mouse, B', sellPrice: 120, cashPriceCalculated: 50, exchangePriceCalculated: 70 }],
+  });
+  await openApp(page);
+  await scanFromGallery(page);
+  await expect(page.locator('#cexSell')).toHaveText('–');
+});
+
+test('CeX: a row that leaves the brand out, or names a sub-brand too, still matches', async ({ page }) => {
+  await mockApis(page, {
+    gemini: () => product({ product_name: 'Soundcore Life Q30', search_query: 'Soundcore Life Q30' }),
+    cexHits: [{ boxId: 'S1', boxName: 'Soundcore by Anker Life Q30 ANC Headphones, B', sellPrice: 160, cashPriceCalculated: 70, exchangePriceCalculated: 90 }],
+  });
+  await openApp(page);
+  await scanFromGallery(page);
+  await expect(page.locator('#cexSell')).toHaveText('RM 160');
+});

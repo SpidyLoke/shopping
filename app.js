@@ -6,7 +6,7 @@ import { buildPrompt, findBarcodes, gtinValid, MARKETS, marketFor } from './prom
 import { FIREBASE } from './firebase-config.js';
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.10.31-4';
+const APP_VERSION = '2026.10.31-5';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -871,6 +871,19 @@ const ACCESSORY_WORDS = ['case', 'cover', 'cable', 'charger', 'adapter', 'adapto
 // CeX search is fuzzy (cases and cables come back for headphones), so keep only rows naming the same
 // model: most of the query's words, every word with a digit in it (XM5 is not XM6), and no
 // accessory words the query didn't ask for.
+// Brands that make lookalike model numbers (Xtrfy M4 vs Aorus M4). A row naming one of these that the
+// query doesn't, when the query's own brand isn't in the row either, is someone else's product.
+const BRANDS = ['aorus', 'razer', 'logitech', 'corsair', 'steelseries', 'hyperx', 'asus', 'rog', 'msi', 'xtrfy', 'zowie', 'glorious',
+  'pulsar', 'finalmouse', 'roccat', 'sony', 'microsoft', 'xbox', 'nintendo', 'apple', 'samsung', 'anker', 'soundcore', 'jbl', 'bose',
+  'sennheiser', 'beats', 'scuf', 'pdp', 'victrix', 'nacon', 'hori', '8bitdo', 'gamesir', 'retroid', 'anbernic', 'ayaneo', 'ayn',
+  'valve', 'meta', 'oculus', 'dji', 'gopro', 'insta360', 'canon', 'nikon', 'fujifilm', 'panasonic', 'casio', 'seiko', 'citizen',
+  'garmin', 'fitbit', 'xiaomi', 'huawei', 'oppo', 'vivo', 'google', 'oneplus', 'lenovo', 'dell', 'hp', 'acer', 'gigabyte', 'turtle'];
+
+function otherBrand(want, have) {
+  const wantBrands = BRANDS.filter((b) => want.has(b));
+  return wantBrands.length > 0 && !wantBrands.some((b) => have.has(b)) && BRANDS.some((b) => have.has(b) && !want.has(b));
+}
+
 function pickCex(query, hits) {
   const want = words(query);
   const modelWords = [...want].filter((t) => /\d/.test(t));
@@ -881,6 +894,7 @@ function pickCex(query, hits) {
     return want.size && shared / want.size >= 0.6
       && modelWords.every((t) => have.has(t))
       && sameVariant(want, have)
+      && !otherBrand(want, have)
       && !ACCESSORY_WORDS.some((w) => have.has(w) && !want.has(w));
   });
   // Anything priced under a quarter of the typical match is almost certainly a part, not the product.
