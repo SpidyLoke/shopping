@@ -98,7 +98,6 @@ secret_set STRIPE_WEBHOOK_SECRET || put_secret STRIPE_WEBHOOK_SECRET unset
 
 say "7. Deploy (3 to 5 minutes the first time)"
 npm ci --prefix functions --no-audit --no-fund >/dev/null
-touch functions/.env
 $FIREBASE deploy --only functions,firestore:rules --project "$PROJECT" --non-interactive --force
 ok "Deployed"
 

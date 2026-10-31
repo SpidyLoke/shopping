@@ -174,10 +174,12 @@ jobs:
           DAILY_SCANS: ${{ vars.DAILY_SCANS }}
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}
         run: |
-          : > functions/.env
+          # functions/.env has the defaults; this project's overrides go in .env.<project-id>.
+          f="functions/.env.$PROJECT"
+          : > "$f"
           for name in OWNER_UIDS FREE_SCANS PRO_SCANS PASS_SCANS PASS_DAYS DAILY_SCANS GEMINI_MODEL; do
             value="${!name}"
-            if [ -n "$value" ]; then echo "$name=$value" >> functions/.env; echo "$name set"; fi
+            if [ -n "$value" ]; then echo "$name=$value" >> "$f"; echo "$name set"; fi
           done
 
       - name: Deploy functions and database rules

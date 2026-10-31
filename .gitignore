@@ -5,4 +5,4 @@ functions/node_modules/
 functions/.env.local
 .firebase/
 *-debug.log
-functions/.env
+functions/.env.*
