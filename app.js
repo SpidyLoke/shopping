@@ -6,7 +6,7 @@ import { buildPrompt, findBarcodes, gtinValid, MARKETS, marketFor } from './prom
 import { FIREBASE } from './firebase-config.js';
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.11.01-2';
+const APP_VERSION = '2026.11.01-3';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -4836,8 +4836,11 @@ async function openStats() {
 }
 
 $('#statsBtn').addEventListener('click', openStats);
+// The switch only shows on once the backend has the phone's address.
 $('#notifyToggle').addEventListener('change', async (e) => {
-  if (e.target.checked) e.target.checked = await enableNotifications();
+  const want = e.target.checked;
+  e.target.checked = false;
+  if (want) e.target.checked = await enableNotifications();
   else await disableNotifications();
 });
 $('#notifyMeBtn').addEventListener('click', async () => {

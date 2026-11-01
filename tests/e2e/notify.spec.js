@@ -27,7 +27,7 @@ test('turn on notifications, then a scan tells the backend to notify when it is 
   await expect(page.locator('#notifyRow')).toBeVisible();
   await page.click('#notifyRow');
   await expect(page.locator('#notifyToggle')).toBeChecked();
-  expect(cloud.db.docs.get('users/anon-1').push.endpoint).toBe('https://web.push.apple.com/QTest');
+  await expect.poll(() => cloud.db.docs.get('users/anon-1')?.push?.endpoint).toBe('https://web.push.apple.com/QTest');
   expect(await page.evaluate(() => window.__subscribeOptions.userVisibleOnly)).toBe(true);
   await page.goto('/#/');
   await page.setInputFiles('#galleryInput', fixture('tag.jpg'));
