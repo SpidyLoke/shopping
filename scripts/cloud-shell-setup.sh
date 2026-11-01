@@ -11,6 +11,9 @@
 
 set -euo pipefail
 
+# --stripe asks for the Stripe key again (to switch from the test key to the live one).
+ASK_STRIPE=false
+if [ "${1:-}" = "--stripe" ]; then ASK_STRIPE=true; shift; fi
 PROJECT="${1:-$(gcloud config get-value project 2>/dev/null)}"
 REGION=asia-southeast1
 FIREBASE="npx -y firebase-tools@15.34.2"
@@ -99,9 +102,65 @@ if ! secret_set VAPID_PUBLIC_KEY || ! secret_set VAPID_PRIVATE_KEY; then
   put_secret VAPID_PRIVATE_KEY "$(printf '%s' "$pair" | node -e "let s='';process.stdin.on('data',(d)=>{s+=d}).on('end',()=>process.stdout.write(JSON.parse(s).privateKey))")"
   ok "Notification keys made"
 fi
-# Payments stay off until a Stripe key is added (the Deploy backend workflow, or this script's step 10).
+
+# Payments: off ("unset") until a Stripe secret key is given. Asked for once; --stripe asks again.
+say "6b. Payments (Stripe)"
+secret_val() { gcloud secrets versions access latest --secret="$1" --project "$PROJECT" 2>/dev/null || true; }
 secret_set STRIPE_SECRET_KEY || put_secret STRIPE_SECRET_KEY unset
 secret_set STRIPE_WEBHOOK_SECRET || put_secret STRIPE_WEBHOOK_SECRET unset
+stripe_key="${STRIPE_KEY:-}"
+if [ -z "$stripe_key" ] && { [ "$(secret_val STRIPE_SECRET_KEY)" = unset ] || [ "$ASK_STRIPE" = true ]; } && [ -r /dev/tty ]; then
+  echo "Paste your Stripe secret key (Stripe → Developers → API keys: sk_test_… to try it, sk_live_… to sell),"
+  printf 'or just press Enter to leave payments off: '
+  read -rs stripe_key < /dev/tty || stripe_key=""
+  echo
+fi
+stripe_key=$(printf '%s' "$stripe_key" | tr -d '[:space:]')
+if [ -z "$stripe_key" ]; then
+  [ "$(secret_val STRIPE_SECRET_KEY)" = unset ] && ok "Payments stay off (run with --stripe to add a key later)" || ok "Stripe already connected"
+elif ! printf '%s' "$stripe_key" | grep -qE '^(sk|rk)_(test|live)_'; then
+  warn "That doesn't look like a Stripe secret key (it starts sk_test_ or sk_live_). Payments left as they were."
+else
+  api() { curl -sS --fail-with-body -u "$stripe_key:" "$@"; }
+  if ! api https://api.stripe.com/v1/balance >/dev/null; then
+    warn "Stripe didn't accept that key. Payments left as they were."
+  else
+    [ "$(secret_val STRIPE_SECRET_KEY)" = "$stripe_key" ] || put_secret STRIPE_SECRET_KEY "$stripe_key"
+    # Prices, found by lookup key; a changed amount becomes a new price that takes the key over.
+    price() { # lookup_key name amount_in_sen [interval]
+      have=$(api -G https://api.stripe.com/v1/prices --data-urlencode "lookup_keys[]=$1" -d active=true | jq -r '.data[0].unit_amount // empty')
+      if [ "$have" = "$3" ]; then echo "  $2: unchanged"; return; fi
+      args=(-d currency=myr -d unit_amount="$3" -d lookup_key="$1" -d transfer_lookup_key=true --data-urlencode "product_data[name]=$2")
+      [ -n "${4:-}" ] && args+=(-d "recurring[interval]=$4")
+      api https://api.stripe.com/v1/prices "${args[@]}" >/dev/null && echo "  $2: RM $(awk "BEGIN{printf \"%.2f\", $3/100}")"
+    }
+    price kaimono_pass "Kaimono Check trip pass" "${PASS_PRICE_SEN:-1990}"
+    price kaimono_monthly "Kaimono Check monthly" "${MONTHLY_PRICE_SEN:-2990}" month
+    # The webhook that tells the backend about payments (a new one for a new key's account).
+    url="https://$REGION-$PROJECT.cloudfunctions.net/stripeWebhook"
+    hook=$(api -G https://api.stripe.com/v1/webhook_endpoints -d limit=100 | jq -r --arg u "$url" '[.data[] | select(.url == $u)][0].id // empty')
+    if [ -n "$hook" ] && [ "$(secret_val STRIPE_WEBHOOK_SECRET)" != unset ]; then
+      echo "  Webhook already set up"
+    else
+      [ -n "$hook" ] && api -X DELETE "https://api.stripe.com/v1/webhook_endpoints/$hook" >/dev/null
+      whsec=$(api https://api.stripe.com/v1/webhook_endpoints --data-urlencode "url=$url" \
+        -d "enabled_events[]=checkout.session.completed" -d "enabled_events[]=checkout.session.async_payment_succeeded" \
+        -d "enabled_events[]=customer.subscription.created" -d "enabled_events[]=customer.subscription.updated" \
+        -d "enabled_events[]=customer.subscription.deleted" | jq -r .secret)
+      put_secret STRIPE_WEBHOOK_SECRET "$whsec"
+      echo "  Webhook set up"
+    fi
+    # Stripe's customer portal (Manage in Settings): change card, cancel, invoices.
+    if [ "$(api -G https://api.stripe.com/v1/billing_portal/configurations -d is_default=true | jq '.data | length')" = "0" ]; then
+      api https://api.stripe.com/v1/billing_portal/configurations \
+        -d "features[subscription_cancel][enabled]=true" -d "features[payment_method_update][enabled]=true" \
+        -d "features[invoice_history][enabled]=true" -d "features[customer_update][enabled]=false" \
+        --data-urlencode "business_profile[headline]=Kaimono Check" >/dev/null
+      echo "  Customer portal set up"
+    fi
+    case "$stripe_key" in *_test_*) ok "Stripe connected in TEST mode: pay with card 4242 4242 4242 4242" ;; *) ok "Stripe connected: payments are live" ;; esac
+  fi
+fi
 
 say "7. Deploy (3 to 5 minutes the first time)"
 npm ci --prefix functions --no-audit --no-fund >/dev/null
