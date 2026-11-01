@@ -163,6 +163,10 @@ export const busy = (e) => [429, 500, 503, 504].includes(e.status) && !/prepay|c
 const RETRY_WAITS = [2000, 6000];
 const GEMINI_MS = 100000; // grounded search usually answers in 20 to 60 seconds
 const SCAN_BUDGET = 270000; // the scan function stops at 300 seconds
+// Questions: the phone waits 120 seconds, so each try gets less time and a busy main model hands
+// over to the lighter one straight away instead of being asked three times.
+const ASK_MS = 40000;
+const ASK_BUDGET = 110000;
 
 async function readPhotos({ fetch, keys }, images) {
   const d = await google(fetch, `https://vision.googleapis.com/v1/images:annotate?key=${encodeURIComponent(keys.vision)}`, {
@@ -182,11 +186,12 @@ async function readPhotos({ fetch, keys }, images) {
 }
 
 // `deadline`: retries stop when another try couldn't finish before it (the function's own time limit).
-async function askGemini({ fetch, keys, model, fallbackModel, clock = Date.now, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), geminiMs = GEMINI_MS }, images, prompt, search, deadline = Infinity) {
+async function askGemini({ fetch, keys, model, fallbackModel, clock = Date.now, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), geminiMs = GEMINI_MS, hurry = false }, images, prompt, search, deadline = Infinity) {
   const body = { contents: [{ role: 'user', parts: [...images.map((data) => ({ inline_data: { mime_type: 'image/jpeg', data } })), { text: prompt }] }] };
   if (search) body.tools = [{ google_search: {} }];
   const call = (m) => google(fetch, `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(m)}:generateContent?key=${encodeURIComponent(keys.gemini)}`, body, 'Gemini', geminiMs);
-  const tries = [model, model, model, ...(fallbackModel && fallbackModel !== model ? [fallbackModel] : [])];
+  const fb = fallbackModel && fallbackModel !== model ? fallbackModel : null;
+  const tries = !fb ? [model, model, model] : hurry ? [model, fb, model] : [model, model, model, fb];
   let d;
   for (let i = 0; i < tries.length; i += 1) {
     try {
@@ -194,7 +199,8 @@ async function askGemini({ fetch, keys, model, fallbackModel, clock = Date.now, 
       break;
     } catch (e) {
       // A call that hung (504) won't do better a second time: go straight to the lighter model.
-      const next = e.status === 504 && tries[tries.length - 1] !== tries[i] ? tries.length - 1 : i + 1;
+      const lighter = fb ? tries.indexOf(fb, i + 1) : -1;
+      const next = e.status === 504 && lighter > i ? lighter : i + 1;
       if (!busy(e) || next >= tries.length || clock() + (RETRY_WAITS[i] || 0) + geminiMs > deadline) throw e;
       if (e.status !== 504 && RETRY_WAITS[i]) await sleep(RETRY_WAITS[i]);
       i = next - 1;
@@ -470,7 +476,7 @@ export async function runAsk(input, { uid, ipHash = null, deps }) {
   }
   const asks = await reserveAsk(db, { uid, ipHash, now, limits });
   try {
-    const out = ocrOnly ? await readPhotos(deps, images) : await askGemini(deps, images, input.prompt, input.search === true, now + 150000);
+    const out = ocrOnly ? await readPhotos(deps, images) : await askGemini({ ...deps, geminiMs: Math.min(deps.geminiMs ?? GEMINI_MS, ASK_MS), hurry: true }, images, input.prompt, input.search === true, now + ASK_BUDGET);
     return { ...out, asks };
   } catch (e) {
     await db.txn(async (t) => {

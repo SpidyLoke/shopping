@@ -65,7 +65,10 @@ async function mockApis(page, { gemini = () => product(), vision = () => '税込
     const parts = body.contents[0].parts;
     const prompt = parts.at(-1).text;
     calls.gemini.push({ prompt, images: parts.filter((x) => x.inline_data).length, search: Boolean(body.tools) });
-    r.fulfill({ json: geminiReply(await gemini(prompt, body)) });
+    const reply = await gemini(prompt, body);
+    // { status: 503, error: '…' } answers as Gemini's error; a string as plain text.
+    if (reply && reply.status >= 400 && reply.error) return r.fulfill({ status: reply.status, json: { error: { code: reply.status, message: reply.error, status: 'UNAVAILABLE' } } });
+    r.fulfill({ json: typeof reply === 'string' ? { candidates: [{ content: { parts: [{ text: reply }] } }] } : geminiReply(reply) });
   });
   return calls;
 }

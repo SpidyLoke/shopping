@@ -335,3 +335,17 @@ test('made-up listing links are found and marked, real ones and blocked ones are
   assert.deepEqual(ai.listings.map((l) => l.link_ok), [false, false, true, undefined, false]);
   assert.equal(ai.official_price.link_ok, true);
 });
+
+test('a question asks the lighter model straight after one busy answer, and fits in the phone\'s wait', async () => {
+  const { core, prompts } = await load();
+  const seen = [];
+  const fetch = async (url) => {
+    const m = url.match(/models\/([^:]+):/)[1];
+    seen.push(m);
+    return m === 'main' ? json(503, { error: { message: 'This model is currently experiencing high demand.' } }) : json(200, { candidates: [{ content: { parts: [{ text: 'It works.' }] } }] });
+  };
+  const deps = { db: fakeDb(), fetch, prompts, keys: { vision: 'V', gemini: 'G' }, model: 'main', fallbackModel: 'lite', sleep: async () => {}, limits: LIMITS };
+  const r = await core.runAsk({ prompt: 'Works with PC?', search: true }, { uid: 'u1', deps });
+  assert.equal(r.text, 'It works.');
+  assert.deepEqual(seen, ['main', 'lite']);
+});

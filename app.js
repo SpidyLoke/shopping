@@ -6,7 +6,7 @@ import { buildPrompt, findBarcodes, gtinValid, MARKETS, marketFor } from './prom
 import { FIREBASE } from './firebase-config.js';
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.11.01-7';
+const APP_VERSION = '2026.11.01-8';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -816,7 +816,8 @@ async function askGemini({ images, ...opts }) {
 }
 
 // `images`: one base64 JPEG or a list of them (several photos of the same item).
-async function callGemini(images, prompt, { search = true, raw = false } = {}) {
+// `hurry` (questions, not scans): a busy main model hands over to the lighter one straight away.
+async function callGemini(images, prompt, { search = true, raw = false, hurry = false } = {}) {
   if (cloudOn()) {
     const r = await cloudCall('ask', { images: [].concat(images || []), prompt, search }, search ? 120000 : 90000);
     const sources = (r.chunks || []).filter((c) => safeUrl(c.uri)).map((c) => ({ title: c.title, url: c.uri }));
@@ -834,7 +835,8 @@ async function callGemini(images, prompt, { search = true, raw = false } = {}) {
     settings.geminiKey,
     search ? 90000 : 60000, // grounded search regularly takes 20-40s
   );
-  const tries = [settings.model, settings.model, settings.model, ...(settings.model !== FALLBACK_MODEL ? [FALLBACK_MODEL] : [])];
+  const fb = settings.model !== FALLBACK_MODEL ? FALLBACK_MODEL : null;
+  const tries = !fb ? [settings.model, settings.model, settings.model] : hurry ? [settings.model, fb, settings.model] : [settings.model, settings.model, settings.model, fb];
   const waits = [2000, 6000];
   let data;
   for (let i = 0; i < tries.length; i += 1) {
@@ -3360,7 +3362,7 @@ async function loadInfo(id) {
   entry.infoError = null;
   refresh(entry);
   try {
-    const { json, sources } = await callGemini(null, infoPrompt(entry));
+    const { json, sources } = await callGemini(null, infoPrompt(entry), { hurry: true });
     entry.info = { ...json, sources, at: Date.now() };
   } catch (e) {
     entry.infoError = e.message;
@@ -3385,7 +3387,8 @@ function renderInfoIn(entry) {
   $('#worthBtn').textContent = loading ? 'Checking…' : 'Worth it?';
 
   if (!info) {
-    $('#infoBody').replaceChildren(...[entry.infoError ? el('p', { class: 'error' }, entry.infoError) : null].filter(Boolean));
+    $('#infoBody').replaceChildren(...(entry.infoError && !loading ? [el('div', { class: 'error' }, friendlyError(entry.infoError), ' ',
+      el('button', { class: 'link small', type: 'button', onclick: () => loadInfo(entry.id) }, 'Try again'))] : []));
     return;
   }
 
@@ -3589,14 +3592,36 @@ function renderSourceLinesIn(entry) {
 
 // The links under a result: Google (anyone, anywhere), then one per site its prices actually came
 // from (the listing itself), the brand's own page and CeX. No fixed list of marketplaces.
-// A Google search of one shop, for when a listing's own link is broken (or to double-check it).
+// A search of one shop, for when a listing's own link is broken (or to double-check it). Marketplaces
+// get their own search; anything else a Google search of that site. Both get a short query: a
+// full listing title with brackets and dashes matches nothing.
+const SHOP_SEARCH = [
+  [/(^|\.)shopee\./, (h, q) => `https://${h}/search?keyword=${q}`],
+  [/(^|\.)lazada\./, (h, q) => `https://${h}/catalog/?q=${q}`],
+  [/(^|\.)carousell\./, (h, q) => `https://${h}/search/${q}`],
+  [/(^|\.)ebay\./, (h, q) => `https://${h}/sch/i.html?_nkw=${q}`],
+  [/(^|\.)amazon\./, (h, q) => `https://${h}/s?k=${q}`],
+  [/(^|\.)webuy\.com$/, (h, q) => `https://${h}/search?stext=${q}`],
+  [/^jp\.mercari\.com$/, (h, q) => `https://${h}/search?keyword=${q}`],
+  [/(^|\.)tokopedia\.com$/, (h, q) => `https://${h}/search?st=product&q=${q}`],
+];
+
+function shortQuery(q) {
+  return String(q || '').replace(/\([^)]*\)|\[[^\]]*\]/g, ' ').replace(/[–—|,/:;"'!]+/g, ' ').replace(/\s-\s/g, ' ')
+    .split(/\s+/).filter(Boolean).slice(0, 6).join(' ');
+}
+
 function siteSearch(url, q) {
+  let host;
   try {
-    const site = new URL(url).hostname.replace(/^www\./, '');
-    return `https://www.google.com/search?q=${encodeURIComponent(`site:${site} ${q}`)}`;
+    host = new URL(url).hostname;
   } catch {
     return null;
   }
+  const words = encodeURIComponent(shortQuery(q));
+  const own = SHOP_SEARCH.find(([re]) => re.test(host));
+  if (own) return own[1](host, words);
+  return `https://www.google.com/search?q=${encodeURIComponent(`site:${host.replace(/^www\./, '')} ${shortQuery(q)}`)}`;
 }
 
 function searchLinks(entry, q) {
@@ -3661,7 +3686,7 @@ function openSources(kind) {
       ),
       el('p', { class: 'source-name' }, l.title || 'Untitled listing'),
       l.match_note ? el('p', { class: 'muted small' }, l.match_note) : null,
-      listingLinks(l, href, l.title || searchQuery(entry)),
+      listingLinks(l, href, searchQuery(entry) || l.title),
     );
   }));
   $('#sourceEmpty').hidden = items.length > 0;
@@ -3699,13 +3724,20 @@ async function askQuestion(id, question) {
   refresh(entry);
   try {
     const image = (await imageDb.get(entry.imageId || entry.id)) || entry.thumb.split(',')[1];
-    const { text } = await callGemini(image, askPrompt(entry, question), { raw: true });
+    const { text } = await callGemini(image, askPrompt(entry, question), { raw: true, hurry: true });
     qa.a = text.trim() || 'No answer came back. Try rephrasing.';
   } catch (e) {
     qa.error = e.message;
   }
   asking.delete(id);
   refresh(entry);
+}
+
+// Gemini's own wording for "busy" is long and technical; the fix is always the same.
+function friendlyError(msg) {
+  const m = String(msg || '');
+  if (/high demand|overload|unavailable|\[50[234]\]|no answer after|try again later|deadline/i.test(m)) return "Google's AI is busy right now. Try again in a minute.";
+  return m.replace(/^(Kaimono: )?Gemini: /, '');
 }
 
 function renderAsk(entry) {
@@ -3715,7 +3747,11 @@ function renderAsk(entry) {
   $('#askBtn').textContent = asking.has(entry.id) ? 'Asking…' : 'Ask';
   $('#qaList').replaceChildren(...(entry.qa || []).map((x) => el('li', {},
     el('p', { class: 'qa-q' }, x.q),
-    el('p', { class: `qa-a${x.error ? ' error-text' : ''}` }, x.a || x.error || 'Thinking…'),
+    el('p', { class: `qa-a${x.error ? ' error-text' : ''}` }, x.a || (x.error ? friendlyError(x.error) : 'Thinking…')),
+    x.error && !x.a ? el('button', { class: 'link small qa-retry', type: 'button', disabled: asking.has(entry.id), onclick: () => {
+      entry.qa = (entry.qa || []).filter((y) => y !== x);
+      askQuestion(entry.id, x.q);
+    } }, 'Try again') : null,
   )));
 }
 
@@ -3894,7 +3930,7 @@ function renderResultIn(entry) {
 
   renderSteps(entry);
   $('#resError').hidden = entry.errors.length === 0;
-  $('#resError').textContent = entry.errors.join('\n');
+  $('#resError').textContent = entry.errors.map(friendlyError).join('\n');
 
   const visionDone = entry.status.vision === 'done' || entry.status.vision === 'failed';
   // While the first read is running, the result's shape shows straight away with placeholders.
@@ -4088,7 +4124,7 @@ async function pickBest(ids, need) {
   route(true);
   try {
     const thumbs = items.map((e) => e.thumb.split(',')[1]).filter(Boolean);
-    const { json } = await callGemini(thumbs, pickPrompt(items, need));
+    const { json } = await callGemini(thumbs, pickPrompt(items, need), { hurry: true });
     picks[key] = { ...json, need, order: items.map((e) => e.id), at: Date.now() };
   } catch (e) {
     picks[key] = { ...(picks[key] || {}), error: e.message };

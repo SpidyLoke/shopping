@@ -217,7 +217,7 @@ test('a listing whose link was broken offers a search of that shop instead', asy
   await expect(items.nth(0)).toContainText('Link was broken.');
   await expect(items.nth(0).locator('a', { hasText: 'Open listing' })).toHaveCount(0);
   const search = items.nth(0).locator('a', { hasText: 'Search mikimarketing.com' });
-  expect(decodeURIComponent(await search.getAttribute('href'))).toContain('site:mikimarketing.com OMP ONE EVO X RACING GLOVES');
+  expect(decodeURIComponent(await search.getAttribute('href'))).toContain('site:mikimarketing.com OMP One Evo X gloves');
   await expect(items.nth(1).locator('a', { hasText: 'Open listing' })).toHaveAttribute('href', 'https://lifestylemotorsport.com/p/omp');
   await expect(items.nth(1).locator('a', { hasText: 'Search lifestylemotorsport.com' })).toHaveCount(1);
 });
@@ -239,4 +239,37 @@ test('MY new comes from the listings behind it; a figure with none is shown as a
   await expect(page.locator('#myNew')).toHaveText('–');
   await expect(page.locator('#myNewRange')).toHaveText('AI guessed RM 1,780, no listing found');
   await expect(page.locator('#verdictLabel')).toContainText('No Malaysian prices found');
+});
+
+test('a broken marketplace link searches that marketplace with a short query', async ({ page }) => {
+  await mockApis(page);
+  await openApp(page, { history: [scan('Pad', { product_name: 'PS5 DualSense Wireless Controller – Techno Red Edition (CFI-ZCT2J13)', search_query: '', my_new: { typical: 349 }, listings: [
+    { platform: 'Shopee', condition: 'new', title: 'PS5 DualSense Wireless Controller – Techno Red Edition (CFI-ZCT2J13)', price_rm: 349, url: 'https://shopee.com.my/made-up-i.1.2', exact_model: true, link_ok: false },
+  ] })] });
+  await page.goto('/#/scan/Pad');
+  await page.click('#myNew');
+  const search = page.locator('.source-item a', { hasText: 'Search shopee.com.my' });
+  await expect(search).toHaveAttribute('href', 'https://shopee.com.my/search?keyword=PS5%20DualSense%20Wireless%20Controller%20Techno%20Red');
+});
+
+test('a busy Gemini gives a plain message and a Try again that works', async ({ page }) => {
+  let n = 0;
+  await mockApis(page, {
+    gemini: (p) => {
+      if (p.includes('Their question')) {
+        n += 1;
+        if (n <= 4) return { status: 503, error: 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.' };
+        return 'Yes, it works with a PC.';
+      }
+      return product();
+    },
+  });
+  await openApp(page);
+  await scanFromGallery(page);
+  await page.fill('#askInput', 'Works with PC?');
+  await page.click('#askForm button[type="submit"]');
+  await expect(page.locator('#qaList .qa-a')).toHaveText("Google's AI is busy right now. Try again in a minute.", { timeout: 20000 });
+  await page.click('#qaList .qa-retry');
+  await expect(page.locator('#qaList .qa-a')).toHaveText('Yes, it works with a PC.', { timeout: 20000 });
+  await expect(page.locator('#qaList li')).toHaveCount(1);
 });
