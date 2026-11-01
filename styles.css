@@ -1841,3 +1841,6 @@ dialog.install-guide::backdrop { background: var(--bg); }
 html[data-typing] .bottom-nav { display: none; }
 .price-main.in-verdict { margin: 12px 0 4px; background: var(--bg); box-shadow: none; }
 .price-main.in-verdict .price-main-rm { display: none; }
+.find-btn { display: block; margin-top: 12px; }
+.where-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 10px; }
+.where-actions { display: flex; flex-wrap: wrap; gap: 6px 20px; margin-top: 12px; }

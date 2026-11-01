@@ -300,3 +300,33 @@ test('with no price, the price box is in the Need the price card; Gemini\'s own 
   await expect(page.locator('#verdict #yenInput')).toHaveCount(0);
   await expect(page.locator('#yenInput')).toHaveValue('5');
 });
+
+test('Find it: with no price, "Just find where to buy it" lists shops (official first, then cheapest) and hides the price check', async ({ page }) => {
+  const calls = await mockApis(page, {
+    gemini: (p) => (p.includes('Find where to buy') ? {
+      shops: [
+        { seller: 'Shopee Mall', kind: 'marketplace', title: 'Kirin Mets Lemon Squash Zero 490ml x24', price: 89, currency: 'MYR', price_home: 89, url: 'https://shopee.com.my/kirin-i.1.2' },
+        { seller: 'Kirin', kind: 'official', title: 'Mets Lemon Squash Zero', price: 120, currency: 'MYR', price_home: 120, url: 'https://kirin.example/mets' },
+        { seller: 'Rakuten', kind: 'overseas', title: 'キリン メッツ レモンスカッシュ', price: 2400, currency: 'JPY', price_home: 70, url: null, ships: 'Ships from Japan, about RM 40' },
+        { seller: 'Lookalike shop', kind: 'retailer', title: 'Other lemon soda', price: 5, currency: 'MYR', price_home: 5, exact_model: false },
+      ],
+      note: 'Cheapest from Japan if you buy a case.',
+    } : product()),
+  });
+  await openApp(page, { history: [scan('Drink', { product_name: 'Kirin Mets Lemon Squash Zero 490ml', brand: 'Kirin' }, { yen: null, currency: 'MYR' })] });
+  await page.goto('/#/scan/Drink');
+  await page.click('#findBtn');
+  await expect(page.locator('#wherePanel')).toBeVisible();
+  await expect(page.locator('#whereList .source-platform')).toHaveText(['Kirin', 'Rakuten', 'Shopee Mall']);
+  await expect(page.locator('#whereList li').nth(1)).toContainText('Ships from Japan, about RM 40');
+  await expect(page.locator('#whereList li').nth(1).locator('a')).toHaveText(['Search Rakuten ↗']);
+  await expect(page.locator('#whereNote')).toHaveText('Cheapest from Japan if you buy a case.');
+  for (const sel of ['#verdict', '#prices', '#boughtBtn']) await expect(page.locator(sel)).toBeHidden();
+  expect(calls.gemini.at(-1).search).toBe(true);
+  expect(calls.gemini.at(-1).prompt).toContain('The shopper lives in Malaysia');
+  // Back to the price check, and the list stays for next time
+  await page.click('#whereExit');
+  await expect(page.locator('#verdictLabel')).toHaveText('Need the price');
+  await expect(page.locator('#boughtBtn')).toBeVisible();
+  await expect(page.locator('#wherePanel')).toBeHidden();
+});

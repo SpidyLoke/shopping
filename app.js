@@ -6,7 +6,7 @@ import { buildPrompt, findBarcodes, gtinValid, MARKETS, marketFor } from './prom
 import { FIREBASE } from './firebase-config.js';
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.11.01-10';
+const APP_VERSION = '2026.11.01-11';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -1344,6 +1344,7 @@ function baseVerdict(entry) {
   const myNew = homeValue(entry, 'new');
   const myUsed = homeValue(entry, 'used');
   if (!entry.ai) return null;
+  if (entry.findMode) return { cls: 'none', label: 'Where to buy', detail: 'Shops selling it, official store first.' };
   if (!jp) return { cls: 'none', label: 'Need the price', detail: 'Type the price from the tag or listing:', needPrice: true };
   if (!myNew && !myUsed) {
     const off = officialPrice(entry);
@@ -3208,6 +3209,7 @@ function renderPricesIn(entry) {
     $('#verdictDetail').textContent = v.detail;
     placePriceBox(Boolean(v.needPrice));
     $('#shareBtn').hidden = Boolean(v.needPrice);
+    $('#findBtn').hidden = !(v.needPrice && entry.ai);
     // Nothing found: a full re-check is the obvious next step, so it's right here.
     $('#verdictRecheck').hidden = !(v.cls === 'none' && entry.ai && !running.has(entry.id) && toNum(entry.yen));
     $('#verdictRecheck').textContent = entry.quick ? 'Run a full check' : 'Check again';
@@ -3718,6 +3720,119 @@ function openSources(kind) {
   $('#sourceSheet').showModal();
 }
 
+// ---------- "Find it": where to buy, no price check ----------
+// For someone who scanned an item only to find it online: the shops that sell the exact brand and
+// model, at home and overseas (shipping noted), official store first, then cheapest first. The
+// price check (asking price, verdict, MY new/used, CeX, resale, Bought) is hidden meanwhile.
+
+const whereLoading = new Set();
+const WHERE_KINDS = { official: 'Official store', retailer: 'Shop', marketplace: 'Marketplace', overseas: 'Overseas' };
+
+function wherePrompt(entry) {
+  const ai = entry.ai || {};
+  const m = marketOf(entry);
+  const name = entry.override || ai.product_name || entry.webGuess || 'the item in the photo';
+  return `Find where to buy this exact product new: "${name}"${ai.brand ? ` by ${ai.brand}` : ''}${ai.variant && !entry.override ? ` (${ai.variant})` : ''}${ai.barcode ? `, barcode ${ai.barcode}` : ''}.
+The shopper lives in ${m.name}; prices there are in ${m.currency}.
+Use Google Search. List up to 8 places to buy it new:
+- the brand's official store for ${m.name}, or its global store if that ships to ${m.name};
+- authorised retailers and big shops in ${m.name}, and marketplaces there such as ${m.quickShops || 'the main local marketplaces'};
+- overseas shops that ship to ${m.name}, saying so in "ships".
+Only the exact same brand and model${ai.variant ? ' and variant' : ''}: leave out other models, versions, sizes, bundles, accessories and lookalikes.
+Copy each URL exactly from a page your search returned; if you don't have the real address, use null. Never invent a price; use null if none is shown.
+Reply with only a JSON object:
+{"shops": [{"seller": "", "kind": "official | retailer | marketplace | overseas", "title": "listing title as shown", "price": 0, "currency": "ISO code", "price_home": 0, "url": "URL or null", "ships": "for overseas shops, e.g. 'Ships from Japan, about ${m.symbol} 40, 1-2 weeks', else null", "in_stock": true}], "note": "one short line, e.g. where it is usually cheapest"}
+price_home is the price in ${m.currency} (converted if needed).`;
+}
+
+async function loadWhere(id) {
+  const entry = findEntry(id);
+  if (!entry?.ai || whereLoading.has(id)) return;
+  if (!canScan()) {
+    openSettings();
+    return;
+  }
+  whereLoading.add(id);
+  entry.whereError = null;
+  refresh(entry);
+  try {
+    const { json } = await callGemini(null, wherePrompt(entry), { hurry: true });
+    if (!json || !Array.isArray(json.shops)) throw new Error('Gemini: no list of shops came back. Try again.');
+    entry.where = { shops: json.shops, note: typeof json.note === 'string' ? json.note : '', at: Date.now() };
+  } catch (e) {
+    entry.whereError = e.message;
+  }
+  whereLoading.delete(id);
+  refresh(entry);
+}
+
+// Official store first, then cheapest first (in the home currency); no price goes last.
+function whereShops(entry) {
+  const shops = (entry.where?.shops || []).filter((s) => s && (s.seller || s.title) && s.exact_model !== false);
+  const home = (s) => toNum(s.price_home) || (String(s.currency || '').toUpperCase() === marketOf(entry).currency ? toNum(s.price) : null);
+  return shops
+    .map((s) => ({ ...s, home: home(s) }))
+    .sort((a, b) => (b.kind === 'official') - (a.kind === 'official') || (a.home ?? Infinity) - (b.home ?? Infinity));
+}
+
+function renderWhere(entry) {
+  return inMarket(entry, () => renderWhereIn(entry));
+}
+
+function renderWhereIn(entry) {
+  const on = Boolean(entry.findMode);
+  $('#wherePanel').hidden = !on;
+  // The price check doesn't apply while finding where to buy.
+  for (const sel of ['#verdict', '#prices', '#toggles', '#estimateNote', '#quickBanner', '#conditionPanel']) {
+    if (on) $(sel).hidden = true; // each is shown again by its own render once this is off
+  }
+  $('#boughtBtn').hidden = on;
+  if (!on) return;
+  const loading = whereLoading.has(entry.id);
+  const q = searchQuery(entry);
+  const shops = whereShops(entry);
+  $('#whereNote').textContent = loading ? 'Searching shops at home and overseas…'
+    : entry.whereError ? friendlyError(entry.whereError)
+      : entry.where ? (entry.where.note || (shops.length ? '' : 'No shop selling this exact model came up.')) : '';
+  $('#whereNote').classList.toggle('error-text', Boolean(entry.whereError) && !loading);
+  $('#whereRefresh').disabled = loading;
+  $('#whereRefresh').textContent = entry.whereError ? 'Try again' : 'Search again';
+  $('#whereList').replaceChildren(...(loading ? [] : shops).map((s) => {
+    const href = safeUrl(s.url);
+    const cur = String(s.currency || '').toUpperCase();
+    const orig = toNum(s.price) && /^[A-Z]{3}$/.test(cur) && cur !== marketOf(entry).currency ? money(toNum(s.price), cur) : null;
+    const find = href ? siteSearch(href, q) : `https://www.google.com/search?q=${encodeURIComponent(`${s.seller || ''} ${shortQuery(q)}`.trim())}`;
+    return el('li', { class: 'source-item' },
+      el('div', { class: 'source-top' },
+        el('span', { class: 'source-platform' }, s.seller || 'Shop'),
+        el('span', { class: `tag${s.kind === 'official' ? ' tag-buy' : ''}` }, WHERE_KINDS[s.kind] || 'Shop'),
+        s.in_stock === false ? el('span', { class: 'tag' }, 'Out of stock') : null,
+        el('span', { class: 'source-price' }, s.home ? rm(s.home) : orig || '–'),
+      ),
+      s.title ? el('p', { class: 'source-name' }, s.title) : null,
+      [orig && s.home ? orig : null, s.ships].filter(Boolean).length ? el('p', { class: 'muted small' }, [orig && s.home ? orig : null, s.ships].filter(Boolean).join(' · ')) : null,
+      el('div', { class: 'source-links' },
+        href ? el('a', { class: 'link small', href, target: '_blank', rel: 'noopener' }, 'Open ↗') : null,
+        el('a', { class: 'link small', href: find, target: '_blank', rel: 'noopener' }, href ? `Search ${new URL(href).hostname.replace(/^www\./, '')} ↗` : `Search ${s.seller || 'it'} ↗`),
+      ),
+    );
+  }));
+}
+
+$('#findBtn').addEventListener('click', () => {
+  if (!current) return;
+  current.findMode = true;
+  saveEntry(current);
+  if (!current.where) loadWhere(current.id);
+  else renderResult(current);
+});
+$('#whereRefresh').addEventListener('click', () => current && loadWhere(current.id));
+$('#whereExit').addEventListener('click', () => {
+  if (!current) return;
+  current.findMode = false;
+  refresh(current);
+});
+
 // ---------- follow-up questions ----------
 
 const asking = new Set();
@@ -3983,6 +4098,7 @@ function renderResultIn(entry) {
   $('#rescanBtn').classList.toggle('spinning', isRunning);
   $('#rescanBtn').classList.toggle('attention', scanFailed(entry));
   $('#deleteBtn').hidden = isRunning;
+  renderWhere(entry);
 }
 
 // ---------- trip spending ----------
