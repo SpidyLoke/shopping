@@ -22,9 +22,7 @@ test('with Singapore as home, scans search Singapore, show S$ and skip CeX', asy
   await expect(page.locator('#jpRm')).toHaveText('S$103');
   await expect(page.locator('#myNewHead')).toHaveText('SG new');
   await expect(page.locator('#myNew')).toHaveText('S$129');
-  await expect(page.locator('#shopeeLink')).toHaveAttribute('href', /^https:\/\/shopee\.sg\/search/);
-  await expect(page.locator('#carousellLink')).toHaveAttribute('href', /^https:\/\/www\.carousell\.sg\/search\//);
-  await expect(page.locator('#cexLink')).toBeHidden();
+  await expect(page.locator('#searchLinks a')).toHaveText(['Google']); // no listings came back, so no shop links
   expect(calls.cex).toBe(0);
   expect((await page.evaluate(() => JSON.parse(localStorage.getItem('kc.history'))))[0].market).toBe('SG');
   // The scan from before keeps its ringgit and Malaysian wording
@@ -42,7 +40,6 @@ test('UK: eBay sold and CeX UK links, pounds, and Malaysia nowhere in the verdic
   await expect(page.locator('#dealTags .deal').first()).toHaveText('£18 profit reselling');
   await expect(page.locator('#verdictDetail')).toContainText('in the UK');
   await expect(page.locator('#verdictDetail')).not.toContainText('Malaysia');
-  await expect(page.locator('#shopeeLink')).toHaveText('eBay sold');
-  await expect(page.locator('#cexLink')).toHaveAttribute('href', /^https:\/\/uk\.webuy\.com\/search/);
+  await expect(page.locator('#searchLinks a').first()).toHaveText('Google');
   await expect(page.locator('#ratePill')).toHaveText(/^¥1,000 = £5\.20/);
 });

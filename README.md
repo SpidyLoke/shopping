@@ -128,6 +128,14 @@ Tap **MY new**, **MY used** or **JP used** to see the listings behind that figur
 
 The **MY used** box says what its figure rests on: **sold** when most of the listings behind it have sold (what people actually paid), **asking** when they're still up for sale (asking prices run high). CeX's buy prices are firm offers.
 
+### Brand price (specialist gear)
+
+Some things aren't on Shopee or Carousell at all: an OMP race suit, cycling or audio kit from specialist shops. Every scan also asks for the brand's own official price (from its store, in any currency, e.g. €768.60 on ompracing.com), and checks the official Malaysian distributor and specialist shops. When there are no Malaysian listings, the verdict and deal label compare with that instead ("RM 212 under OMP"), and a **Brand price** box shows it with a link to the official page.
+
+### Links under a result
+
+**Google** (a search for the product, anywhere in the world), then one link per site the prices actually came from: the listing itself, the brand's page, CeX. No fixed list of Malaysian marketplaces; if nothing was found, it's just Google.
+
 ### Barcodes
 
 If the tag or box shows a barcode number (JAN/EAN-13, EAN-8 or UPC), the app picks it out of the text, checks its check digit, and has Gemini search that exact number first: it pins down the exact model and variant better than a photo. Japanese JAN codes (45…, 49…) go first; 13-digit codes starting with 2 are a shop's own stock labels (Book Off, Hard Off) and are skipped. When the product was found by barcode, **Barcode match** and the number show under its name.

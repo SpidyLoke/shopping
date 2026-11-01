@@ -247,6 +247,12 @@
             <p class="price-sub" id="myUsedRange"></p>
             <p class="price-src" id="myUsedSrc"></p>
           </div>
+          <div class="price-card" id="officialCard" hidden>
+            <p class="price-head" id="officialHead">Brand price</p>
+            <p class="price-rm" id="official">–</p>
+            <p class="price-sub" id="officialNote"></p>
+            <a class="price-src" id="officialLink" target="_blank" rel="noopener">Official page ›</a>
+          </div>
           <div class="price-card">
             <p class="price-head">JP used</p>
             <p class="price-rm" id="jpUsed">–</p>
@@ -273,13 +279,8 @@
         </div>
 
         <p class="estimate-note" id="estimateNote" hidden>Estimates from AI and web search. Tap a price to see the listings behind it.</p>
-        <div class="search-links" id="searchLinks" hidden>
-          <a class="link-pill" id="shopeeLink" target="_blank" rel="noopener">Shopee</a>
-          <a class="link-pill" id="carousellLink" target="_blank" rel="noopener">Carousell</a>
-          <a class="link-pill" id="cexLink" target="_blank" rel="noopener">CeX</a>
-          <a class="link-pill" id="mercariLink" target="_blank" rel="noopener">Mercari</a>
-          <a class="link-pill" id="yahooLink" target="_blank" rel="noopener">Yahoo</a>
-        </div>
+        <!-- Google, then only the sites this result's prices actually came from -->
+        <div class="search-links" id="searchLinks" hidden></div>
 
         <!-- Flat sections, no folding: each only shows when it has something to say -->
         <section class="flat" id="compatPanel" hidden>

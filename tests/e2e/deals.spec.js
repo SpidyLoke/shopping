@@ -129,3 +129,41 @@ test('Home leads with this trip: bought, expected profit, made, and the best fin
   await page.click('#profitStrip');
   await expect(page).toHaveURL(/#\/trip$/);
 });
+
+test('specialist gear with no Malaysian listings is compared with the brand\'s own price', async ({ page }) => {
+  // ¥130,600 at 0.03 = RM 3,918 here; OMP sells it for €768.60, at 4.9 = RM 3,766.
+  await mockApis(page, { rates: { JPY: 0.03, EUR: 4.9 } });
+  const suit = scan('Suit', {
+    product_name: 'OMP Classic Overall FIA 8856-2018', search_query: 'OMP Classic Overall FIA 8856-2018',
+    my_new: null, my_used: null,
+    official_price: { price: 768.6, currency: 'EUR', seller: 'OMP', url: 'https://www.ompracing.com/en/classic-suit' },
+    listings: [{ platform: 'Other', condition: 'new', title: 'OMP Classic suit', price_rm: 3900, url: 'https://www.racingshop.my/omp-classic', exact_model: true }],
+  }, { yen: 130600 });
+  const gloves = scan('Gloves', {
+    product_name: 'OMP One Evo-X Gloves', my_new: null, my_used: null,
+    official_price: { price: 226.92, currency: 'EUR', seller: 'OMP', url: 'https://www.ompracing.com/en/one-evo-x' },
+  }, { yen: 30000 });
+  await openApp(page, { history: [suit, gloves], settings: { fxFee: 0 } });
+  await page.goto('/#/scan/Gloves');
+  // RM 900 against €226.92 ≈ RM 1,112
+  await expect(page.locator('#verdictLabel')).toHaveText('Buy it here');
+  await expect(page.locator('#verdictDetail')).toContainText("less than OMP's own price (€226.92 ≈ RM 1,112)");
+  await expect(page.locator('#dealTags .deal').first()).toHaveText('RM 212 under OMP');
+  await expect(page.locator('#officialCard')).toBeVisible();
+  await expect(page.locator('#official')).toHaveText('RM 1,112');
+  await expect(page.locator('#officialNote')).toHaveText('€226.92 · OMP');
+  await page.goto('/#/scan/Suit');
+  await expect(page.locator('#verdictLabel')).toHaveText('Skip it');
+  await expect(page.locator('#dealTags .deal').first()).toHaveText('RM 152 over OMP');
+  await expect(page.locator('#searchLinks a')).toHaveText(['Google', 'OMP', 'racingshop.my']);
+  await expect(page.locator('#searchLinks a').first()).toHaveAttribute('href', /google\.com\/search\?q=OMP%20Classic%20Overall/);
+});
+
+test('the prompt asks for the brand\'s official price, even in Quick mode', async ({ page }) => {
+  const calls = await mockApis(page);
+  await openApp(page, { settings: { quick: true } });
+  await page.setInputFiles('#galleryInput', require('./helpers').fixture('tag.jpg'));
+  await expect.poll(() => calls.gemini.length).toBe(1);
+  expect(calls.gemini[0].prompt).toContain("Only search Shopee and Carousell Malaysia and the brand's official store.");
+  expect(calls.gemini[0].prompt).toContain('"official_price"');
+});

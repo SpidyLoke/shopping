@@ -169,13 +169,14 @@ ${ocrText || '(none detected)'}
 """
 Google's visual best guess for the photo: "${webGuess || 'none'}"
 ${focus ? `\nThe photo shows a whole shelf with several products. Evaluate ONLY this one: "${focus.name}"${focus.yen ? `, priced ${yen(focus.yen)}` : ''}. Ignore every other product in the photo.\n` : ''}${override ? `\nThe shopper has checked the box and confirmed the exact product is: "${override}". Treat that as certain and price that exact model.\n` : ''}${secondHand ? '\nThe shopper is looking at a second-hand item (e.g. Hard Off, 2nd Street or Book Off in Japan, or a used listing). When searching ${m.name}, prioritise second-hand listings in similar condition.\n' : ''}
-${quick ? 'QUICK MODE: keep this fast. Only search ${m.quickShops}. Skip CeX, Mercari, Yahoo Auctions and the compatibility check, and return null or empty lists for cex_my, jp_used_yen and my_compat.\n' : ''}${BARCODE_RULES(codes)}${clothes ? clothesRules(m) : ''}
+${quick ? `QUICK MODE: keep this fast. Only search ${m.quickShops} and the brand's official store. Skip CeX, Mercari, Yahoo Auctions and the compatibility check, and return null or empty lists for cex_my, jp_used_yen and my_compat.\n` : ''}${BARCODE_RULES(codes)}${clothes ? clothesRules(m) : ''}
 Tasks:
 1. Identify the exact product: brand, model, size or capacity, and above all the exact variant. Words like Reloaded, Pro, Lite, OLED, Slim, Edge, V2, Mk II, 2nd Gen, Digital Edition or a special edition usually mean a different product at a different price (e.g. "Victrix Pro BFG" and "Victrix Pro BFG Reloaded" are different controllers). Read these words from the box, tag or the product itself and say where you saw them. If the photo doesn't show enough to tell lookalike variants apart, say so and list them with how to tell them apart.
 2. Read the asking price and its currency from the photo or OCR text: ¥ or 円 = JPY, RM = MYR, S$ = SGD, NT$ = TWD, ₩ = KRW, ฿ = THB, HK$ = HKD, ₱ = PHP, Rp = IDR, A$ = AUD, £ = GBP, US$ = USD, and so on; use the shop's country if no symbol is shown. In Japan, if both tax-inclusive (税込) and tax-exclusive (税抜) prices are shown, use the tax-inclusive one and say whether the number includes Japan's 10% consumption tax. For a listing screenshot use the listed price. Use null if no price is visible.
 3. Use Google Search to find current prices in ${m.name}, in ${m.currency}, for the same product:
    - New: ${m.newShops}
    - Second-hand: ${m.usedShops}
+   - Brand price: the brand's own official online store price for this exact model (any country, in its own currency), e.g. ompracing.com for OMP or the maker's own shop. For specialist gear (motorsport, cycling, outdoor, audio, watches, cameras) also check the official ${m.adj} distributor and specialist shops, which often stock what marketplaces don't. Put it in official_price; it is the fallback comparison when ${m.name} has no listings.
    Only use ${m.adj} listings priced in ${m.currency}. Exclude accessories, cases, spare parts and listings for a lookalike variant: they are a different product, even if most of the name matches. Never invent listings, prices or URLs; if you cannot find any, use null or an empty list.
    ${m.cex ? `Also check ${m.cex.name} (${m.cex.site}), which sells graded used stock: search ${m.cex.site} for the exact model. Its product pages show "WeSell for" (its selling price), "WeBuy for cash" and "WeBuy for voucher" prices in ${m.currency}.` : `There is no CeX in ${m.name}: return null for cex_my.`}
    Also search Japan's second-hand market for the same item in comparable condition: Mercari Japan (jp.mercari.com) and Yahoo! Auctions Japan (auctions.yahoo.co.jp), prices in yen.
@@ -213,6 +214,7 @@ Reply with only a JSON object inside a \`\`\`json code block, with exactly these
   "my_used": { "low": 0, "high": 0, "typical": 0 },
   "jp_used_yen": { "low": 0, "high": 0, "typical": 0 },
   "cex_my": { "sell_rm": 0, "buy_cash_rm": 0, "buy_voucher_rm": 0, "grade": "CeX grade if shown (A, B, C) or null", "url": "CeX product URL or null" },
+  "official_price": { "price": 0, "currency": "ISO code, e.g. EUR", "seller": "brand or official store name", "url": "official product page URL or null" },
   "listings": [
     { "platform": "Shopee | Carousell | Lazada | Mercari JP | Yahoo Auctions | Other", "condition": "new | used", "title": "listing title exactly as shown", "price_rm": 0, "price_yen": 0, "url": "listing URL or null", "exact_model": true, "match_note": "how you know it's the same model, or what differs", "sold": false }
   ],
@@ -234,7 +236,7 @@ Reply with only a JSON object inside a \`\`\`json code block, with exactly these
   "confidence": "high | medium | low",
   "notes": "one or two sentences on matching caveats (Japan-only variant, voltage, region lock, etc.)"
 }
-Use price_rm for ${m.adj} listings and price_yen for Japanese ones.${m.currency === 'MYR' ? '' : ` Despite their names, my_new, my_used, cex_my, price_rm and typical_price_rm are ${m.adj} figures in ${m.currency}.`} Use null for any price you could not find. Use an empty issues list if the tag mentions no condition information, an empty grade_options list unless more than one grade is shown, and an empty lookalikes list when nothing is easily confused with it.`;
+Use price_rm for ${m.adj} listings and price_yen for Japanese ones.${m.currency === 'MYR' ? '' : ` Despite their names, my_new, my_used, cex_my, price_rm and typical_price_rm are ${m.adj} figures in ${m.currency}.`} Use null for any price you could not find, and null for official_price when the brand sells no such page. Use an empty issues list if the tag mentions no condition information, an empty grade_options list unless more than one grade is shown, and an empty lookalikes list when nothing is easily confused with it.`;
 }
 
 // What the tag itself says, as opposed to what the product fetches. When the backend already has

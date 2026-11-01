@@ -58,12 +58,12 @@ test('Add photo rescans with it, and Undo goes back', async ({ page }) => {
   await expect(page.locator('#photoCount')).toBeHidden();
 });
 
-test('clothes: photos go to a tray, then one scan with size and Zalora', async ({ page }) => {
+test('clothes: photos go to a tray, then one scan with size, and links only to real sources', async ({ page }) => {
   const calls = await mockApis(page, {
     gemini: (prompt) => product({
       product_name: 'Uniqlo Pufftech Parka', currency: 'JPY', price: 4990, cex_my: null,
       clothing: { size_on_tag: 'L', size_my: 'M', material: 'Polyester', colour: 'Olive', product_code: '470077' },
-      listings: [{ platform: 'Carousell', condition: 'used', title: 'Uniqlo Pufftech parka 470077 olive', price_rm: 120, exact_model: true }],
+      listings: [{ platform: 'Carousell', condition: 'used', title: 'Uniqlo Pufftech parka 470077 olive', price_rm: 120, exact_model: true, url: 'https://www.carousell.com.my/p/uniqlo-pufftech-123' }],
       my_used: { typical: 120 }, my_new: { typical: 249 },
       _clothes: prompt.includes('CLOTHES:'),
     }),
@@ -81,7 +81,8 @@ test('clothes: photos go to a tray, then one scan with size and Zalora', async (
   expect(calls.gemini.at(-1).images).toBe(2);
   expect(calls.cex).toBe(0);
   await expect(page.locator('#resTime')).toHaveText('Size L (≈ MY M) · Polyester · Olive');
-  await expect(page.locator('#cexLink')).toHaveText('Zalora');
+  await expect(page.locator('#searchLinks a')).toHaveText(['Google', 'Carousell']);
+  await expect(page.locator('#searchLinks a').nth(1)).toHaveAttribute('href', 'https://www.carousell.com.my/p/uniqlo-pufftech-123');
   expect((await savedHistory(page))[0].kind).toBe('clothes');
 });
 

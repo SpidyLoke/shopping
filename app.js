@@ -6,7 +6,7 @@ import { buildPrompt, findBarcodes, gtinValid, MARKETS, marketFor } from './prom
 import { FIREBASE } from './firebase-config.js';
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.11.01-1';
+const APP_VERSION = '2026.11.01-2';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -446,6 +446,8 @@ const localPrice = (e) => money(paidYen(e), curOf(e));
 async function ensureRate(entry) {
   const cur = curOf(entry);
   const to = marketOf(entry).currency;
+  const offCur = String(entry.ai?.official_price?.currency || '').toUpperCase();
+  if (/^[A-Z]{3}$/.test(offCur) && offCur !== to && !rateValue(offCur, to)) await fetchRate(offCur, false, to);
   if (cur === to) return;
   if (!rateValue(cur, to)) await fetchRate(cur, false, to);
   if (rateValue(cur, to) && (!entry.rate || (entry.rateCur || 'JPY') !== cur || (entry.rateTo || 'MYR') !== to)) {
@@ -1241,10 +1243,13 @@ function dealTags(entry) {
     [cex.sell, () => ({ key: 'under-cex', tone: 'good', label: `${more(cex.sell)} under CeX`, short: 'Under CeX', detail: `CeX sells it used for ${rm(cex.sell)}.${costNote}` })],
     [myNew, () => ({ key: 'under-new', tone: 'plain', label: `${more(myNew)} under ${M().short} new`, short: `${more(myNew)} off new`, detail: `New in ${M().name} it's about ${rm(myNew)}.${costNote}` })],
   ];
+  const off = !myNew && !myUsed ? officialPrice(entry) : null;
+  if (off?.rm) ladder.push([off.rm, () => ({ key: 'under-official', tone: 'good', label: `${more(off.rm)} under ${off.seller}`, short: `${more(off.rm)} off RRP`, detail: `${off.seller} sells it for ${money(off.orig, off.cur)} (about ${rm(off.rm)}).${costNote}` })]);
   const tags = [];
   // The lowest price that's still above what it costs you is the one that matters.
   const hit = ladder.filter(([price]) => price && price > paid).sort((a, b) => a[0] - b[0])[0];
   if (hit) tags.push(hit[1]());
+  else if (!myNew && off?.rm) tags.push({ key: 'over-official', tone: 'warn', label: `${whole(paid - off.rm)} over ${off.seller}`, short: 'Dearer here', detail: `${off.seller} sells it for ${money(off.orig, off.cur)} (about ${rm(off.rm)}).${costNote}` });
   else if (myNew) tags.push({ key: 'over-new', tone: 'warn', label: `${whole(paid - myNew)} over ${M().short} new`, short: 'Dearer here', detail: `New in ${M().name} it's about ${rm(myNew)}.${costNote}` });
   // Resale profit: a used price at home above what you pay here, on top of the ladder answer.
   if (hit && hit[1]().key !== 'resell' && resale && resale > paid && !tags.some((t) => t.tone === 'profit')) {
@@ -1281,13 +1286,46 @@ function dealChip(t) {
   return el('span', { class: `deal deal-${t.tone}`, title: t.detail }, t.label);
 }
 
+// The brand's own price (any currency, from its official store), converted to the home currency.
+// It's the comparison when the home country has no listings: specialist gear (an OMP race suit) is
+// often not on Shopee or Carousell at all.
+function officialPrice(entry) {
+  const o = entry.ai?.official_price;
+  const orig = toNum(o?.price);
+  if (!orig) return null;
+  const cur = /^[A-Z]{3}$/.test(String(o.currency || '').toUpperCase()) ? o.currency.toUpperCase() : null;
+  if (!cur) return null;
+  const to = marketOf(entry).currency;
+  const r = cur === to ? 1 : rateValue(cur, to);
+  let seller = o.seller || '';
+  try {
+    seller ||= new URL(o.url).hostname.replace(/^www\./, '');
+  } catch {
+    seller ||= 'the brand';
+  }
+  return { orig, cur, rm: r ? orig * r : null, seller, url: safeUrl(o.url) };
+}
+
+function officialVerdict(jp, off) {
+  const save = off.rm - jp;
+  const vs = `${off.seller}'s own price (${money(off.orig, off.cur)} ≈ ${rm(off.rm)})`;
+  const note = ` Not sold in ${M().name} that we could find, so this compares with buying it from the brand.`;
+  if (jp <= off.rm * 0.9) return { cls: 'buy', label: 'Buy it here', detail: `${rm(save)} less than ${vs} (${pct(save, off.rm)}% less).${note}` };
+  if (save > 0) return { cls: 'maybe', label: 'Marginal', detail: `Only ${rm(save)} less than ${vs}.${note}` };
+  return { cls: 'skip', label: 'Skip it', detail: `${rm(-save)} more than ${vs}.${note}` };
+}
+
 function baseVerdict(entry) {
   const jp = japanPrice(entry).rm;
   const myNew = rangeValue(entry.ai?.my_new);
   const myUsed = rangeValue(entry.ai?.my_used);
   if (!entry.ai) return null;
   if (!jp) return { cls: 'none', label: 'Need the price', detail: 'Type the price from the tag or listing to get a verdict.' };
-  if (!myNew && !myUsed) return { cls: 'none', label: `No ${M().adj} prices found`, detail: `Check the ${M().links.map((l) => l[0]).join(' and ')} links below.` };
+  if (!myNew && !myUsed) {
+    const off = officialPrice(entry);
+    if (off?.rm) return officialVerdict(jp, off);
+    return { cls: 'none', label: `No ${M().adj} prices found`, detail: `Not sold in ${M().name} that we could find. Tap Google below to look further${entry.quick ? ', or run a Full check' : ''}.` };
+  }
   return entry.secondHand ? usedVerdict(entry, jp, myNew, myUsed) : newVerdict(jp, myNew, myUsed);
 }
 
@@ -3114,6 +3152,16 @@ function renderPricesIn(entry) {
   $('#cexSell').closest('.price-card').hidden = clothes || (settled && !cexBusy && !cex.sell);
   $('#cexCash').closest('.price-card').hidden = clothes || (settled && !cexBusy && !cex.cash);
 
+  const off = officialPrice(entry);
+  $('#officialCard').hidden = !off;
+  if (off) {
+    $('#officialHead').textContent = 'Brand price';
+    $('#official').textContent = off.rm ? rm(off.rm) : money(off.orig, off.cur);
+    $('#officialNote').textContent = `${money(off.orig, off.cur)} · ${off.seller}`;
+    $('#officialLink').hidden = !off.url;
+    if (off.url) $('#officialLink').href = off.url;
+  }
+
   const v = verdictFor(entry);
   $('#verdict').hidden = !v;
   if (v) {
@@ -3448,8 +3496,8 @@ function renderPlace(entry) {
 // Each MY new / MY used / JP used box opens the listings behind its figure, so the model can be checked.
 
 const SOURCE_KINDS = {
-  get new() { const [name, url] = M().links[0]; return { title: `${M().short} new`, search: (q) => `${url}${encodeURIComponent(q)}`, searchLabel: `Search ${name}` }; },
-  get used() { const [name, url] = M().links[1]; return { title: `${M().short} used`, search: (q) => `${url}${encodeURIComponent(q)}`, searchLabel: `Search ${name}` }; },
+  get new() { return { title: `${M().short} new`, search: (q) => `https://www.google.com/search?q=${encodeURIComponent(`${q} price ${M().name}`)}`, searchLabel: 'Search Google' }; },
+  get used() { return { title: `${M().short} used`, search: (q) => `https://www.google.com/search?q=${encodeURIComponent(`${q} used price ${M().name}`)}`, searchLabel: 'Search Google' }; },
   jp: { title: 'JP used', search: (q) => `https://jp.mercari.com/search?keyword=${encodeURIComponent(q)}`, searchLabel: 'Search Mercari' },
 };
 
@@ -3512,6 +3560,35 @@ function renderSourceLinesIn(entry) {
   const evidence = entry.ai ? usedEvidence(entry) : null;
   $('#myUsedHead').textContent = evidence ? `${M().short} used · ${evidence}` : `${M().short} used`;
   $('#myNewHead').textContent = `${M().short} new`;
+}
+
+// The links under a result: Google (anyone, anywhere), then one per site its prices actually came
+// from (the listing itself), the brand's own page and CeX. No fixed list of marketplaces.
+function searchLinks(entry, q) {
+  const links = [['Google', `https://www.google.com/search?q=${encodeURIComponent(q)}`]];
+  const seen = new Set(['google']);
+  const add = (label, url) => {
+    const href = safeUrl(url);
+    const key = String(label || '').toLowerCase();
+    if (!href || !key || seen.has(key)) return;
+    seen.add(key);
+    links.push([label, href]);
+  };
+  const host = (url) => {
+    try {
+      return new URL(url).hostname.replace(/^www\./, '');
+    } catch {
+      return '';
+    }
+  };
+  const off = officialPrice(entry);
+  if (off?.url) add(off.seller, off.url);
+  for (const l of Array.isArray(entry.ai?.listings) ? entry.ai.listings : []) {
+    if (l?.url) add(l.platform && !/^other$/i.test(l.platform) ? l.platform : host(l.url), l.url);
+  }
+  const cex = cexFor(entry);
+  if (cex.url) add('CeX', cex.url);
+  return links;
 }
 
 function openSources(kind) {
@@ -3737,6 +3814,9 @@ function renderResult(entry) {
 
 function renderResultIn(entry) {
   current = entry;
+  // A brand price in another currency (OMP in euros) needs that rate; fetch it once, then redraw.
+  const off = officialPrice(entry);
+  if (off && !off.rm) fetchRate(off.cur, false, marketOf(entry).currency).then((r) => { if (r && current === entry) renderResult(entry); });
   renderHero(entry);
   $('#resPhoto').src = entry.thumb;
   const extra = entry.extra?.length || 0;
@@ -3788,21 +3868,7 @@ function renderResultIn(entry) {
   $('#searchLinks').hidden = !q;
   $('#estimateNote').hidden = !entry.ai;
   renderJudge(entry);
-  const m = M();
-  for (const [sel, [name, url]] of [['#shopeeLink', m.links[0]], ['#carousellLink', m.links[1]]]) {
-    $(sel).textContent = name;
-    $(sel).href = `${url}${encodeURIComponent(q)}`;
-  }
-  const qJa = entry.ai?.search_query_ja || q;
-  $('#mercariLink').href = `https://jp.mercari.com/search?keyword=${encodeURIComponent(qJa)}`;
-  // Clothes: a fashion store instead of CeX, which doesn't sell them; no CeX link where there's no CeX site.
-  const clothes = entry.kind === 'clothes';
-  $('#cexLink').hidden = !clothes && !m.cex?.search;
-  $('#cexLink').textContent = clothes ? m.clothesLink[0] : 'CeX';
-  $('#cexLink').href = clothes
-    ? `${m.clothesLink[1]}${encodeURIComponent(q)}`
-    : cexFor(entry).url || `${m.cex?.search || ''}${encodeURIComponent(q)}`;
-  $('#yahooLink').href = `https://auctions.yahoo.co.jp/search/search?p=${encodeURIComponent(qJa)}`;
+  $('#searchLinks').replaceChildren(...searchLinks(entry, q).map(([label, href]) => el('a', { class: 'link-pill', href, target: '_blank', rel: 'noopener' }, label)));
 
   renderSourceLines(entry);
 
