@@ -6,7 +6,7 @@ import { buildPrompt, findBarcodes, gtinValid, MARKETS, marketFor } from './prom
 import { FIREBASE } from './firebase-config.js';
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.11.01-6';
+const APP_VERSION = '2026.11.01-7';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -1096,6 +1096,23 @@ function compatFor(entry) {
 
 // ---------- pricing & verdict ----------
 
+// MY new / MY used come from the listings shown under them, never from a number with nothing behind it:
+// the median of the exact-model listings when there are some, Gemini's own figure when its only
+// listings need a model check, and nothing (kept as a "guess" for display) when no listing has a price.
+// Clothes keep Gemini's figure: they're often priced from similar pieces, and say so.
+function homeRange(entry, kind) {
+  const r = entry?.ai?.[kind === 'new' ? 'my_new' : 'my_used'];
+  if (!rangeValue(r)) return null;
+  if (entry.kind === 'clothes') return r;
+  const priced = listingsFor(entry, kind).filter((l) => toNum(l.price_rm) > 0);
+  if (!priced.length) return { unsourced: true, guess: rangeValue(r) };
+  const exact = priced.filter((l) => listingMatch(entry, l) === 'exact').map((l) => toNum(l.price_rm)).sort((a, b) => a - b);
+  if (!exact.length) return r;
+  const n = exact.length;
+  return { low: exact[0], high: exact[n - 1], typical: n % 2 ? exact[(n - 1) / 2] : (exact[n / 2 - 1] + exact[n / 2]) / 2 };
+}
+const homeValue = (entry, kind) => rangeValue(homeRange(entry, kind));
+
 function rangeValue(r) {
   if (!r) return null;
   const typical = toNum(r.typical);
@@ -1228,8 +1245,8 @@ function dealTags(entry) {
   if (!jp || !entry.ai) return [];
   if (pricesSimilar(entry)) return [{ key: 'similar', tone: 'plain', label: 'Only similar items found', short: 'No exact match', detail: `${M().adj} prices are for similar pieces, not this one.` }];
   const cex = cexFor(entry);
-  const myUsed = rangeValue(entry.ai.my_used);
-  const myNew = rangeValue(entry.ai.my_new);
+  const myUsed = homeValue(entry, 'used');
+  const myNew = homeValue(entry, 'new');
   const cost = landedCost(entry, jp);
   const paid = cost.total;
   // Reselling on a platform loses its cut; CeX's offers are what you get.
@@ -1320,8 +1337,8 @@ function officialVerdict(jp, off) {
 
 function baseVerdict(entry) {
   const jp = japanPrice(entry).rm;
-  const myNew = rangeValue(entry.ai?.my_new);
-  const myUsed = rangeValue(entry.ai?.my_used);
+  const myNew = homeValue(entry, 'new');
+  const myUsed = homeValue(entry, 'used');
   if (!entry.ai) return null;
   if (!jp) return { cls: 'none', label: 'Need the price', detail: 'Type the price from the tag or listing to get a verdict.' };
   if (!myNew && !myUsed) {
@@ -2683,8 +2700,8 @@ function shareFigures(entry) {
   if (made != null) return { paid, right: ['Sold for', entry.soldFor], pill: `${made >= 0 ? '+' : '−'}${wholeMoney(Math.abs(made))} ${made >= 0 ? 'made' : 'lost'}`, good: made >= 0 };
   const right = deal?.key === 'cex-flip' ? ['CeX pays', cex.cash]
     : deal?.key === 'cex-voucher' ? ['CeX voucher', cex.voucher]
-      : rangeValue(entry.ai?.my_used) && deal?.key === 'resell' ? [`Sells used in ${M().short}`, rangeValue(entry.ai.my_used)]
-        : rangeValue(entry.ai?.my_new) ? [`New in ${M().short}`, rangeValue(entry.ai.my_new)] : null;
+      : homeValue(entry, 'used') && deal?.key === 'resell' ? [`Sells used in ${M().short}`, homeValue(entry, 'used')]
+        : homeValue(entry, 'new') ? [`New in ${M().short}`, homeValue(entry, 'new')] : null;
   return { paid, right, pill: deal?.label || verdictFor(entry)?.label || null, good: deal ? deal.tone === 'profit' || deal.tone === 'good' : verdictFor(entry)?.cls === 'buy' };
 }
 
@@ -3115,12 +3132,14 @@ function renderPricesIn(entry) {
   const where = isHomePrice(entry) ? 'Asking price' : cur === 'JPY' ? 'Japan' : `Price in ${cur}`;
   $('#jpHead').textContent = entry.secondHand && cur === 'JPY' ? 'Japan used' : where;
 
-  for (const [key, valueSel, rangeSel] of [['my_new', '#myNew', '#myNewRange'], ['my_used', '#myUsed', '#myUsedRange']]) {
-    const r = entry.ai?.[key];
+  for (const [kind, valueSel, rangeSel] of [['new', '#myNew', '#myNewRange'], ['used', '#myUsed', '#myUsedRange']]) {
+    const r = homeRange(entry, kind);
     const lo = toNum(r?.low);
     const hi = toNum(r?.high);
     $(valueSel).textContent = entry.ai || entry.status.search === 'failed' ? rm(rangeValue(r)) : '…';
-    $(rangeSel).textContent = lo && hi && lo !== hi ? `${rm(lo)} to ${rm(hi)}` : (entry.ai && !rangeValue(r) ? 'None found' : '');
+    $(rangeSel).textContent = lo && hi && lo !== hi ? `${rm(lo)} to ${rm(hi)}`
+      : r?.unsourced ? `AI guessed ${rm(r.guess)}, no listing found`
+        : entry.ai && !rangeValue(r) ? 'None found' : '';
   }
 
   const resale = jpUsedYen(entry);
@@ -3310,7 +3329,7 @@ function infoPrompt(entry) {
   const name = entry.override || ai.product_name;
   const m = marketOf(entry);
   return `You are advising a shopper from ${m.name}, usually in Japan, who is deciding whether to buy: "${name}"${ai.brand ? ` by ${ai.brand}` : ''}${entry.secondHand ? ' (second-hand)' : ''}.
-Price here: ${toNum(entry.yen) ? `${localPrice(entry)} (about ${rm(jp)})` : 'unknown'}. In ${m.name} it is typically ${rm(rangeValue(ai.my_new))} new and ${rm(rangeValue(ai.my_used))} second-hand.
+Price here: ${toNum(entry.yen) ? `${localPrice(entry)} (about ${rm(jp)})` : 'unknown'}. In ${m.name} it is typically ${rm(homeValue(entry, 'new'))} new and ${rm(homeValue(entry, 'used'))} second-hand.
 
 Use Google Search (reviews, spec pages, ${m.adj} and Japanese retailers) to write a short buying guide:
 - What it is and the features or specs that matter.
@@ -3625,7 +3644,7 @@ function openSources(kind) {
   if (!entry?.ai) return;
   const k = SOURCE_KINDS[kind];
   const items = listingsFor(entry, kind);
-  const value = kind === 'jp' ? jpUsedYen(entry) : rangeValue(entry.ai[kind === 'new' ? 'my_new' : 'my_used']);
+  const value = kind === 'jp' ? jpUsedYen(entry) : homeValue(entry, kind);
   $('#sourceTitle').textContent = `${k.title} · ${value ? (kind === 'jp' ? yen(value) : rm(value)) : 'none found'}`;
   $('#sourceModel').textContent = `Looking for: ${entry.override || entry.ai.product_name || ''}`;
   const badge = { exact: ['Same model', 'tag-buy'], check: ['Check model', 'tag-maybe'], similar: ['Similar item', 'tag-skip'], unknown: ['Not verified', ''] };
@@ -3661,7 +3680,7 @@ function askPrompt(entry, question) {
   const earlier = (entry.qa || []).filter((x) => x.a).slice(-3).map((x) => `Q: ${x.q}\nA: ${x.a}`).join('\n');
   return `A shopper from ${marketOf(entry).name} is looking at the item in the photo: "${entry.override || ai.product_name || entry.webGuess || 'unknown item'}"${ai.variant ? ` (${ai.variant})` : ''}.
 Tag text: """${(entry.ocrText || entry.contextText || '').slice(0, 1500)}"""
-Price here: ${toNum(entry.yen) ? localPrice(entry) : 'unknown'}. In ${marketOf(entry).name}: ${rm(rangeValue(ai.my_new))} new, ${rm(rangeValue(ai.my_used))} second-hand.
+Price here: ${toNum(entry.yen) ? localPrice(entry) : 'unknown'}. In ${marketOf(entry).name}: ${rm(homeValue(entry, 'new'))} new, ${rm(homeValue(entry, 'used'))} second-hand.
 ${earlier ? `Earlier questions:\n${earlier}\n` : ''}
 Their question: "${question}"
 Answer in plain English in two to four short sentences, specific to this exact model. Use Google Search when you need facts. If you aren't sure, say so. No preamble and no markdown.`;
@@ -3913,8 +3932,8 @@ function renderResultIn(entry) {
 // What the same thing costs in Malaysia, like for like: a second-hand scan is measured against MY second-hand.
 function malaysiaBaseline(e) {
   return e.secondHand
-    ? rangeValue(e.ai?.my_used) || rangeValue(e.ai?.my_new)
-    : rangeValue(e.ai?.my_new) || rangeValue(e.ai?.my_used);
+    ? homeValue(e, 'used') || homeValue(e, 'new')
+    : homeValue(e, 'new') || homeValue(e, 'used');
 }
 
 // What the tag asks, in its own currency (Japanese prices shown before tax get the 10% added).
@@ -4036,7 +4055,7 @@ function pickPrompt(items, need) {
     const compat = compatFor(e).filter((c) => c.status !== 'ok').map((c) => `${c.topic}: ${c.note}`).join('; ');
     return `${i + 1}. "${e.override || ai.product_name || e.webGuess || 'unknown item'}"${ai.brand ? ` by ${ai.brand}` : ''}${ai.variant ? ` (${ai.variant})` : ''}${e.secondHand ? ', second-hand' : ''}
    Price here: ${toNum(e.yen) ? `${localPrice(e)} (about ${rm(japanPrice(e).rm)})` : 'unknown'}${storeName(e) ? ` at ${storeName(e)}` : ''}
-   ${cap(M().name)}: ${rm(rangeValue(ai.my_new))} new, ${rm(rangeValue(ai.my_used))} second-hand${issues ? `\n   Issues on the tag: ${issues}` : ''}${compat ? `\n   ${cap(M().name)} caveats: ${compat}` : ''}`;
+   ${cap(M().name)}: ${rm(homeValue(e, 'new'))} new, ${rm(homeValue(e, 'used'))} second-hand${issues ? `\n   Issues on the tag: ${issues}` : ''}${compat ? `\n   ${cap(M().name)} caveats: ${compat}` : ''}`;
   };
   return `A shopper from ${M().name}, usually in Japan, is choosing between these ${items.length} products (photos attached in the same order):
 ${items.map(describe).join('\n')}
@@ -4135,8 +4154,8 @@ function renderCompare(ids) {
   const rows = [
     ['Store', (e) => storeName(e) || e.place?.area || '–'],
     ['Price', (e) => [toNum(e.yen) ? localPrice(e) : '–', el('small', {}, rm(japanPrice(e).rm))], (e) => japanPrice(e).rm],
-    [`${M().short} new`, (e) => rm(rangeValue(e.ai?.my_new)), null],
-    [`${M().short} second-hand`, (e) => rm(rangeValue(e.ai?.my_used)), null],
+    [`${M().short} new`, (e) => rm(homeValue(e, 'new')), null],
+    [`${M().short} second-hand`, (e) => rm(homeValue(e, 'used')), null],
     ['JP second-hand', (e) => (jpUsedYen(e) ? [yen(jpUsedYen(e)), el('small', {}, rm(jpUsedYen(e) * (fx(e) || 0)))] : '–'), (e) => jpUsedYen(e)],
     ['CeX sells', (e) => (cexFor(e).sell ? rm(cexFor(e).sell) : '–'), (e) => cexFor(e).sell],
     ['CeX buys at', (e) => (cexFor(e).cash ? `${rm(cexFor(e).cash)} cash` : '–'), (e) => (cexFor(e).cash ? -cexFor(e).cash : null)],
@@ -5660,6 +5679,31 @@ function setupPageGestures() {
 
 
 setupPageGestures();
+
+// iOS home-screen apps can leave fixed bars raised after the keyboard closes: the nav then floats
+// mid-page and moves as you scroll. Keep it on the bottom of what's actually on screen, and out of
+// the way while typing (it would sit over the box being typed in).
+function pinNav() {
+  const vv = window.visualViewport;
+  const nav = $('.bottom-nav');
+  if (!vv || !nav) return;
+  const typing = Boolean(document.activeElement?.matches?.('input:not([type=checkbox]):not([type=radio]):not([type=file]), textarea, select'));
+  const keyboard = typing && vv.height < window.innerHeight - 120;
+  document.documentElement.toggleAttribute('data-typing', keyboard);
+  const gap = vv.offsetTop + vv.height - document.documentElement.clientHeight;
+  nav.style.transform = !keyboard && Math.abs(gap) > 2 ? `translateY(${Math.round(gap)}px)` : '';
+}
+if (window.visualViewport) {
+  visualViewport.addEventListener('resize', pinNav);
+  visualViewport.addEventListener('scroll', pinNav);
+}
+document.addEventListener('focusin', pinNav);
+document.addEventListener('focusout', () => {
+  // A nudge makes iOS put the page back where it belongs once the keyboard has gone.
+  setTimeout(() => { window.scrollBy(0, 0); pinNav(); }, 120);
+  setTimeout(pinNav, 500);
+});
+window.addEventListener('scroll', pinNav, { passive: true });
 
 // ---------- boot ----------
 

@@ -7,14 +7,25 @@ const fixture = (name) => path.join(FIXTURES, name);
 const THUMB = 'data:image/jpeg;base64,/9j/4AAQSkZJRg==';
 
 // A typical answer; tests override what they care about.
+// The app only shows a home-market figure with a listing behind it, so fixtures that give a figure and
+// no listings get one matching listing per figure.
+function withListings(ai, overrides) {
+  if (overrides.listings !== undefined) return ai;
+  const fig = (r) => r && (r.typical || (r.low && r.high ? (r.low + r.high) / 2 : r.low || r.high));
+  const title = [ai.product_name, ai.variant].filter(Boolean).join(' ');
+  const listings = [['new', ai.my_new], ['used', ai.my_used]].filter(([, r]) => fig(r))
+    .map(([condition, r]) => ({ platform: 'Shopee', condition, title, price_rm: fig(r), exact_model: true }));
+  return { ...ai, listings };
+}
+
 function product(overrides = {}) {
-  return {
+  return withListings({
     product_name: 'Sony DualSense Controller', brand: 'Sony', search_query: 'Sony DualSense', search_query_ja: 'デュアルセンス',
     price: 11480, currency: 'JPY', price_tax_included: true,
     my_new: { typical: 329 }, my_used: { typical: 220 }, jp_used_yen: null, cex_my: null,
     listings: [], my_compat: [], confidence: 'high',
     ...overrides,
-  };
+  }, overrides);
 }
 
 const geminiReply = (json) => ({ candidates: [{ content: { parts: [{ text: `\`\`\`json\n${JSON.stringify(json)}\n\`\`\`` }] } }] });
@@ -79,7 +90,7 @@ function scan(id, ai = {}, extra = {}) {
   return {
     id, createdAt: Date.now() - id.length * 1000, thumb: THUMB, yen: 11480, currency: 'JPY', taxIncluded: true,
     status: { vision: 'done', search: 'done' }, errors: [],
-    ai: { product_name: id, listings: [], my_compat: [], ...ai },
+    ai: withListings({ product_name: id, listings: [], my_compat: [], ...ai }, ai),
     ...extra,
   };
 }

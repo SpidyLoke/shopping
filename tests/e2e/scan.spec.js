@@ -221,3 +221,22 @@ test('a listing whose link was broken offers a search of that shop instead', asy
   await expect(items.nth(1).locator('a', { hasText: 'Open listing' })).toHaveAttribute('href', 'https://lifestylemotorsport.com/p/omp');
   await expect(items.nth(1).locator('a', { hasText: 'Search lifestylemotorsport.com' })).toHaveCount(1);
 });
+
+test('MY new comes from the listings behind it; a figure with none is shown as a guess and not used', async ({ page }) => {
+  await mockApis(page);
+  const gloves = { product_name: 'OMP One Evo-X Racing Gloves', my_new: { low: 1600, high: 1950, typical: 1780 } };
+  await openApp(page, { history: [
+    scan('Listed', { ...gloves, listings: [
+      { platform: 'Other', condition: 'new', title: 'OMP One Evo-X Racing Gloves', price_rm: 1099, url: 'https://a.example/1', exact_model: true },
+      { platform: 'Other', condition: 'new', title: 'OMP One Evo-X Racing Gloves', price_rm: 1269, url: 'https://b.example/2', exact_model: true },
+    ] }, { yen: 39700 }),
+    scan('Unlisted', { ...gloves, listings: [] }, { yen: 39700 }),
+  ] });
+  await page.goto('/#/scan/Listed');
+  await expect(page.locator('#myNew')).toHaveText('RM 1,184');
+  await expect(page.locator('#myNewRange')).toHaveText('RM 1,099 to RM 1,269');
+  await page.goto('/#/scan/Unlisted');
+  await expect(page.locator('#myNew')).toHaveText('–');
+  await expect(page.locator('#myNewRange')).toHaveText('AI guessed RM 1,780, no listing found');
+  await expect(page.locator('#verdictLabel')).toContainText('No Malaysian prices found');
+});
