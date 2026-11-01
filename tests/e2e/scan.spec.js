@@ -273,3 +273,15 @@ test('a busy Gemini gives a plain message and a Try again that works', async ({ 
   await expect(page.locator('#qaList .qa-a')).toHaveText('Yes, it works with a PC.', { timeout: 20000 });
   await expect(page.locator('#qaList li')).toHaveCount(1);
 });
+
+test('a listing Gemini says is another model backs no figure; a Shopee listing with no link gets a Shopee search', async ({ page }) => {
+  await mockApis(page);
+  await openApp(page, { history: [scan('Odin', { product_name: 'AYN Odin 3 Handheld Game Console (Base 8GB+128GB)', search_query: 'AYN Odin 3 8GB 128GB', my_new: { low: 1500, high: 1750, typical: 1600 }, listings: [
+    { platform: 'Shopee', condition: 'new', title: 'AYN ODIN3 MAX Qualcomm 8 Elite Handheld', price_rm: 2100, url: null, exact_model: false, match_note: 'Max version with higher specs' },
+  ] }, { yen: 1400, currency: 'MYR' })] });
+  await page.goto('/#/scan/Odin');
+  await expect(page.locator('#myNew')).toHaveText('–');
+  await expect(page.locator('#myNewRange')).toHaveText('AI guessed RM 1,600, no exact-model listing');
+  await page.click('#myNew');
+  await expect(page.locator('.source-item a', { hasText: 'Search Shopee' })).toHaveAttribute('href', 'https://shopee.com.my/search?keyword=AYN%20Odin%203%208GB%20128GB');
+});

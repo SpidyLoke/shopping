@@ -6,7 +6,7 @@ import { buildPrompt, findBarcodes, gtinValid, MARKETS, marketFor } from './prom
 import { FIREBASE } from './firebase-config.js';
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.11.01-8';
+const APP_VERSION = '2026.11.01-9';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -1098,20 +1098,22 @@ function compatFor(entry) {
 
 // ---------- pricing & verdict ----------
 
-// MY new / MY used come from the listings shown under them, never from a number with nothing behind it:
-// the median of the exact-model listings when there are some, Gemini's own figure when its only
-// listings need a model check, and nothing (kept as a "guess" for display) when no listing has a price.
-// Clothes keep Gemini's figure: they're often priced from similar pieces, and say so.
+// MY new / MY used come from the listings shown under them, never from a number with nothing behind it.
+// A listing Gemini itself says is another model (exact_model: false, e.g. the Max of a Base) backs
+// nothing. Of the rest, the ones whose titles also pass our own check are used if there are any;
+// the figure is their middle price, and their lowest to highest the range. With none, Gemini's
+// number is only shown as a guess and left out of the verdict. Clothes keep Gemini's figure: they're
+// often priced from similar pieces, and say so.
 function homeRange(entry, kind) {
   const r = entry?.ai?.[kind === 'new' ? 'my_new' : 'my_used'];
   if (!rangeValue(r)) return null;
   if (entry.kind === 'clothes') return r;
-  const priced = listingsFor(entry, kind).filter((l) => toNum(l.price_rm) > 0);
-  if (!priced.length) return { unsourced: true, guess: rangeValue(r) };
-  const exact = priced.filter((l) => listingMatch(entry, l) === 'exact').map((l) => toNum(l.price_rm)).sort((a, b) => a - b);
-  if (!exact.length) return r;
-  const n = exact.length;
-  return { low: exact[0], high: exact[n - 1], typical: n % 2 ? exact[(n - 1) / 2] : (exact[n / 2 - 1] + exact[n / 2]) / 2 };
+  const backing = listingsFor(entry, kind).filter((l) => toNum(l.price_rm) > 0 && l.exact_model !== false);
+  if (!backing.length) return { unsourced: true, guess: rangeValue(r), others: listingsFor(entry, kind).length };
+  const exact = backing.filter((l) => listingMatch(entry, l) === 'exact');
+  const prices = (exact.length ? exact : backing).map((l) => toNum(l.price_rm)).sort((a, b) => a - b);
+  const n = prices.length;
+  return { low: prices[0], high: prices[n - 1], typical: n % 2 ? prices[(n - 1) / 2] : (prices[n / 2 - 1] + prices[n / 2]) / 2 };
 }
 const homeValue = (entry, kind) => rangeValue(homeRange(entry, kind));
 
@@ -1325,7 +1327,7 @@ function officialPrice(entry) {
   } catch {
     seller ||= 'the brand';
   }
-  return { orig, cur, rm: r ? orig * r : null, seller, url: safeUrl(o.url), link_ok: o.link_ok };
+  return { orig, cur, rm: r ? orig * r : null, seller, url: safeUrl(o.url), link_ok: o.link_ok, checked: o.price_checked === true };
 }
 
 function officialVerdict(jp, off) {
@@ -3140,7 +3142,7 @@ function renderPricesIn(entry) {
     const hi = toNum(r?.high);
     $(valueSel).textContent = entry.ai || entry.status.search === 'failed' ? rm(rangeValue(r)) : '…';
     $(rangeSel).textContent = lo && hi && lo !== hi ? `${rm(lo)} to ${rm(hi)}`
-      : r?.unsourced ? `AI guessed ${rm(r.guess)}, no listing found`
+      : r?.unsourced ? `AI guessed ${rm(r.guess)}, ${r.others ? 'no exact-model listing' : 'no listing found'}`
         : entry.ai && !rangeValue(r) ? 'None found' : '';
   }
 
@@ -3181,7 +3183,7 @@ function renderPricesIn(entry) {
   if (off) {
     $('#officialHead').textContent = 'Brand price';
     $('#official').textContent = off.rm ? rm(off.rm) : money(off.orig, off.cur);
-    $('#officialNote').textContent = `${money(off.orig, off.cur)} · ${off.seller}`;
+    $('#officialNote').textContent = `${money(off.orig, off.cur)} · ${off.seller}${off.checked ? ' · price from their page' : ''}`;
     $('#officialLink').hidden = !off.url;
     if (off.url) $('#officialLink').href = off.link_ok === false ? siteSearch(off.url, searchQuery(entry)) : off.url;
   }
@@ -3655,11 +3657,17 @@ function searchLinks(entry, q) {
 
 // "Open listing", and a search of the same shop: Gemini's links are sometimes made up, so when the
 // backend found the page missing only the search is offered.
-function listingLinks(l, href, q) {
+function listingLinks(l, href, q, entry) {
   const shop = href && siteSearch(href, q);
   const host = shop ? new URL(href).hostname.replace(/^www\./, '') : '';
   const find = shop ? el('a', { class: 'link small', href: shop, target: '_blank', rel: 'noopener' }, `Search ${host} ↗`) : null;
-  if (!href) return el('p', { class: 'muted small' }, 'No link given');
+  if (!href) {
+    // No address, but a marketplace we can search (Shopee, Carousell…): search it for the item.
+    const site = (marketOf(entry).links || []).find(([label]) => label.toLowerCase() === String(l.platform || '').toLowerCase());
+    return site
+      ? el('a', { class: 'link small', href: `${site[1]}${encodeURIComponent(shortQuery(q))}`, target: '_blank', rel: 'noopener' }, `Search ${site[0]} ↗`)
+      : el('p', { class: 'muted small' }, 'No link given');
+  }
   if (l.link_ok === false) return el('div', { class: 'source-links' }, el('span', { class: 'muted small' }, 'Link was broken.'), find);
   return el('div', { class: 'source-links' }, el('a', { class: 'link small', href, target: '_blank', rel: 'noopener' }, 'Open listing ↗'), find);
 }
@@ -3686,7 +3694,7 @@ function openSources(kind) {
       ),
       el('p', { class: 'source-name' }, l.title || 'Untitled listing'),
       l.match_note ? el('p', { class: 'muted small' }, l.match_note) : null,
-      listingLinks(l, href, searchQuery(entry) || l.title),
+      listingLinks(l, href, searchQuery(entry) || l.title, entry),
     );
   }));
   $('#sourceEmpty').hidden = items.length > 0;

@@ -261,10 +261,61 @@ async function linkAlive(fetch, url) {
   }
 }
 
+// The brand's page states its own price (shops put it in the page's product tags for search engines).
+// Gemini's figure for it is often from an older listing or another variant's page, so the page wins.
+const PAGE_BYTES = 600000;
+function priceOnPage(html) {
+  const meta = (name) => {
+    const a = html.match(new RegExp(`<meta[^>]+(?:property|name|itemprop)=["'](?:${name})["'][^>]*content=["']([^"']+)["']`, 'i'))
+      || html.match(new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]*(?:property|name|itemprop)=["'](?:${name})["']`, 'i'));
+    return a ? a[1].trim() : null;
+  };
+  let amount = meta('product:price:amount|og:price:amount|price');
+  let currency = meta('product:price:currency|og:price:currency|priceCurrency');
+  if (!amount) {
+    const ld = html.match(/"price"\s*:\s*"?([\d.,]+)"?/);
+    const cur = html.match(/"priceCurrency"\s*:\s*"([A-Za-z]{3})"/);
+    if (ld && cur) [amount, currency] = [ld[1], cur[1]];
+  }
+  const n = Number(String(amount || '').replace(/,(?=\d{3}\b)/g, ''));
+  return n > 0 && /^[A-Za-z]{3}$/.test(currency || '') ? { price: n, currency: currency.toUpperCase() } : null;
+}
+
+async function checkOfficial(fetch, o) {
+  try {
+    const res = await fetch(o.url, {
+      redirect: 'follow',
+      headers: { 'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1', Accept: 'text/html' },
+      signal: AbortSignal.timeout(LINK_MS),
+    });
+    if (res.status === 404 || res.status === 410) {
+      o.link_ok = false;
+      return;
+    }
+    if (!res.ok) return;
+    o.link_ok = true;
+    if (typeof res.text !== 'function') return;
+    const page = priceOnPage((await res.text()).slice(0, PAGE_BYTES));
+    if (!page) return;
+    if (page.price !== Number(o.price) || page.currency !== String(o.currency || '').toUpperCase()) {
+      o.ai_price = { price: o.price, currency: o.currency };
+      Object.assign(o, page);
+    }
+    o.price_checked = true;
+  } catch (e) {
+    if ((e?.cause?.code || e?.code) === 'ENOTFOUND') o.link_ok = false;
+  }
+}
+
 async function checkLinks({ fetch }, ai) {
-  const items = [...(Array.isArray(ai.listings) ? ai.listings : []), ai.official_price].filter((x) => x && typeof x.url === 'string' && x.url);
+  const official = ai.official_price && typeof ai.official_price.url === 'string' && /^https?:/i.test(ai.official_price.url) ? ai.official_price : null;
+  const items = (Array.isArray(ai.listings) ? ai.listings : []).filter((x) => x && typeof x.url === 'string' && x.url);
   const urls = [...new Set(items.map((x) => x.url))].slice(0, MAX_LINKS);
-  const alive = new Map(await Promise.all(urls.map(async (url) => [url, await linkAlive(fetch, url)])));
+  const [pairs] = await Promise.all([
+    Promise.all(urls.map(async (url) => [url, await linkAlive(fetch, url)])),
+    official ? checkOfficial(fetch, official) : null,
+  ]);
+  const alive = new Map(pairs);
   for (const x of items) {
     const ok = alive.get(x.url);
     if (ok === true || ok === false) x.link_ok = ok;

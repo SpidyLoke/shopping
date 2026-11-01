@@ -349,3 +349,14 @@ test('a question asks the lighter model straight after one busy answer, and fits
   assert.equal(r.text, 'It works.');
   assert.deepEqual(seen, ['main', 'lite']);
 });
+
+test("the brand's price is read off its own page when Gemini's is out of date", async () => {
+  const { core, prompts } = await load();
+  const page = '<html><head><meta property="og:price:amount" content="369.00"><meta property="og:price:currency" content="USD"></head></html>';
+  const base = apis({ gemini: () => ({ ...MARKET, price: 1400, currency: 'MYR', official_price: { price: 299, currency: 'USD', seller: 'AYN', url: 'https://ayn.example/odin3' } }) });
+  const fetch = async (url, opt) => (url.startsWith('https://ayn.example') ? { status: 200, ok: true, url, text: async () => page } : base.fetch(url, opt));
+  const deps = { db: fakeDb(), fetch, prompts, keys: { vision: 'V', gemini: 'G' }, model: 'm', cexLookup: false, limits: LIMITS, clock: () => Date.UTC(2026, 9, 30, 4) };
+  const out = await core.runScan({ images: [IMG] }, { uid: 'u1', deps });
+  const o = JSON.parse(out.gemini.text.replace(/^```json\n|\n```$/g, '')).official_price;
+  assert.deepEqual([o.price, o.currency, o.price_checked, o.ai_price.price], [369, 'USD', true, 299]);
+});
