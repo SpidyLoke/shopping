@@ -1396,7 +1396,8 @@ html[data-list="compact"] .history-item { gap: 10px; padding: 3px; }
 html[data-list="compact"] .history-item img { width: 40px; height: 40px; border-radius: 10px; }
 html[data-list="compact"] .history-name { font-size: 0.92rem; }
 html[data-list="compact"] .row-actions { flex-direction: row; }
-html[data-list="compact"] .fav-btn:not(.on), html[data-list="compact"] .rescan-btn:not(.attention):not(.spinning) { display: none; }
+/* (only in the lists: the result page keeps its ↻) */
+html[data-list="compact"] .fav-btn:not(.on), html[data-list="compact"] .rescan-btn:not(#rescanBtn):not(.attention):not(.spinning) { display: none; }
 html[data-list="compact"] .tag { padding: 2px 8px; font-size: 0.7rem; }
 
 html[data-list="grid"] .history-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
@@ -1410,7 +1411,7 @@ html[data-list="grid"] .history-item > .tag { position: absolute; top: 8px; left
 html[data-list="grid"] .row-actions { position: absolute; top: 4px; right: 4px; }
 html[data-list="grid"] .fav-btn, html[data-list="grid"] .rescan-btn { width: 34px; height: 34px; background: rgb(0 0 0 / 0.38); color: #fff; }
 html[data-list="grid"] .fav-btn.on { color: #ff8396; }
-html[data-list="grid"] .rescan-btn:not(.attention):not(.spinning) { display: none; }
+html[data-list="grid"] .rescan-btn:not(#rescanBtn):not(.attention):not(.spinning) { display: none; }
 html[data-list="grid"] .history-item.selected { box-shadow: inset 0 0 0 3px var(--accent); }
 
 /* ---------- Result as a sheet over the photo ---------- */
@@ -1835,3 +1836,4 @@ dialog.install-guide::backdrop { background: var(--bg); }
   box-shadow: 0 8px 22px color-mix(in srgb, var(--accent-bg) 45%, transparent), 0 0 0 5px var(--bg); transition: transform 0.2s var(--ease); }
 .nav-shutter svg.i { width: 30px; height: 30px; }
 .nav-shutter:active span { transform: scale(0.92); }
+.verdict-recheck { margin-top: 10px; }

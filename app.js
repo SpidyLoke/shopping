@@ -6,7 +6,7 @@ import { buildPrompt, findBarcodes, gtinValid, MARKETS, marketFor } from './prom
 import { FIREBASE } from './firebase-config.js';
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.11.01-3';
+const APP_VERSION = '2026.11.01-4';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -1324,7 +1324,7 @@ function baseVerdict(entry) {
   if (!myNew && !myUsed) {
     const off = officialPrice(entry);
     if (off?.rm) return officialVerdict(jp, off);
-    return { cls: 'none', label: `No ${M().adj} prices found`, detail: `Not sold in ${M().name} that we could find. Tap Google below to look further${entry.quick ? ', or run a Full check' : ''}.` };
+    return { cls: 'none', label: `No ${M().adj} prices found`, detail: `Not sold in ${M().name} that we could find. Check again, or tap Google below to look further.` };
   }
   return entry.secondHand ? usedVerdict(entry, jp, myNew, myUsed) : newVerdict(jp, myNew, myUsed);
 }
@@ -3170,6 +3170,9 @@ function renderPricesIn(entry) {
     $('#verdictLabel').textContent = v.label;
     $('#dealTags').replaceChildren(...dealTags(entry).map(dealChip));
     $('#verdictDetail').textContent = v.detail;
+    // Nothing found: a full re-check is the obvious next step, so it's right here.
+    $('#verdictRecheck').hidden = !(v.cls === 'none' && entry.ai && !running.has(entry.id) && toNum(entry.yen));
+    $('#verdictRecheck').textContent = entry.quick ? 'Run a full check' : 'Check again';
   }
 }
 
@@ -5277,8 +5280,8 @@ for (const t of document.querySelectorAll('[data-setting-toggle]')) {
     route(true);
   });
 }
-$('#verdict').addEventListener('click', () => {
-  if (!current) return;
+$('#verdict').addEventListener('click', (e) => {
+  if (!current || e.target.closest('button')) return;
   verdictOpen = verdictOpen === current.id ? null : current.id;
   $('#verdict').classList.toggle('expanded', verdictOpen === current.id);
 });
@@ -5371,12 +5374,14 @@ $('#fixName').addEventListener('submit', (e) => {
   $('#fixName').hidden = true;
   setOverride(current.id, name);
 });
-$('#fullCheckBtn').addEventListener('click', () => {
-  if (!current || running.has(current.id)) return;
-  current.quick = false;
-  saveEntry(current);
-  rescan(current.id);
-});
+for (const id of ['#fullCheckBtn', '#verdictRecheck']) {
+  $(id).addEventListener('click', () => {
+    if (!current || running.has(current.id)) return;
+    current.quick = false;
+    saveEntry(current);
+    rescan(current.id);
+  });
+}
 $('#worthBtn').addEventListener('click', () => current && loadInfo(current.id));
 $('#pickForm').addEventListener('submit', (e) => {
   e.preventDefault();

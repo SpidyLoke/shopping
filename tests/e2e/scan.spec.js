@@ -187,3 +187,20 @@ test('CeX: a row that leaves the brand out, or names a sub-brand too, still matc
   await scanFromGallery(page);
   await expect(page.locator('#cexSell')).toHaveText('RM 160');
 });
+
+test('a scan with no prices can be checked again from the result, in any list style', async ({ page }) => {
+  let n = 0;
+  const calls = await mockApis(page, {
+    gemini: () => (++n === 1 ? product({ my_new: null, my_used: null }) : product({ my_new: { typical: 600 } })),
+  });
+  await openApp(page, { settings: { listStyle: 'grid' } });
+  await scanFromGallery(page);
+  await expect(page.locator('#verdictLabel')).toContainText('No Malaysian prices found');
+  await expect(page.locator('#rescanBtn')).toBeVisible(); // Grid hides ↻ in the list, not here
+  await expect(page.locator('#verdictRecheck')).toBeVisible();
+  await expect(page.locator('#verdictRecheck')).toHaveText('Check again');
+  await page.click('#verdictRecheck');
+  await expect(page.locator('#myNew')).toHaveText('RM 600');
+  await expect(page.locator('#verdictRecheck')).toBeHidden();
+  expect(calls.gemini.length).toBe(2);
+});
