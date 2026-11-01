@@ -285,3 +285,18 @@ test('a listing Gemini says is another model backs no figure; a Shopee listing w
   await page.click('#myNew');
   await expect(page.locator('.source-item a', { hasText: 'Search Shopee' })).toHaveAttribute('href', 'https://shopee.com.my/search?keyword=AYN%20Odin%203%208GB%20128GB');
 });
+
+test('with no price, the price box is in the Need the price card; Gemini\'s own working is not shown', async ({ page }) => {
+  await mockApis(page);
+  await openApp(page, { history: [scan('Drink', { product_name: 'Kirin Mets Lemon Squash Zero 490ml', variant: 'Zero', variant_evidence: 'label says zero 0 kcal', variant_confidence: 'high' }, { yen: null, currency: 'MYR' })] });
+  await page.goto('/#/scan/Drink');
+  await expect(page.locator('#verdictLabel')).toHaveText('Need the price');
+  await expect(page.locator('#verdict #yenInput')).toBeVisible();
+  await expect(page.locator('#shareBtn')).toBeHidden();
+  await expect(page.locator('#variantBox')).toBeHidden();
+  await page.fill('#yenInput', '5');
+  await page.locator('#yenInput').blur();
+  await expect(page.locator('#prices #yenInput')).toBeVisible();
+  await expect(page.locator('#verdict #yenInput')).toHaveCount(0);
+  await expect(page.locator('#yenInput')).toHaveValue('5');
+});

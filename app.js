@@ -6,7 +6,7 @@ import { buildPrompt, findBarcodes, gtinValid, MARKETS, marketFor } from './prom
 import { FIREBASE } from './firebase-config.js';
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.11.01-9';
+const APP_VERSION = '2026.11.01-10';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -1344,7 +1344,7 @@ function baseVerdict(entry) {
   const myNew = homeValue(entry, 'new');
   const myUsed = homeValue(entry, 'used');
   if (!entry.ai) return null;
-  if (!jp) return { cls: 'none', label: 'Need the price', detail: 'Type the price from the tag or listing to get a verdict.' };
+  if (!jp) return { cls: 'none', label: 'Need the price', detail: 'Type the price from the tag or listing:', needPrice: true };
   if (!myNew && !myUsed) {
     const off = officialPrice(entry);
     if (off?.rm) return officialVerdict(jp, off);
@@ -1547,6 +1547,16 @@ async function addPhotos(id, files) {
   if (!entry.yenEdited) entry.yen = null;
   saveEntry(entry);
   await rescan(id, { before, undone: () => added.forEach((a) => imageDb.del(a.id)) });
+}
+
+// With no price yet, the price box sits in the verdict card that asks for it; once there's a price it
+// goes back above MY new. Never moved while being typed in (moving it would close the keyboard).
+function placePriceBox(inVerdict) {
+  const box = $('.price-main');
+  if (!box || box.contains(document.activeElement)) return;
+  if (inVerdict && box.parentElement !== $('#verdict')) $('#verdictDetail').after(box);
+  else if (!inVerdict && box.parentElement !== $('#prices')) $('#prices').prepend(box);
+  box.classList.toggle('in-verdict', inVerdict);
 }
 
 function refresh(entry) {
@@ -3196,6 +3206,8 @@ function renderPricesIn(entry) {
     $('#verdictLabel').textContent = v.label;
     $('#dealTags').replaceChildren(...dealTags(entry).map(dealChip));
     $('#verdictDetail').textContent = v.detail;
+    placePriceBox(Boolean(v.needPrice));
+    $('#shareBtn').hidden = Boolean(v.needPrice);
     // Nothing found: a full re-check is the obvious next step, so it's right here.
     $('#verdictRecheck').hidden = !(v.cls === 'none' && entry.ai && !running.has(entry.id) && toNum(entry.yen));
     $('#verdictRecheck').textContent = entry.quick ? 'Run a full check' : 'Check again';
@@ -3292,13 +3304,15 @@ function renderVariantIn(entry) {
   const ai = entry.ai;
   const lookalikes = (Array.isArray(ai?.lookalikes) ? ai.lookalikes : []).filter((l) => l?.name).slice(0, 3);
   const box = $('#variantBox');
-  box.hidden = !ai || (!ai.variant && !lookalikes.length && !entry.override);
+  const unsure = Boolean(ai) && !entry.override && ai.variant_confidence === 'low';
+  // Only what needs the shopper: a name they set, a model it isn't sure of, or lookalikes to pick
+  // from. How Gemini knew ("label says zero kcal") is its own working, not something to read.
+  box.hidden = !ai || (!lookalikes.length && !entry.override && !unsure);
   if (box.hidden) return;
-  const unsure = !entry.override && ai.variant_confidence === 'low';
   box.classList.toggle('unsure', unsure);
-  $('#variantLine').textContent = entry.override
-    ? `Set by you: ${entry.override}`
-    : `${unsure ? 'Not sure which model. ' : ''}${ai.variant_evidence || ai.product_name || ''}`;
+  const line = entry.override ? `Set by you: ${entry.override}` : unsure ? 'Not sure which model this is.' : '';
+  $('#variantLine').textContent = line;
+  $('#variantLine').hidden = !line;
   $('#lookalikeHint').textContent = unsure ? 'Pick the right model' : 'Similar models';
   const buttons = lookalikes.map((l) => el('button', { class: 'lookalike', type: 'button', onclick: () => setOverride(entry.id, l.name) },
     el('span', { class: 'lk-name' }, l.name),
@@ -5308,6 +5322,7 @@ $('#currencySelect').addEventListener('change', async (e) => {
   saveEntry(entry);
   renderResult(entry);
 });
+$('#yenInput').addEventListener('blur', () => { if (current) setTimeout(() => current && renderResult(current), 0); });
 $('#yenInput').addEventListener('input', (e) => editCurrent((entry) => {
   entry.yen = toNum(e.target.value);
   entry.yenEdited = true;
@@ -5370,7 +5385,7 @@ for (const t of document.querySelectorAll('[data-setting-toggle]')) {
   });
 }
 $('#verdict').addEventListener('click', (e) => {
-  if (!current || e.target.closest('button')) return;
+  if (!current || e.target.closest('button, input, select, label, a, .price-main')) return;
   verdictOpen = verdictOpen === current.id ? null : current.id;
   $('#verdict').classList.toggle('expanded', verdictOpen === current.id);
 });
