@@ -180,32 +180,12 @@
           <div class="deal-tags" id="dealTags"></div>
           <p class="verdict-detail" id="verdictDetail"></p>
           <button class="btn btn-small verdict-recheck" type="button" id="verdictRecheck" hidden>Check again</button>
-          <button class="link small share-btn" type="button" id="shareBtn">Share this find</button>
+          <div class="verdict-actions" id="verdictActions">
+            <button class="chip share-btn" type="button" id="shareBtn"><svg class="i" viewBox="0 0 256 256" aria-hidden="true"><path d="M222,128v80a14,14,0,0,1-14,14H48a14,14,0,0,1-14-14V128a6,6,0,0,1,12,0v80a2,2,0,0,0,2,2H208a2,2,0,0,0,2-2V128a6,6,0,0,1,12,0ZM92.24,76.24,122,46.49V136a6,6,0,0,0,12,0V46.49l29.76,29.75a6,6,0,0,0,8.48-8.48l-40-40a6,6,0,0,0-8.48,0l-40,40a6,6,0,0,0,8.48,8.48Z"/></svg><span class="chip-label">Share</span></button>
+          </div>
           <button class="btn btn-small find-btn" type="button" id="findBtn" hidden>Just find where to buy it</button>
         </div>
 
-        <div class="judge" id="judge" hidden>
-          <div class="judge-row">
-            <span class="judge-q">Right model and prices?</span>
-            <button class="chip-mini" type="button" id="judgeYes">Yes</button>
-            <button class="chip-mini" type="button" id="judgeNo">Not quite</button>
-          </div>
-          <div class="judge-more" id="judgeMore" hidden>
-            <div class="judge-opts" id="judgeOpts">
-              <button class="chip-mini" type="button" data-wrong="model" aria-pressed="false">Wrong model</button>
-              <button class="chip-mini" type="button" data-wrong="price" aria-pressed="false">Tag price misread</button>
-              <button class="chip-mini" type="button" data-wrong="new" aria-pressed="false">New price off</button>
-              <button class="chip-mini" type="button" data-wrong="used" aria-pressed="false">Used price off</button>
-              <button class="chip-mini" type="button" data-wrong="cex" aria-pressed="false">CeX off</button>
-              <button class="chip-mini" type="button" data-wrong="other" aria-pressed="false">Other</button>
-            </div>
-            <div class="judge-send">
-              <input id="judgeNote" type="text" maxlength="300" placeholder="What should it be? (optional)" aria-label="What was wrong">
-              <button class="btn btn-small btn-primary" type="button" id="judgeSend">Send</button>
-            </div>
-          </div>
-          <p class="judge-done" id="judgeDone" hidden></p>
-        </div>
 
         <div class="variant-box" id="variantBox" hidden>
           <p class="variant-line" id="variantLine"></p>
@@ -231,6 +211,12 @@
         </div>
 
         <div class="prices" id="prices" hidden>
+          <p class="ladder-head" id="ladderHead" hidden><span>Where your price sits</span><span class="ladder-hint">dearest at the top</span></p>
+          <div class="price-card rung-you" id="youRow" hidden>
+            <p class="price-head">You pay</p>
+            <p class="price-rm" id="youPay"></p>
+            <p class="price-sub" id="youNote"></p>
+          </div>
           <div class="price-card price-main">
             <div>
               <p class="price-head" id="jpHead">Japan</p>
@@ -282,6 +268,7 @@
             <p class="price-rm" id="cexCash">–</p>
             <p class="price-sub" id="cexVoucher"></p>
           </div>
+          <p class="ladder-legend" id="ladderLegend" hidden><span class="lg more">costs more than yours</span><span class="lg less">cheaper elsewhere</span><span class="lg back">what you'd get back</span></p>
         </div>
 
         <div class="price-toggles" id="toggles" hidden>
@@ -325,6 +312,29 @@
             <button class="btn btn-small btn-primary" type="submit" id="askBtn">Ask</button>
           </form>
         </section>
+
+        <div class="judge" id="judge" hidden>
+          <div class="judge-row">
+            <span class="judge-q">Right model and prices?</span>
+            <button class="chip-mini" type="button" id="judgeYes">Yes</button>
+            <button class="chip-mini" type="button" id="judgeNo">Not quite</button>
+          </div>
+          <div class="judge-more" id="judgeMore" hidden>
+            <div class="judge-opts" id="judgeOpts">
+              <button class="chip-mini" type="button" data-wrong="model" aria-pressed="false">Wrong model</button>
+              <button class="chip-mini" type="button" data-wrong="price" aria-pressed="false">Tag price misread</button>
+              <button class="chip-mini" type="button" data-wrong="new" aria-pressed="false">New price off</button>
+              <button class="chip-mini" type="button" data-wrong="used" aria-pressed="false">Used price off</button>
+              <button class="chip-mini" type="button" data-wrong="cex" aria-pressed="false">CeX off</button>
+              <button class="chip-mini" type="button" data-wrong="other" aria-pressed="false">Other</button>
+            </div>
+            <div class="judge-send">
+              <input id="judgeNote" type="text" maxlength="300" placeholder="What should it be? (optional)" aria-label="What was wrong">
+              <button class="btn btn-small btn-primary" type="button" id="judgeSend">Send</button>
+            </div>
+          </div>
+          <p class="judge-done" id="judgeDone" hidden></p>
+        </div>
 
         <section class="flat place" id="placePanel">
           <div class="place-row">

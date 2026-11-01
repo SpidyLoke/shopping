@@ -6,7 +6,7 @@ import { buildPrompt, findBarcodes, gtinValid, MARKETS, marketFor } from './prom
 import { FIREBASE } from './firebase-config.js';
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.11.02-3';
+const APP_VERSION = '2026.11.02-4';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -1581,14 +1581,81 @@ async function addPhotos(id, files) {
   await rescan(id, { before, undone: () => added.forEach((a) => imageDb.del(a.id)) });
 }
 
-// With no price yet, the price box sits in the verdict card that asks for it; once there's a price it
-// goes back above MY new. Never moved while being typed in (moving it would close the keyboard).
+// The tag price and Save / Bought sit in the verdict card whenever there is a verdict; while the
+// scan runs (no verdict yet) or in Find it, the price heads the price list and the buttons go back to
+// the row under the name. Never moved while being typed in (moving it would close the keyboard).
 function placePriceBox(inVerdict) {
   const box = $('.price-main');
   if (!box || box.contains(document.activeElement)) return;
   if (inVerdict && box.parentElement !== $('#verdict')) $('#verdictDetail').after(box);
   else if (!inVerdict && box.parentElement !== $('#prices')) $('#prices').prepend(box);
   box.classList.toggle('in-verdict', inVerdict);
+}
+
+function placeActions(inVerdict) {
+  const row = $('.chip-row');
+  for (const id of ['#boughtBtn', '#favBtn']) {
+    const b = $(id);
+    if (inVerdict && b.parentElement !== $('#verdictActions')) $('#verdictActions').prepend(b);
+    else if (!inVerdict && b.parentElement !== row) row.prepend(b);
+  }
+  row.classList.toggle('slim', inVerdict);
+}
+
+// The prices as one ladder, dearest at the top, with what you pay placed among them: above you is
+// what costs more elsewhere, below you what's cheaper, and CeX's offer is what you'd get back.
+// Prices not found go to the bottom, dimmed. Ordering is CSS order, so every card keeps its place in
+// the page (and its handlers) whatever the sort.
+function orderLadder(entry) {
+  return inMarket(entry, () => orderLadderIn(entry));
+}
+
+function orderLadderIn(entry) {
+  const tag = japanPrice(entry).rm;
+  const paid = tag && entry.ai ? landedCost(entry, tag).total : null;
+  const card = (sel) => $(sel).closest('.price-card');
+  const resale = jpUsedYen(entry);
+  const off = officialPrice(entry);
+  const cex = cexFor(entry);
+  const rows = [
+    [card('#myNew'), homeValue(entry, 'new')],
+    [card('#myUsed'), homeValue(entry, 'used')],
+    [card('#officialCard'), off?.rm || null],
+    [card('#jpUsed'), resale && fx(entry) ? resale * fx(entry) : null],
+    [card('#cexSell'), cex.sell || null],
+    [card('#cexCash'), cex.cash || null, 'back'],
+  ];
+  const on = Boolean(entry.ai);
+  $('#prices').classList.toggle('ladder', on);
+  $('#ladderHead').hidden = !on;
+  $('#youRow').hidden = !on || !paid;
+  if (paid) {
+    $('#youPay').textContent = rm(paid);
+    const c = landedCost(entry, tag);
+    const adds = [c.card >= 0.5 ? `${rm(c.card)} card fee` : null, c.extra ? `${rm(c.extra)} extra` : null].filter(Boolean);
+    $('#youNote').textContent = adds.length ? `${rm(tag)} + ${adds.join(' + ')}` : 'The price on the tag';
+  }
+  const priced = rows.filter(([, v]) => v).sort((a, b) => b[1] - a[1]);
+  let n = 1;
+  let placedYou = false;
+  for (const [el, v, kind] of priced) {
+    if (paid && !placedYou && v <= paid) {
+      $('#youRow').style.order = n++;
+      placedYou = true;
+    }
+    el.style.order = n++;
+    el.classList.remove('rung-none', 'more', 'less', 'back');
+    if (paid) el.classList.add(kind === 'back' ? 'back' : v > paid ? 'more' : 'less');
+  }
+  if (paid && !placedYou) $('#youRow').style.order = n++;
+  for (const [el, v] of rows) {
+    if (v) continue;
+    el.style.order = 100 + n++;
+    el.classList.remove('more', 'less', 'back');
+    el.classList.toggle('rung-none', on);
+  }
+  $('#ladderLegend').hidden = !on || !paid;
+  $('#ladderLegend').style.order = 999;
 }
 
 function refresh(entry) {
@@ -3204,6 +3271,7 @@ function renderPricesIn(entry) {
   $('#currencySelect').value = cur;
   $('#currencySymbol').textContent = CURRENCIES[cur] || cur;
   $('#prices').classList.toggle('local', isHomePrice(entry));
+  $('.price-main').classList.toggle('local', isHomePrice(entry)); // it may sit in the verdict card
   $('#taxInclToggle').closest('.toggle-pill').hidden = !isJapan(entry);
   $('#taxFreeToggle').closest('.toggle-pill').hidden = !isJapan(entry);
   $('#taxInclToggle').checked = entry.taxIncluded !== false;
@@ -3276,7 +3344,7 @@ function renderPricesIn(entry) {
     $('#verdictLabel').textContent = v.label;
     $('#dealTags').replaceChildren(...dealTags(entry).map(dealChip));
     $('#verdictDetail').textContent = v.detail;
-    placePriceBox(Boolean(v.needPrice));
+    $('.price-main').classList.toggle('need-price', Boolean(v.needPrice));
     $('#shareBtn').hidden = Boolean(v.needPrice);
     $('#findBtn').hidden = !(v.needPrice && entry.ai);
     // Nothing found: a full re-check is the obvious next step, so it's right here.
@@ -4170,6 +4238,10 @@ function renderResultIn(entry) {
   $('#rescanBtn').classList.toggle('spinning', isRunning);
   $('#rescanBtn').classList.toggle('attention', scanFailed(entry));
   $('#deleteBtn').hidden = isRunning;
+  orderLadder(entry);
+  const inVerdict = !$('#verdict').hidden && !entry.findMode;
+  placePriceBox(inVerdict);
+  placeActions(inVerdict);
   renderWhere(entry);
 }
 

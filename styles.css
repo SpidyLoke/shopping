@@ -1676,7 +1676,7 @@ dialog.camera::backdrop { background: #000; }
 .currency-pick::after { content: ""; position: absolute; right: 2px; top: 50%; width: 5px; height: 5px; margin-top: -4px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg); opacity: 0.6; }
 .currency-pick select { position: absolute; inset: 0; width: 100%; opacity: 0; cursor: pointer; font-size: 16px; }
 /* Shopping in Malaysia: the asking price is already in RM, so no conversion line */
-.prices.local .price-main-rm .price-rm { display: none; }
+.prices.local .price-main-rm .price-rm, .price-main.local .price-main-rm .price-rm { display: none; }
 
 /* Barcode match under the product name */
 .id-line { display: flex; align-items: center; gap: 5px; white-space: nowrap; margin-top: 4px; font-size: 12px; font-weight: 600; color: var(--accent); }
@@ -1840,7 +1840,7 @@ dialog.install-guide::backdrop { background: var(--bg); }
 .source-links { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: baseline; }
 html[data-typing] .bottom-nav { display: none; }
 .price-main.in-verdict { margin: 12px 0 4px; background: var(--bg); box-shadow: none; }
-.price-main.in-verdict .price-main-rm { display: none; }
+.price-main.in-verdict.need-price .price-main-rm { display: none; }
 .find-btn { display: block; margin-top: 12px; }
 .where-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 10px; }
 .where-actions { display: flex; flex-wrap: wrap; gap: 6px 20px; margin-top: 12px; }
@@ -1848,3 +1848,51 @@ html[data-typing] .bottom-nav { display: none; }
 #compatPanel.all-ok .flat-title { font-size: 0.95rem; font-weight: 600; color: var(--muted); display: flex; align-items: center; gap: 8px; }
 #compatPanel.all-ok .flat-title::before { content: "✓"; color: var(--good, #3ecf8e); font-weight: 700; }
 #compatPanel.all-ok .compat-list { display: none; }
+
+/* ---------- Result: verdict card holds the price and actions; prices are one ladder ---------- */
+.verdict-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+.verdict-actions .chip { flex-direction: row; gap: 6px; min-height: 46px; font-size: 0.86rem; background: color-mix(in srgb, var(--bg) 55%, transparent); box-shadow: none; }
+.verdict-actions .chip svg.i { width: 18px; height: 18px; }
+.verdict .share-btn { margin: 0; }
+.chip-row.slim { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.chip-row.slim .chip { flex-direction: row; gap: 6px; min-height: 42px; font-size: 0.82rem; }
+.chip-row.slim .chip svg.i { width: 18px; height: 18px; }
+
+.prices.ladder { display: flex; flex-direction: column; gap: 0; padding: 14px 16px 12px; border-radius: var(--r-card); background: var(--surface); box-shadow: var(--shadow); position: relative; }
+.prices.ladder::before { content: ""; position: absolute; left: 23px; top: 48px; bottom: 48px; width: 2px; border-radius: 2px; background: var(--surface-3); }
+.ladder-head { order: -10; display: flex; justify-content: space-between; align-items: baseline; margin: 0 0 4px; font-size: 0.9rem; font-weight: 600; color: var(--muted); }
+.ladder-hint { font-size: 0.78rem; font-weight: 400; }
+.prices.ladder > .price-main { order: -5; margin-bottom: 8px; background: var(--surface-2); box-shadow: none; }
+.prices.ladder > .price-card:not(.price-main) {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 12px;
+  align-items: center;
+  padding: 10px 0 10px 30px;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.prices.ladder > .price-card:not(.price-main) > * { grid-column: 1; }
+.prices.ladder > .price-card:not(.price-main) > .price-head { font-size: 0.98rem; font-weight: 600; color: var(--text); }
+.prices.ladder > .price-card:not(.price-main) > .price-rm { grid-column: 2; grid-row: 1 / span 4; margin: 0; text-align: right; font-size: 1.12rem; }
+.prices.ladder > .price-card:not(.price-main)::before {
+  content: ""; position: absolute; left: 0; top: 13px; width: 16px; height: 16px; border-radius: 50%;
+  background: var(--surface); box-shadow: inset 0 0 0 3px var(--surface-3);
+}
+.prices.ladder > .price-card.more:not(.price-main)::before { box-shadow: inset 0 0 0 3px var(--good); }
+.prices.ladder > .price-card.less:not(.price-main)::before { box-shadow: inset 0 0 0 3px var(--warn); }
+.prices.ladder > .price-card.back:not(.price-main)::before { box-shadow: inset 0 0 0 3px var(--bad); }
+.prices.ladder > .rung-none { opacity: 0.6; }
+.prices.ladder > .price-card.rung-you:not(.price-main) { margin: 4px -8px; padding: 12px 10px 12px 38px; border-radius: 16px; background: var(--accent-bg); color: var(--accent-ink); }
+.prices.ladder > .price-card.rung-you:not(.price-main)::before { left: 8px; background: var(--accent-ink); box-shadow: none; }
+.prices.ladder > .price-card.rung-you:not(.price-main) > .price-head, .prices.ladder > .price-card.rung-you:not(.price-main) > .price-rm { color: var(--accent-ink); }
+.prices.ladder > .price-card.rung-you:not(.price-main) > .price-sub { color: color-mix(in srgb, var(--accent-ink) 80%, transparent); }
+.prices.ladder > .price-card.tappable:active { transform: none; background: var(--accent-soft); }
+.ladder-legend { order: 999; display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 8px 0 0; padding-top: 10px; border-top: 1px solid var(--line); font-size: 0.78rem; color: var(--muted); }
+.ladder-legend .lg { display: inline-flex; align-items: center; gap: 6px; }
+.ladder-legend .lg::before { content: ""; width: 10px; height: 10px; border-radius: 50%; box-shadow: inset 0 0 0 2.5px var(--surface-3); }
+.ladder-legend .more::before { box-shadow: inset 0 0 0 2.5px var(--good); }
+.ladder-legend .less::before { box-shadow: inset 0 0 0 2.5px var(--warn); }
+.ladder-legend .back::before { box-shadow: inset 0 0 0 2.5px var(--bad); }

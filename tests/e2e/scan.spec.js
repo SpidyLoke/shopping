@@ -296,9 +296,10 @@ test('with no price, the price box is in the Need the price card; Gemini\'s own 
   await expect(page.locator('#variantBox')).toBeHidden();
   await page.fill('#yenInput', '5');
   await page.locator('#yenInput').blur();
-  await expect(page.locator('#prices #yenInput')).toBeVisible();
-  await expect(page.locator('#verdict #yenInput')).toHaveCount(0);
-  await expect(page.locator('#yenInput')).toHaveValue('5');
+  // With a price, the box stays in the verdict card (now the verdict itself) and the ladder places it
+  await expect(page.locator('#verdictLabel')).not.toHaveText('Need the price');
+  await expect(page.locator('#verdict #yenInput')).toHaveValue('5');
+  await expect(page.locator('#shareBtn')).toBeVisible();
 });
 
 test('Find it: with no price, "Just find where to buy it" lists shops (official first, then cheapest) and hides the price check', async ({ page }) => {
@@ -355,4 +356,23 @@ test('a special edition is never priced as the standard model (CeX or listings)'
   await scanFromGallery(page);
   await expect(page.locator('#myUsed')).toHaveText('–');
   await expect(page.locator('#cexSell')).toHaveText('–');
+});
+
+test('prices form one ladder, dearest first, with what you pay placed among them', async ({ page }) => {
+  await mockApis(page, {
+    gemini: () => product({ my_new: { typical: 329 }, my_used: { typical: 220 } }),
+    cexHits: [{ boxId: 'D1', boxName: 'Sony DualSense Controller - White, B', sellPrice: 199, cashPriceCalculated: 90, exchangePriceCalculated: 120 }],
+  });
+  await openApp(page, { settings: { fxFee: 0 } });
+  await scanFromGallery(page);
+  await expect(page.locator('#cexSell')).toHaveText('RM 199');
+  const ladder = await page.evaluate(() => [...document.querySelectorAll('#prices > .price-card:not([hidden]):not(.price-main)')]
+    .sort((a, b) => Number(a.style.order) - Number(b.style.order))
+    .map((c) => [c.querySelector('.price-head').textContent, ['more', 'less', 'back', 'rung-none'].find((k) => c.classList.contains(k)) || '']));
+  expect(ladder.slice(0, 5)).toEqual([['MY new', 'more'], ['You pay', ''], ['MY used · asking', 'less'], ['CeX sells', 'less'], ['CeX buys', 'back']]);
+  await expect(page.locator('#youPay')).toHaveText('RM 319');
+  // The tag price and Save / Bought sit in the verdict card
+  await expect(page.locator('#verdict #yenInput')).toBeVisible();
+  await expect(page.locator('#verdict #favBtn')).toBeVisible();
+  await expect(page.locator('#verdict #boughtBtn')).toBeVisible();
 });
