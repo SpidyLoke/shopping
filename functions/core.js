@@ -352,6 +352,12 @@ export async function runScan(rawInput, { uid, ipHash = null, deps }) {
   } catch (e) {
     out.visionError = e.message;
   }
+  // What the tag says is ready in seconds; the prices take much longer. Save it to the job now so
+  // the phone can show the name and price while the search runs (keeping a "notify me" already set).
+  if (jobPath) {
+    const job = await db.get(jobPath);
+    await db.set(jobPath, { ...(job || {}), uid, out, expireAt: new Date(now + JOB_TTL) });
+  }
 
   // Market prices are kept per barcode and condition (and home country), never for a corrected name, one item on a
   // shelf, a quick scan or clothes (whose barcode can cover several sizes).

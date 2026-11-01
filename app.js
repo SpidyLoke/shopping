@@ -6,7 +6,7 @@ import { buildPrompt, findBarcodes, gtinValid, MARKETS, marketFor } from './prom
 import { FIREBASE } from './firebase-config.js';
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.11.02-1';
+const APP_VERSION = '2026.11.02-2';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -1918,16 +1918,22 @@ const RECEIPT_GIVE_UP_MS = 90000;
 function watchForReceipt(entry, jobId) {
   let stopped = false;
   let lastError = null;
+  // Keeps asking until the server has read the tag too, so the name and price show early.
+  const tagRead = () => entry.status.vision === 'done' || entry.status.vision === 'failed';
   const check = async () => {
-    if (stopped || entry.serverJob?.id !== jobId || entry.serverJob.received || entry.serverJob.done) return;
+    if (stopped || entry.serverJob?.id !== jobId || entry.serverJob.done || (entry.serverJob.received && tagRead())) return;
+    if (entry.serverJob.received && Date.now() - entry.serverJob.sentAt > 120000) return;
     try {
       const r = await jobCall(entry, { action: 'result', jobId }, 8000);
       lastError = null;
       if (!stopped && (r.status === 'running' || r.status === 'done') && entry.serverJob?.id === jobId) {
-        entry.serverJob = { ...entry.serverJob, received: true };
+        if (!entry.serverJob.received) {
+          entry.serverJob = { ...entry.serverJob, received: true };
+          navigator.vibrate?.(30);
+        }
+        if (r.status === 'running' && r.vision && !tagRead()) applyEarlyVision(entry, r.vision);
         refresh(entry);
-        navigator.vibrate?.(30);
-        return;
+        if (r.status === 'done' || tagRead() || r.visionError) return;
       }
     } catch (e) {
       lastError = e.message;
@@ -1944,6 +1950,13 @@ function watchForReceipt(entry, jobId) {
   };
   setTimeout(check, 1200);
   return () => { stopped = true; };
+}
+
+// The tag's text and the web's guess at the product, ahead of the prices.
+function applyEarlyVision(entry, vision) {
+  Object.assign(entry, vision);
+  entry.status.vision = 'done';
+  if (!entry.yen && isJapan(entry)) entry.yen = parseYen(entry.ocrText);
 }
 
 async function applyServerResult(entry, out, { quiet = false } = {}) {

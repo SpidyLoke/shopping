@@ -98,3 +98,18 @@ test('a scan whose reply was lost is collected from the backend, not run (or cha
   expect(cloud.calls.result).toBeGreaterThan(0);
   expect(cloud.db.docs.get('users/anon-1').used).toBe(1);
 });
+
+test('the tag price shows while the backend is still finding prices', async ({ page }) => {
+  await mockApis(page);
+  let release;
+  const slow = new Promise((r) => { release = r; });
+  await mockCloud(page, { gemini: async () => { await slow; return product({ barcode: '4948872415545', identified_by: 'barcode' }); } });
+  await openApp(page, { settings: { apiKey: '' } });
+  await page.goto('/#/');
+  await page.setInputFiles('#galleryInput', [require('./helpers').fixture('tag.jpg')]);
+  await page.waitForFunction(() => location.hash.startsWith('#/scan/'));
+  await expect(page.locator('#jpRm')).toHaveText('RM 319', { timeout: 10000 });
+  await expect(page.locator('#rescanBtn')).toBeDisabled(); // still searching
+  release();
+  await expect(page.locator('#resName')).toHaveText('Sony DualSense Controller', { timeout: 15000 });
+});
