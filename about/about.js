@@ -48,6 +48,17 @@ if (window.gsap && window.ScrollTrigger) {
       });
     }
 
+    // Section headings share one entrance: each rises out of a mask as it comes on screen, once.
+    for (const h of document.querySelectorAll('.chapter-title, .action h2')) {
+      const inner = document.createElement('span');
+      inner.append(...h.childNodes);
+      const mask = document.createElement('span');
+      mask.className = 'mask';
+      mask.append(inner);
+      h.append(mask);
+      gsap.from(inner, { yPercent: 105, duration: 0.85, ease: 'power3.out', scrollTrigger: { trigger: h, start: 'top 88%', once: true } });
+    }
+
     // Hero settles in on load.
     gsap.from('.hero h1, .lede, .hero-ctas', { y: 40, opacity: 0, duration: 1.1, stagger: 0.12, ease: 'expo.out' });
   });

@@ -7,6 +7,16 @@
   <meta name="description" content="How to install Kaimono Check, what to try, and how to tell us what went wrong.">
   <link rel="icon" href="../icons/icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="../legal/legal.css">
+  <style>
+    /* The title rises in on load; the step headings share one entrance as they come on screen. */
+    @media (prefers-reduced-motion: no-preference) {
+      .mask { display: block; overflow: hidden; padding-bottom: 0.14em; margin-bottom: -0.14em; }
+      .mask > span { display: block; transition: transform 0.8s cubic-bezier(0.22, 1, 0.36, 1); }
+      .motion .mask:not(.in) > span { transform: translateY(105%); }
+      h1 .mask > span { animation: rise 0.8s cubic-bezier(0.22, 1, 0.36, 1) both; }
+      @keyframes rise { from { transform: translateY(105%); } }
+    }
+  </style>
 </head>
 <body>
   <div class="wrap">
@@ -64,5 +74,25 @@
 
     <p class="foot"><a href="../">Open the app</a> · <a href="../legal/terms.html">Terms</a> · <a href="../legal/privacy.html">Privacy</a></p>
   </div>
+  <script>
+    // Without this script, or with reduced motion, every heading is simply there.
+    if (matchMedia('(prefers-reduced-motion: no-preference)').matches && 'IntersectionObserver' in window) {
+      const heads = [...document.querySelectorAll('h1, h2')];
+      for (const h of heads) {
+        const inner = document.createElement('span');
+        inner.append(...h.childNodes);
+        const mask = document.createElement('span');
+        mask.className = 'mask';
+        mask.append(inner);
+        h.append(mask);
+      }
+      document.documentElement.classList.add('motion');
+      const io = new IntersectionObserver((seen) => {
+        for (const e of seen) if (e.isIntersecting) { e.target.querySelector('.mask').classList.add('in'); io.unobserve(e.target); }
+      }, { rootMargin: '0px 0px -12% 0px' });
+      for (const h of heads.slice(1)) io.observe(h);
+      heads[0]?.querySelector('.mask').classList.add('in');
+    }
+  </script>
 </body>
 </html>

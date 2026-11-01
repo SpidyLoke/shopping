@@ -250,7 +250,7 @@ em { font-style: italic; color: var(--muted); }
   line-height: 1.1;
   letter-spacing: -0.04em;
 }
-.scrub .w { opacity: 0.12; }
+.scrub .w { opacity: 0.45; } /* still readable before it lights up */
 
 /* ---------- Horizontal accordion ---------- */
 
@@ -347,6 +347,10 @@ em { font-style: italic; color: var(--muted); }
   .phones img:nth-child(2) { transform: none; }
   .footer { flex-direction: column; }
 }
+
+/* Section headings: one shared entrance, the heading rising out of its own line. */
+.mask { display: block; overflow: hidden; padding-bottom: 0.14em; margin-bottom: -0.14em; }
+.mask > span { display: block; }
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
