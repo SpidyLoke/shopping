@@ -36,7 +36,7 @@ test('UK: eBay sold and CeX UK links, pounds, and Malaysia nowhere in the verdic
   await mockApis(page, { rates: { JPY: 0.0278, 'JPY>GBP': 0.0052 } });
   await openApp(page, { settings: { homeMarket: 'GB', fxFee: 0 }, history: [scan('Deck', { my_new: { typical: 120 }, my_used: { typical: 70 } }, { yen: 10000, market: 'GB' })] });
   await page.goto('/#/scan/Deck');
-  await expect(page.locator('#jpRm')).toHaveText('£52.00');
+  await expect(page.locator('#jpRm')).toHaveText('£52');
   await expect(page.locator('#dealTags .deal').first()).toHaveText('£18 profit reselling');
   await expect(page.locator('#verdictDetail')).toContainText('in the UK');
   await expect(page.locator('#verdictDetail')).not.toContainText('Malaysia');

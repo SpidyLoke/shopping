@@ -6,7 +6,7 @@ import { buildPrompt, findBarcodes, gtinValid, MARKETS, marketFor } from './prom
 import { FIREBASE } from './firebase-config.js';
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.11.02-2';
+const APP_VERSION = '2026.11.02-3';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -293,7 +293,8 @@ function inMarket(entry, fn) {
 function rm(n, { whole = false } = {}) {
   if (n === null || n === undefined || !Number.isFinite(n)) return '–';
   const m = M();
-  const dp = whole || Math.abs(n) >= 100 || m.currency === 'IDR' ? 0 : 2;
+  // Pennies only where they exist and matter: RM 9.86, but RM 90 (not RM 90.00) and RM 319.
+  const dp = whole || Math.abs(n) >= 100 || m.currency === 'IDR' || Math.abs(Math.round(n * 100) % 100) === 0 ? 0 : 2;
   const num = (whole ? Math.round(n) : n).toLocaleString(m.locale, { minimumFractionDigits: dp, maximumFractionDigits: dp });
   return /[A-Za-z]$/.test(m.symbol) ? `${m.symbol} ${num}` : `${m.symbol}${num}`;
 }
@@ -1367,7 +1368,10 @@ function officialVerdict(jp, off) {
 }
 
 function baseVerdict(entry) {
-  const jp = japanPrice(entry).rm;
+  // Judged on what it actually costs you (price plus card fee and extras), the same figure the
+  // deal tags use, so the verdict and its tags never quote two different savings.
+  const price = japanPrice(entry).rm;
+  const jp = price ? landedCost(entry, price).total : null;
   const myNew = homeValue(entry, 'new');
   const myUsed = homeValue(entry, 'used');
   if (!entry.ai) return null;
@@ -2941,6 +2945,28 @@ function profitOf(entry) {
   return dealTags(entry).find((t) => t.tone === 'profit')?.amount ?? null;
 }
 
+// A total you just changed (marked bought, typed what it sold for) rolls from its old value to the
+// new one, so you see what your tap did. First draw, and reduced motion, just show the number.
+function rollTo(node, value, format) {
+  const from = node._rollValue;
+  node._rollValue = value;
+  cancelAnimationFrame(node._rollFrame);
+  const still = from == null || value == null || from === value || matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (still) {
+    node.textContent = value == null ? '–' : format(value);
+    return;
+  }
+  const start = performance.now();
+  const step = (t) => {
+    const k = Math.min(1, (t - start) / 500);
+    const eased = 1 - (1 - k) ** 3;
+    node.textContent = format(k < 1 ? from + (value - from) * eased : value);
+    if (k < 1) node._rollFrame = requestAnimationFrame(step);
+  };
+  node._rollFrame = requestAnimationFrame(step);
+}
+const signedMoney = (n) => `${n < 0 ? '−' : ''}${wholeMoney(Math.abs(n))}`;
+
 function renderProfitStrip(all) {
   const trip = currentTrip().id;
   const here = all.filter((e) => e.kind !== 'shelf' && tripOf(e) === trip && (e.market || 'MY') === settings.homeMarket);
@@ -2951,8 +2977,8 @@ function renderProfitStrip(all) {
   const made = sold.reduce((sum, e) => sum + realised(e), 0);
   $('#profitStrip').hidden = !bought.length;
   $('#psBought').textContent = String(bought.length);
-  $('#psExpected').textContent = pending.length ? wholeMoney(expected) : '–';
-  $('#psMade').textContent = sold.length ? `${made < 0 ? '−' : ''}${wholeMoney(Math.abs(made))}` : '–';
+  rollTo($('#psExpected'), pending.length ? expected : null, wholeMoney);
+  rollTo($('#psMade'), sold.length ? made : null, signedMoney);
   $('#psMade').classList.toggle('pos', sold.length > 0 && made >= 0);
   $('#psMade').classList.toggle('neg', made < 0);
   const best = here.filter((e) => !e.bought && !rowTag(e).problem && profitOf(e) > 0)
@@ -3216,8 +3242,11 @@ function renderPricesIn(entry) {
   $('#cexSellNote').textContent = cexNote;
   $('#cexName').textContent = cex.source === 'live' && cex.name ? cex.name : '';
   // Live results take CeX's best offer across grades, so it's a ceiling, not a quote.
-  $('#cexCash').textContent = cex.cash ? `${cex.source === 'live' ? 'up to ' : ''}${rm(cex.cash)} cash` : pending ? '…' : '–';
-  $('#cexVoucher').textContent = cex.voucher ? `${rm(cex.voucher)} voucher` : '';
+  // Half a row now (beside CeX sells), so the figure stands alone and the detail goes underneath.
+  $('#cexCash').textContent = cex.cash ? rm(cex.cash) : pending ? '…' : '–';
+  $('#cexVoucher').textContent = cex.cash || cex.voucher
+    ? [cex.cash ? `Cash${cex.source === 'live' ? ', best grade' : ''}` : null, cex.voucher ? `${rm(cex.voucher)} voucher` : null].filter(Boolean).join(' · ')
+    : '';
   for (const sel of ['#jpRm', '#myNew', '#myUsed', '#jpUsed', '#cexSell', '#cexCash']) {
     const waiting = $(sel).textContent === '…' || (sel === '#jpRm' && running.has(entry.id) && !toNum(entry.yen));
     $(sel).classList.toggle('skel', waiting);
@@ -3482,6 +3511,7 @@ function renderCompatIn(entry) {
   const mark = { ok: '✓', warn: '!', bad: '✕' };
   // Only what needs attention is listed; when everything is fine the heading says so.
   const shown = list.filter((c) => c.status !== 'ok' || entry.kind === 'clothes');
+  $('#compatPanel').classList.toggle('all-ok', !shown.length);
   $('#compatList').replaceChildren(...shown.map((c) => el('li', { class: `compat-row compat-${c.status}` },
     el('span', { class: 'compat-mark', 'aria-hidden': 'true' }, mark[c.status]),
     el('div', {},
@@ -4215,7 +4245,7 @@ function renderTrip() {
   const input = $('#budgetInput');
   if (document.activeElement !== input) input.value = budget ?? '';
   const net = t.spentRm - t.refundRm;
-  $('#tripSpent').textContent = rm(t.spentRm);
+  rollTo($('#tripSpent'), t.spentRm, rm);
   $('#tripSpentYen').textContent = t.spentYen ? yen(t.spentYen) : '';
   $('#tripRefund').textContent = t.refundRm ? `− ${rm(t.refundRm)}` : rm(0);
   $('#tripLeft').textContent = !budget ? '–' : net > budget ? `${rm(net - budget)} over` : rm(budget - net);

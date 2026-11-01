@@ -1844,3 +1844,7 @@ html[data-typing] .bottom-nav { display: none; }
 .find-btn { display: block; margin-top: 12px; }
 .where-list { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 10px; }
 .where-actions { display: flex; flex-wrap: wrap; gap: 6px 20px; margin-top: 12px; }
+/* Nothing to flag: one quiet line instead of a section heading with nothing under it. */
+#compatPanel.all-ok .flat-title { font-size: 0.95rem; font-weight: 600; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+#compatPanel.all-ok .flat-title::before { content: "✓"; color: var(--good, #3ecf8e); font-weight: 700; }
+#compatPanel.all-ok .compat-list { display: none; }
