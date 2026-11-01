@@ -1896,3 +1896,19 @@ html[data-typing] .bottom-nav { display: none; }
 .ladder-legend .more::before { box-shadow: inset 0 0 0 2.5px var(--good); }
 .ladder-legend .less::before { box-shadow: inset 0 0 0 2.5px var(--warn); }
 .ladder-legend .back::before { box-shadow: inset 0 0 0 2.5px var(--bad); }
+
+/* Home: Best finds and Favourites as two shortcuts to their own pages */
+.shortcut-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+.shortcut-row:has(> .shortcut[hidden]) { grid-template-columns: minmax(0, 1fr); }
+.shortcut { display: grid; gap: 2px; padding: 14px 16px; border-radius: var(--r-card); background: var(--surface); box-shadow: var(--shadow); color: var(--text); text-decoration: none; transition: transform 0.2s var(--ease); }
+.shortcut:active { transform: scale(0.97); }
+.shortcut-thumbs { display: flex; margin-bottom: 8px; min-height: 40px; }
+.shortcut-thumbs img { width: 40px; height: 40px; border-radius: 12px; object-fit: cover; box-shadow: 0 0 0 2px var(--surface); }
+.shortcut-thumbs img + img { margin-left: -12px; }
+.shortcut-title { font-size: 1rem; font-weight: 650; }
+.shortcut-sub { font-size: 0.82rem; color: var(--muted); }
+#bestCard .shortcut-sub { color: var(--good); font-weight: 600; }
+.list-note { margin: -4px 0 12px; }
+.empty-note { color: var(--muted); padding: 24px 4px; text-align: center; }
+/* Grid cards: the deal badge gets the photo's width (minus the heart), not half of it */
+html[data-list="grid"] .history-item > .tag { max-width: calc(100% - 58px); padding: 4px 9px; font-size: 0.72rem; }

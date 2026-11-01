@@ -96,19 +96,17 @@
         <div><p class="stat-label">Made</p><p class="stat-value" id="psMade">–</p></div>
       </a>
 
-      <div class="recent" id="bestWrap" hidden>
-        <div class="section-head">
-          <h2>Best finds this trip</h2>
-        </div>
-        <ul class="history-list" id="bestList"></ul>
-      </div>
-
-      <div class="recent" id="favWrap" hidden>
-        <div class="section-head">
-          <h2>Favourites</h2>
-          <button class="link" type="button" id="seeFavsBtn">All</button>
-        </div>
-        <ul class="history-list" id="favList"></ul>
+      <div class="shortcut-row" id="shortcutRow" hidden>
+        <a class="shortcut" id="bestCard" href="#/best" hidden>
+          <span class="shortcut-thumbs" id="bestThumbs"></span>
+          <span class="shortcut-title">Best finds</span>
+          <span class="shortcut-sub" id="bestSub"></span>
+        </a>
+        <a class="shortcut" id="favCard" href="#/favourites" hidden>
+          <span class="shortcut-thumbs" id="favThumbs"></span>
+          <span class="shortcut-title">Favourites</span>
+          <span class="shortcut-sub" id="favSub"></span>
+        </a>
       </div>
 
       <div class="recent" id="recentWrap" hidden>
@@ -118,6 +116,16 @@
         </div>
         <ul class="history-list" id="recentList"></ul>
       </div>
+    </section>
+
+    <!-- Best finds this trip, or favourites: one list per page -->
+    <section class="view" id="listView" hidden>
+      <div class="section-head page-head">
+        <h1 id="listTitle">Best finds</h1>
+      </div>
+      <p class="muted small list-note" id="listNote"></p>
+      <ul class="history-list" id="listItems"></ul>
+      <p class="empty-note" id="listEmpty" hidden></p>
     </section>
 
     <!-- Result -->

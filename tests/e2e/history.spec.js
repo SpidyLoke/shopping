@@ -91,3 +91,18 @@ test('pulling down on a scan does not re-check it (that costs a scan; only ↻ d
   await expect(page.locator('#resName')).toHaveText(name);
   expect(calls.gemini.length).toBe(0);
 });
+
+test('Favourites has its own page, reached from a shortcut on Home', async ({ page }) => {
+  const { mockApis: m, openApp: o, scan: s } = require('./helpers');
+  await m(page);
+  await o(page, { history: [{ ...s('Pad', { my_new: { typical: 329 } }), fav: true }, { ...s('Deck', { my_new: { typical: 2000 } }), fav: true }, s('Other')] });
+  await expect(page.locator('#favSub')).toHaveText('2 saved');
+  await expect(page.locator('#favThumbs img')).toHaveCount(2);
+  await page.click('#favCard');
+  await expect(page).toHaveURL(/#\/favourites$/);
+  await expect(page.locator('#listTitle')).toHaveText('Favourites');
+  await expect(page.locator('#listView')).toBeVisible();
+  await expect(page.locator('#listItems .history-name')).toHaveCount(2);
+  await expect(page.locator('#homeView')).toBeHidden();
+  await expect(page.locator('.bottom-nav [data-nav="home"]')).toHaveAttribute('aria-current', 'page');
+});

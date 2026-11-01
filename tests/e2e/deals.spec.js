@@ -125,7 +125,12 @@ test('Home leads with this trip: bought, expected profit, made, and the best fin
   await expect(page.locator('#psBought')).toHaveText('2');
   await expect(page.locator('#psExpected')).toHaveText('RM 100');
   await expect(page.locator('#psMade')).toHaveText('RM 50');
-  await expect(page.locator('#bestList .history-name')).toHaveText(['Big', 'Small']);
+  await expect(page.locator('#bestSub')).toHaveText('2 · up to +RM 200');
+  await page.click('#bestCard');
+  await expect(page).toHaveURL(/#\/best$/);
+  await expect(page.locator('#listView')).toBeVisible();
+  await expect(page.locator('#listItems .history-name')).toHaveText(['Big', 'Small']);
+  await page.goto('/#/');
   await page.click('#profitStrip');
   await expect(page).toHaveURL(/#\/trip$/);
 });

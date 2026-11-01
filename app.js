@@ -6,7 +6,7 @@ import { buildPrompt, findBarcodes, gtinValid, MARKETS, marketFor } from './prom
 import { FIREBASE } from './firebase-config.js';
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.11.02-4';
+const APP_VERSION = '2026.11.02-5';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -2522,7 +2522,7 @@ function renderShelf(shelf) {
 
 // ---------- rendering ----------
 
-const views = ['homeView', 'resultView', 'historyView', 'tripView', 'compareView', 'shelfView', 'settingsView'];
+const views = ['homeView', 'resultView', 'historyView', 'tripView', 'compareView', 'shelfView', 'settingsView', 'listView'];
 
 function show(viewId, keepScroll = false) {
   const changed = $(`#${viewId}`).hidden;
@@ -2993,12 +2993,14 @@ function renderHome() {
   renderInstallTip();
   renderMode();
   const all = historyEntries();
-  const favs = all.filter((e) => e.fav).slice(0, 3);
+  const favs = all.filter((e) => e.fav);
   $('#quickToggle').checked = settings.quick;
   renderRefreshButtons();
   renderProfitStrip(all);
-  $('#favWrap').hidden = favs.length === 0;
-  $('#favList').replaceChildren(...favs.map(historyItem));
+  $('#favCard').hidden = favs.length === 0;
+  $('#favSub').textContent = `${favs.length} saved`;
+  $('#favThumbs').replaceChildren(...shortcutThumbs(favs));
+  $('#shortcutRow').hidden = $('#favCard').hidden && $('#bestCard').hidden;
   const list = all.slice(0, 3);
   $('#recentWrap').hidden = list.length === 0;
   $('#recentList').replaceChildren(...list.map(historyItem));
@@ -3048,10 +3050,36 @@ function renderProfitStrip(all) {
   rollTo($('#psMade'), sold.length ? made : null, signedMoney);
   $('#psMade').classList.toggle('pos', sold.length > 0 && made >= 0);
   $('#psMade').classList.toggle('neg', made < 0);
-  const best = here.filter((e) => !e.bought && !rowTag(e).problem && profitOf(e) > 0)
-    .sort((a, b) => profitOf(b) - profitOf(a)).slice(0, 3);
-  $('#bestWrap').hidden = !best.length;
-  $('#bestList').replaceChildren(...best.map(historyItem));
+  const best = bestFinds(all);
+  $('#bestCard').hidden = !best.length;
+  $('#bestSub').textContent = best.length ? `${best.length} · up to +${wholeMoney(profitOf(best[0]))}` : '';
+  $('#bestThumbs').replaceChildren(...shortcutThumbs(best));
+}
+
+// This trip's scans you haven't bought that would make money, most profitable first.
+function bestFinds(all) {
+  const trip = currentTrip().id;
+  return all.filter((e) => e.kind !== 'shelf' && tripOf(e) === trip && (e.market || 'MY') === settings.homeMarket)
+    .filter((e) => !e.bought && !rowTag(e).problem && profitOf(e) > 0)
+    .sort((a, b) => profitOf(b) - profitOf(a));
+}
+
+// Up to three photos, overlapped, on a Home shortcut.
+function shortcutThumbs(list) {
+  return list.slice(0, 3).map((e) => el('img', { src: e.thumb, alt: '' }));
+}
+
+// Best finds and Favourites, each on its own page.
+function renderList(kind) {
+  const all = historyEntries();
+  const best = kind === 'best';
+  const list = best ? bestFinds(all) : all.filter((e) => e.fav);
+  $('#listTitle').textContent = best ? 'Best finds' : 'Favourites';
+  $('#listNote').textContent = best ? `On ${currentTrip().name}, not bought yet, most profit first.` : '';
+  $('#listNote').hidden = !best;
+  $('#listItems').replaceChildren(...list.map(historyItem));
+  $('#listEmpty').hidden = list.length > 0;
+  $('#listEmpty').textContent = best ? 'Nothing that would make money on this trip yet.' : 'Tap the heart on a result to keep it here.';
 }
 
 const CAPTURE_TEXT = {
@@ -4602,6 +4630,11 @@ function route(keepScroll = false) {
     show('historyView', keepScroll);
     return;
   }
+  if (hash === '#/best' || hash === '#/favourites') {
+    renderList(hash === '#/best' ? 'best' : 'fav');
+    show('listView', keepScroll);
+    return;
+  }
   renderHome();
   show('homeView', keepScroll);
 }
@@ -5481,10 +5514,6 @@ document.querySelectorAll('[data-open-settings]').forEach((b) => b.addEventListe
 $('#homeBtn').addEventListener('click', () => { location.hash = '#/'; });
 $('#historyBtn').addEventListener('click', () => { location.hash = '#/history'; });
 $('#tripBtn').addEventListener('click', () => { location.hash = '#/trip'; });
-$('#seeFavsBtn').addEventListener('click', () => {
-  historyFilter = 'fav';
-  location.hash = '#/history';
-});
 $('#favBtn').addEventListener('click', () => current && toggleFlag(current.id, 'fav'));
 $('#boughtBtn').addEventListener('click', () => current && toggleFlag(current.id, 'bought'));
 $('#soldInput').addEventListener('input', (e) => {
