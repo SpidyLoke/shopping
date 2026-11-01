@@ -6,7 +6,7 @@ import { buildPrompt, findBarcodes, gtinValid, MARKETS, marketFor } from './prom
 import { FIREBASE } from './firebase-config.js';
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.10.31-6';
+const APP_VERSION = '2026.11.01-1';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -5515,17 +5515,16 @@ document.addEventListener('visibilitychange', () => {
 // ---------- edge swipe back, pull to refresh ----------
 // iPhone home-screen apps have neither, so both are done here with touch events.
 
+// Swipe in from the left edge to go back. (Pull-to-refresh is gone: re-checking prices costs scans,
+// so it only happens on a deliberate tap of ↻.)
 function setupPageGestures() {
   const edge = $('#edgeBack');
-  const ptr = $('#pullRefresh');
   let g = null;
   const busy = () => document.querySelector('dialog[open]');
   document.addEventListener('touchstart', (e) => {
     if (e.touches.length !== 1 || busy()) return;
     const t = e.touches[0];
-    if (t.clientX < EDGE_ZONE && !$('#backBtn').hidden) g = { kind: 'edge', x: t.clientX, y: t.clientY, d: 0 };
-    else if (window.scrollY <= 0 && pullTarget()) g = { kind: 'pull', x: t.clientX, y: t.clientY, d: 0 };
-    else g = null;
+    g = t.clientX < EDGE_ZONE && !$('#backBtn').hidden ? { x: t.clientX, y: t.clientY, d: 0 } : null;
   }, { passive: true });
   document.addEventListener('touchmove', (e) => {
     if (!g) return;
@@ -5533,65 +5532,32 @@ function setupPageGestures() {
     const dx = t.clientX - g.x;
     const dy = t.clientY - g.y;
     if (!g.active) {
-      const along = g.kind === 'edge' ? dx : dy;
-      const across = g.kind === 'edge' ? dy : dx;
-      if (Math.abs(across) > 12 && Math.abs(across) > along) {
+      if (Math.abs(dy) > 12 && Math.abs(dy) > dx) {
         g = null;
         return;
       }
-      if (along < 12) return;
+      if (dx < 12) return;
       g.active = true;
     }
-    if (g.kind === 'edge') {
-      g.d = Math.max(0, dx);
-      edge.hidden = false;
-      edge.style.transform = `translate(${Math.min(g.d, 110) - 48}px, -50%)`;
-      edge.classList.toggle('armed', g.d > 90);
-    } else {
-      g.d = Math.max(0, dy);
-      ptr.hidden = false;
-      ptr.style.transform = `translate(-50%, ${Math.min(g.d * 0.5, 70)}px)`;
-      ptr.classList.toggle('armed', g.d > 110);
-      $('#pullText').textContent = g.d > 110 ? 'Release to re-check' : 'Pull to re-check prices';
-    }
+    g.d = Math.max(0, dx);
+    edge.hidden = false;
+    edge.style.transform = `translate(${Math.min(g.d, 110) - 48}px, -50%)`;
+    edge.classList.toggle('armed', g.d > 90);
   }, { passive: true });
   const end = () => {
     if (!g) return;
-    const done = g.active && (g.kind === 'edge' ? g.d > 90 : g.d > 110);
-    const { kind } = g;
+    const done = g.active && g.d > 90;
     g = null;
     edge.hidden = true;
-    ptr.hidden = true;
     edge.classList.remove('armed');
-    ptr.classList.remove('armed');
     if (!done) return;
     navigator.vibrate?.(15);
-    if (kind === 'edge') $('#backBtn').click();
-    else pullRefresh();
+    $('#backBtn').click();
   };
   document.addEventListener('touchend', end);
   document.addEventListener('touchcancel', end);
 }
 
-// What a pull re-checks: the open scan, or (Home, History, Trip) favourites and scans that failed.
-function pullTarget() {
-  const hash = location.hash || '#/';
-  if (hash.startsWith('#/scan/')) return current && !running.has(current.id) ? 'scan' : null;
-  return /^#\/(history|trip)?$/.test(hash) || hash === '#/' ? 'list' : null;
-}
-
-async function pullRefresh() {
-  const target = pullTarget();
-  if (target === 'scan') {
-    rescan(current.id);
-    return;
-  }
-  if (target !== 'list') return;
-  fetchRate('JPY', true).then(renderRate);
-  const failed = historyEntries().filter((e) => e.kind !== 'shelf' && !e.fav && scanFailed(e)).slice(0, 5);
-  for (const e of failed) rescan(e.id, { quiet: true });
-  await refreshFavourites();
-}
 
 setupPageGestures();
 

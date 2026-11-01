@@ -187,7 +187,8 @@ svg.i { width: 1.25em; height: 1.25em; flex: none; fill: currentColor; }
   max-width: 536px;
   margin: 0 auto;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: 1fr 1fr auto 1fr 1fr;
+  align-items: center;
   padding: 6px;
   border-radius: 26px;
   background: color-mix(in srgb, var(--surface) 86%, transparent);
@@ -348,7 +349,7 @@ input[type="text"], input[type="password"], input[type="url"], input[type="searc
   padding: 22px;
   border-radius: 28px;
   background: var(--accent-bg);
-  color: #fff;
+  color: var(--accent-ink);
   cursor: pointer;
   transition: transform 0.25s var(--ease);
 }
@@ -359,7 +360,7 @@ input[type="text"], input[type="password"], input[type="url"], input[type="searc
   width: 64px;
   height: 64px;
   border-radius: 50%;
-  background: rgb(255 255 255 / 0.14);
+  background: color-mix(in srgb, currentColor 14%, transparent);
 }
 .capture-icon svg.i { width: 32px; height: 32px; }
 .capture-text { display: flex; flex-direction: column; gap: 2px; }
@@ -1827,3 +1828,10 @@ dialog.install-guide::backdrop { background: var(--bg); }
 .settings-view #settingsForm { padding: 0 0 24px; }
 .settings-saved { color: var(--good); font-weight: 600; transition: opacity 0.3s; }
 .settings-saved:empty { opacity: 0; }
+
+/* The camera, always one tap away in the middle of the tab bar */
+.nav-shutter { display: grid; place-items: center; width: 68px; margin: -26px 4px 0; cursor: pointer; }
+.nav-shutter span { display: grid; place-items: center; width: 62px; height: 62px; border-radius: 50%; background: var(--accent-bg); color: var(--accent-ink);
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--accent-bg) 45%, transparent), 0 0 0 5px var(--bg); transition: transform 0.2s var(--ease); }
+.nav-shutter svg.i { width: 30px; height: 30px; }
+.nav-shutter:active span { transform: scale(0.92); }

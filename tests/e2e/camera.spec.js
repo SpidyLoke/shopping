@@ -52,3 +52,15 @@ test('with the built-in camera off, the iPhone camera picker opens', async ({ pa
   expect(chooser).toBeTruthy();
   await expect(page.locator('#cameraView')).not.toHaveAttribute('open', '');
 });
+
+test('the round camera button in the tab bar opens the camera from any page', async ({ page }) => {
+  await mockApis(page);
+  await openApp(page, { settings: { liveCamera: true }, hash: '#/history' });
+  await expect(page.locator('#navShutter')).toBeVisible();
+  await page.click('#navShutter');
+  await expect(page.locator('#cameraView')).toHaveAttribute('open', '');
+  await cameraReady(page);
+  await page.click('#camShutter');
+  await scanDone(page);
+  await expect(page.locator('#resName')).toHaveText('Sony DualSense Controller');
+});

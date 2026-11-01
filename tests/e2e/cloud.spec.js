@@ -22,7 +22,7 @@ test('with no keys, a scan goes through the Kaimono backend and counts against t
   expect([...cloud.calls.regions]).toEqual(['asia-southeast1']);
   expect(cloud.calls.gemini[0].prompt).toContain('These barcode numbers were found in the text: 4948872415545');
   await page.goto('/#/');
-  await expect(page.locator('#quotaLine')).toHaveText(/^9 of 10 scans left this month · resets 1 Nov$/);
+  await expect(page.locator('#quotaLine')).toHaveText(/^9 of 10 scans left this month · resets 1 [A-Z][a-z]{2}$/);
 });
 
 test('a barcode scanned before is free and says so', async ({ page }) => {

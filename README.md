@@ -242,7 +242,7 @@ Shipping, luggage allowance and warranty aren't factored in. Gemini flags Japan-
 - **Long-press a scan** (Home, History, Trip) for quick actions: open, favourite, mark bought, rescan, compare with others, delete.
 - **Swipe a scan right** to favourite it; swipe left to delete.
 - **Swipe in from the left edge** of the screen to go back.
-- **Pull down** on a result to re-check its prices, or on Home, History or Trip to refresh the exchange rate, favourites and any scans that failed.
+- **Camera button:** the round button in the middle of the tab bar takes a photo from any page (the built-in camera, or the iPhone's). Re-checking prices only happens when you tap ↻, never by pulling down, since each re-check uses a scan.
 - **Undo** appears for a few seconds after favouriting, marking bought, deleting and every rescan (Undo after a rescan, a new photo or a corrected name puts the previous result back).
 - **Filter chips** in History: Buy, Maybe, Skip, Used, Clothes and your most-visited stores.
 - **Built-in camera:** tapping Take a photo opens a viewfinder inside the app. Item and Shelf scan the moment you press the shutter; Clothes lets you take several shots, then **Check**. The torch button appears where the phone allows it. iPhone may ask for camera permission again after the app has been closed for a while; turn Built-in camera off in Settings to use the iPhone camera instead. iPhone asks for camera permission the first time you open it after launching the app; after that the camera is kept ready for a minute, so reopening it doesn't ask again. Turn Built-in camera off in Settings to use the iPhone camera, which never asks.

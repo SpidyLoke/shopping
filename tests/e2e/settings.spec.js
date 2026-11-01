@@ -159,3 +159,11 @@ test('the privacy policy and terms pages load', async ({ page }) => {
     await expect(page.locator('h1')).toHaveText(heading);
   }
 });
+
+test('the Take a photo card uses the accent text colour (readable with Black in dark mode)', async ({ page }) => {
+  await mockApis(page);
+  await openApp(page, { settings: { theme: 'dark', accent: 'black' } });
+  const [bg, fg] = await page.locator('.capture').evaluate((n) => [getComputedStyle(n).backgroundColor, getComputedStyle(n).color]);
+  expect(bg).toBe('rgb(238, 240, 247)');
+  expect(fg).toBe('rgb(13, 16, 32)');
+});

@@ -1,4 +1,4 @@
-// History: long-press menu, swipes, Undo, filter chips, list styles, Back and pull to refresh.
+// History: long-press menu, swipes, Undo, filter chips, list styles, Back; no pull to refresh.
 const { test, expect } = require('@playwright/test');
 const { mockApis, openApp, scan, savedHistory, product } = require('./helpers');
 
@@ -79,13 +79,15 @@ test('Back returns to where a scan was opened from; edge swipe does the same', a
   await expect(page).toHaveURL(/#\/history/);
 });
 
-test('pull down on a scan re-checks it', async ({ page }) => {
+test('pulling down on a scan does not re-check it (that costs a scan; only ↻ does)', async ({ page }) => {
   const calls = await mockApis(page, { gemini: () => product({ product_name: 'Rechecked' }) });
   await page.click('#historyList .swipe:first-child .history-item');
+  const name = await page.locator('#resName').textContent();
   const cdp = await page.context().newCDPSession(page);
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 200, y: 150 }] });
   for (const y of [180, 260, 330]) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: 200, y }] });
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-  await expect(page.locator('#resName')).toHaveText('Rechecked');
-  expect(calls.gemini.length).toBe(1);
+  await page.waitForTimeout(800);
+  await expect(page.locator('#resName')).toHaveText(name);
+  expect(calls.gemini.length).toBe(0);
 });
