@@ -360,3 +360,19 @@ test("the brand's price is read off its own page when Gemini's is out of date", 
   const o = JSON.parse(out.gemini.text.replace(/^```json\n|\n```$/g, '')).official_price;
   assert.deepEqual([o.price, o.currency, o.price_checked, o.ai_price.price], [369, 'USD', true, 299]);
 });
+
+test('Find it: shop links from a question are checked too', async () => {
+  const { core, prompts } = await load();
+  const shops = { shops: [{ seller: 'A', url: 'https://a.example/gone' }, { seller: 'B', url: 'https://b.example/ok' }] };
+  const fetch = async (url) => {
+    if (url.startsWith('https://generativelanguage')) return json(200, { candidates: [{ content: { parts: [{ text: '```json\n' + JSON.stringify(shops) + '\n```' }] } }] });
+    if (url.startsWith('https://a.example')) return { status: 404, ok: false, url };
+    return { status: 200, ok: true, url };
+  };
+  const deps = { db: fakeDb(), fetch, prompts, keys: { vision: 'V', gemini: 'G' }, model: 'm', limits: LIMITS };
+  const r = await core.runAsk({ prompt: 'Find where to buy', search: true, links: true }, { uid: 'u1', deps });
+  const out = core.parseJson(r.text);
+  assert.deepEqual(out.shops.map((s) => s.link_ok), [false, true]);
+  const plain = await core.runAsk({ prompt: 'Find where to buy', search: true }, { uid: 'u1', deps });
+  assert.deepEqual(core.parseJson(plain.text).shops.map((s) => s.link_ok), [undefined, undefined]);
+});

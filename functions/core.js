@@ -528,6 +528,14 @@ export async function runAsk(input, { uid, ipHash = null, deps }) {
   const asks = await reserveAsk(db, { uid, ipHash, now, limits });
   try {
     const out = ocrOnly ? await readPhotos(deps, images) : await askGemini({ ...deps, geminiMs: Math.min(deps.geminiMs ?? GEMINI_MS, ASK_MS), hurry: true }, images, input.prompt, input.search === true, now + ASK_BUDGET);
+    // "Find it" lists shops: open each link once, as for a scan's listings.
+    if (input.links === true && !ocrOnly && deps.checkLinks !== false) {
+      const json = parseJson(out.text);
+      if (Array.isArray(json?.shops)) {
+        await checkLinks(deps, { listings: json.shops }).catch(() => {});
+        out.text = fence(json);
+      }
+    }
     return { ...out, asks };
   } catch (e) {
     await db.txn(async (t) => {

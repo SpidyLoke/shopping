@@ -330,3 +330,29 @@ test('Find it: with no price, "Just find where to buy it" lists shops (official 
   await expect(page.locator('#boughtBtn')).toBeVisible();
   await expect(page.locator('#wherePanel')).toBeHidden();
 });
+
+test('a shop based abroad is tagged and kept out of MY new', async ({ page }) => {
+  await mockApis(page);
+  await openApp(page, { history: [scan('Gloves', { product_name: 'OMP One Evo X Gloves', my_new: { typical: 1180 }, listings: [
+    { platform: 'Other', condition: 'new', title: 'OMP One Evo X Gloves', price_rm: 1269, url: 'https://shop.example.sg/omp', exact_model: true },
+    { platform: 'Other', condition: 'new', title: 'OMP One Evo X Gloves', price_rm: 1099, url: 'https://lms.example.com/omp', exact_model: true, seller_country: 'MY' },
+    { platform: 'Other', condition: 'new', title: 'OMP One Evo X Gloves', price_rm: 1150, url: 'https://miki.example.com/omp', exact_model: true, seller_country: 'SG' },
+  ] }, { yen: 39700 })] });
+  await page.goto('/#/scan/Gloves');
+  await expect(page.locator('#myNew')).toHaveText('RM 1,099');
+  await page.click('#myNew');
+  await expect(page.locator('.source-item', { hasText: 'Overseas shop' })).toHaveCount(2);
+});
+
+test('a special edition is never priced as the standard model (CeX or listings)', async ({ page }) => {
+  await mockApis(page, {
+    gemini: () => product({ product_name: 'Nintendo 3DS LL Eevee Edition', search_query: 'Nintendo 3DS LL Eevee', variant: 'Eevee Edition', my_used: { typical: 700 }, my_new: null, listings: [
+      { platform: 'Shopee', condition: 'used', title: 'Nintendo 3DS LL Console', price_rm: 450, exact_model: true },
+    ] }),
+    cexHits: [{ boxId: 'S1', boxName: 'Nintendo 3DS LL Console, B', sellPrice: 450, cashPriceCalculated: 200, exchangePriceCalculated: 260 }],
+  });
+  await openApp(page);
+  await scanFromGallery(page);
+  await expect(page.locator('#myUsed')).toHaveText('–');
+  await expect(page.locator('#cexSell')).toHaveText('–');
+});

@@ -6,7 +6,7 @@ import { buildPrompt, findBarcodes, gtinValid, MARKETS, marketFor } from './prom
 import { FIREBASE } from './firebase-config.js';
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.11.01-11';
+const APP_VERSION = '2026.11.02-1';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -817,9 +817,9 @@ async function askGemini({ images, ...opts }) {
 
 // `images`: one base64 JPEG or a list of them (several photos of the same item).
 // `hurry` (questions, not scans): a busy main model hands over to the lighter one straight away.
-async function callGemini(images, prompt, { search = true, raw = false, hurry = false } = {}) {
+async function callGemini(images, prompt, { search = true, raw = false, hurry = false, links = false } = {}) {
   if (cloudOn()) {
-    const r = await cloudCall('ask', { images: [].concat(images || []), prompt, search }, search ? 120000 : 90000);
+    const r = await cloudCall('ask', { images: [].concat(images || []), prompt, search, ...(links ? { links: true } : {}) }, search ? 120000 : 90000);
     const sources = (r.chunks || []).filter((c) => safeUrl(c.uri)).map((c) => ({ title: c.title, url: c.uri }));
     return raw ? { text: r.text, sources } : { json: parseJson(r.text), sources };
   }
@@ -892,8 +892,17 @@ function otherBrand(want, have) {
   return wantBrands.length > 0 && !wantBrands.some((b) => have.has(b)) && BRANDS.some((b) => have.has(b) && !want.has(b));
 }
 
-function pickCex(query, hits) {
+// A special or limited edition (a Pokémon 3DS, a collab controller) is its own product with its own
+// price: the words naming the edition must appear in a match, or the standard model sneaks in.
+const EDITION_GENERIC = new Set(['edition', 'limited', 'special', 'version', 'ver', 'model', 'the', 'and', 'with', 'set', 'bundle', 'new', 'japan', 'japanese', 'jp', 'collab', 'collaboration', 'x']);
+function editionWords(variant) {
+  if (!/\b(edition|limited|special|collab|collaboration)\b|\bx\b/i.test(variant || '')) return [];
+  return [...words(variant)].filter((w) => !EDITION_GENERIC.has(w));
+}
+
+function pickCex(query, hits, variant = '') {
   const want = words(query);
+  const edition = editionWords(variant);
   const modelWords = [...want].filter((t) => /\d/.test(t));
   let matches = hits.filter((h) => {
     if (!h?.boxName || !(toNum(h.sellPrice) > 0)) return false;
@@ -903,6 +912,7 @@ function pickCex(query, hits) {
       && modelWords.every((t) => have.has(t))
       && sameVariant(want, have)
       && !otherBrand(want, have)
+      && edition.every((w) => have.has(w))
       && !ACCESSORY_WORDS.some((w) => have.has(w) && !want.has(w));
   });
   // Anything priced under a quarter of the typical match is almost certainly a part, not the product.
@@ -924,7 +934,7 @@ function pickCex(query, hits) {
   };
 }
 
-async function cexLookup(query, index = 'prod_cex_my') {
+async function cexLookup(query, index = 'prod_cex_my', variant = '') {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 10000);
   const params = new URLSearchParams({ query, hitsPerPage: '30', filters: 'boxVisibilityOnWeb=1' }).toString();
@@ -938,7 +948,7 @@ async function cexLookup(query, index = 'prod_cex_my') {
     });
     if (!res.ok) return { found: false, error: res.status === 403 ? 'blocked by CeX (403)' : `HTTP ${res.status}` };
     const data = await res.json();
-    return pickCex(query, data.results?.[0]?.hits || []);
+    return pickCex(query, data.results?.[0]?.hits || [], variant);
   } catch {
     return { found: false, error: ctrl.signal.aborted ? 'timed out' : "couldn't reach CeX" };
   } finally {
@@ -1104,13 +1114,30 @@ function compatFor(entry) {
 // the figure is their middle price, and their lowest to highest the range. With none, Gemini's
 // number is only shown as a guess and left out of the verdict. Clothes keep Gemini's figure: they're
 // often priced from similar pieces, and say so.
+// A listing from a shop based abroad (a Singapore shop for a Malaysian shopper) isn't a home price,
+// even when Gemini files it as one: by its country if given, else by its web address's country.
+const TLD_COUNTRY = { my: 'MY', sg: 'SG', ph: 'PH', id: 'ID', th: 'TH', au: 'AU', uk: 'GB', jp: 'JP', us: 'US', cn: 'CN', hk: 'HK', tw: 'TW', kr: 'KR', vn: 'VN', in: 'IN', nz: 'NZ', ca: 'CA', de: 'DE', fr: 'FR', it: 'IT', es: 'ES', nl: 'NL' };
+function overseasListing(entry, l) {
+  const home = marketOf(entry).code;
+  const said = String(l?.seller_country || '').toUpperCase();
+  if (/^[A-Z]{2}$/.test(said)) return said !== home && !(home === 'GB' && said === 'UK');
+  try {
+    const tld = new URL(l.url).hostname.split('.').pop().toLowerCase();
+    return Boolean(TLD_COUNTRY[tld]) && TLD_COUNTRY[tld] !== home;
+  } catch {
+    return false;
+  }
+}
+
 function homeRange(entry, kind) {
   const r = entry?.ai?.[kind === 'new' ? 'my_new' : 'my_used'];
   if (!rangeValue(r)) return null;
   if (entry.kind === 'clothes') return r;
-  const backing = listingsFor(entry, kind).filter((l) => toNum(l.price_rm) > 0 && l.exact_model !== false);
+  const backing = listingsFor(entry, kind).filter((l) => toNum(l.price_rm) > 0 && l.exact_model !== false && !overseasListing(entry, l));
   if (!backing.length) return { unsourced: true, guess: rangeValue(r), others: listingsFor(entry, kind).length };
   const exact = backing.filter((l) => listingMatch(entry, l) === 'exact');
+  // A special edition is only priced from listings that name the edition.
+  if (!exact.length && !entry.override && editionWords(entry.ai?.variant).length) return { unsourced: true, guess: rangeValue(r), others: backing.length };
   const prices = (exact.length ? exact : backing).map((l) => toNum(l.price_rm)).sort((a, b) => a - b);
   const n = prices.length;
   return { low: prices[0], high: prices[n - 1], typical: n % 2 ? prices[(n - 1) / 2] : (prices[n / 2 - 1] + prices[n / 2]) / 2 };
@@ -1729,7 +1756,7 @@ async function lookupCex(entry, update) {
   if (!query || !index) return;
   entry.cexPending = true;
   update();
-  entry.cex = { ...(await cexLookup(query, index)), checkedAt: Date.now() };
+  entry.cex = { ...(await cexLookup(query, index, entry.ai?.variant)), checkedAt: Date.now() };
   entry.cexPending = false;
   update();
 }
@@ -1958,7 +1985,7 @@ async function applyServerResult(entry, out, { quiet = false } = {}) {
     entry.status.search = 'failed';
     entry.errors.push(out.geminiError || 'Gemini: no result came back from the scan server.');
   }
-  if (out.cex?.hits) entry.cex = { ...pickCex(out.cex.query, out.cex.hits), checkedAt: Date.now() };
+  if (out.cex?.hits) entry.cex = { ...pickCex(out.cex.query, out.cex.hits, entry.ai?.variant), checkedAt: Date.now() };
   // Keep the server's timings and ntfy's answer so a missing notification can be explained.
   entry.serverJob = { ...entry.serverJob, done: true, startedAt: out.startedAt, finishedAt: out.finishedAt, ntfy: out.ntfy || null, cachedAt: out.cached?.at || null };
   await ensureRate(entry);
@@ -3706,6 +3733,7 @@ function openSources(kind) {
         el('span', { class: 'source-platform' }, l.platform || 'Listing'),
         el('span', { class: `tag ${cls}` }, label),
         l.sold ? el('span', { class: 'tag' }, 'Sold') : null,
+        kind !== 'jp' && overseasListing(entry, l) ? el('span', { class: 'tag tag-maybe' }, 'Overseas shop') : null,
         el('span', { class: 'source-price' }, price),
       ),
       el('p', { class: 'source-name' }, l.title || 'Untitled listing'),
@@ -3756,7 +3784,7 @@ async function loadWhere(id) {
   entry.whereError = null;
   refresh(entry);
   try {
-    const { json } = await callGemini(null, wherePrompt(entry), { hurry: true });
+    const { json } = await callGemini(null, wherePrompt(entry), { hurry: true, links: true });
     if (!json || !Array.isArray(json.shops)) throw new Error('Gemini: no list of shops came back. Try again.');
     entry.where = { shops: json.shops, note: typeof json.note === 'string' ? json.note : '', at: Date.now() };
   } catch (e) {
@@ -3812,7 +3840,8 @@ function renderWhereIn(entry) {
       s.title ? el('p', { class: 'source-name' }, s.title) : null,
       [orig && s.home ? orig : null, s.ships].filter(Boolean).length ? el('p', { class: 'muted small' }, [orig && s.home ? orig : null, s.ships].filter(Boolean).join(' · ')) : null,
       el('div', { class: 'source-links' },
-        href ? el('a', { class: 'link small', href, target: '_blank', rel: 'noopener' }, 'Open ↗') : null,
+        href && s.link_ok === false ? el('span', { class: 'muted small' }, 'Link was broken.') : null,
+        href && s.link_ok !== false ? el('a', { class: 'link small', href, target: '_blank', rel: 'noopener' }, 'Open ↗') : null,
         el('a', { class: 'link small', href: find, target: '_blank', rel: 'noopener' }, href ? `Search ${new URL(href).hostname.replace(/^www\./, '')} ↗` : `Search ${s.seller || 'it'} ↗`),
       ),
     );
