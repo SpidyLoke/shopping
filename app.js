@@ -6,7 +6,7 @@ import { buildPrompt, findBarcodes, gtinValid, MARKETS, marketFor } from './prom
 import { FIREBASE } from './firebase-config.js';
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.11.01-5';
+const APP_VERSION = '2026.11.01-6';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -1306,7 +1306,7 @@ function officialPrice(entry) {
   } catch {
     seller ||= 'the brand';
   }
-  return { orig, cur, rm: r ? orig * r : null, seller, url: safeUrl(o.url) };
+  return { orig, cur, rm: r ? orig * r : null, seller, url: safeUrl(o.url), link_ok: o.link_ok };
 }
 
 function officialVerdict(jp, off) {
@@ -3162,7 +3162,7 @@ function renderPricesIn(entry) {
     $('#official').textContent = off.rm ? rm(off.rm) : money(off.orig, off.cur);
     $('#officialNote').textContent = `${money(off.orig, off.cur)} · ${off.seller}`;
     $('#officialLink').hidden = !off.url;
-    if (off.url) $('#officialLink').href = off.url;
+    if (off.url) $('#officialLink').href = off.link_ok === false ? siteSearch(off.url, searchQuery(entry)) : off.url;
   }
 
   const v = verdictFor(entry);
@@ -3570,6 +3570,16 @@ function renderSourceLinesIn(entry) {
 
 // The links under a result: Google (anyone, anywhere), then one per site its prices actually came
 // from (the listing itself), the brand's own page and CeX. No fixed list of marketplaces.
+// A Google search of one shop, for when a listing's own link is broken (or to double-check it).
+function siteSearch(url, q) {
+  try {
+    const site = new URL(url).hostname.replace(/^www\./, '');
+    return `https://www.google.com/search?q=${encodeURIComponent(`site:${site} ${q}`)}`;
+  } catch {
+    return null;
+  }
+}
+
 function searchLinks(entry, q) {
   const links = [['Google', `https://www.google.com/search?q=${encodeURIComponent(q)}`]];
   const seen = new Set(['google']);
@@ -3588,13 +3598,26 @@ function searchLinks(entry, q) {
     }
   };
   const off = officialPrice(entry);
-  if (off?.url) add(off.seller, off.url);
+  // A link the backend found broken goes to a search of that shop instead.
+  const go = (x) => (x.link_ok === false ? siteSearch(x.url, q) : x.url);
+  if (off?.url) add(off.seller, go(off));
   for (const l of Array.isArray(entry.ai?.listings) ? entry.ai.listings : []) {
-    if (l?.url) add(l.platform && !/^other$/i.test(l.platform) ? l.platform : host(l.url), l.url);
+    if (l?.url) add(l.platform && !/^other$/i.test(l.platform) ? l.platform : host(l.url), go(l));
   }
   const cex = cexFor(entry);
   if (cex.url) add('CeX', cex.url);
   return links;
+}
+
+// "Open listing", and a search of the same shop: Gemini's links are sometimes made up, so when the
+// backend found the page missing only the search is offered.
+function listingLinks(l, href, q) {
+  const shop = href && siteSearch(href, q);
+  const host = shop ? new URL(href).hostname.replace(/^www\./, '') : '';
+  const find = shop ? el('a', { class: 'link small', href: shop, target: '_blank', rel: 'noopener' }, `Search ${host} ↗`) : null;
+  if (!href) return el('p', { class: 'muted small' }, 'No link given');
+  if (l.link_ok === false) return el('div', { class: 'source-links' }, el('span', { class: 'muted small' }, 'Link was broken.'), find);
+  return el('div', { class: 'source-links' }, el('a', { class: 'link small', href, target: '_blank', rel: 'noopener' }, 'Open listing ↗'), find);
 }
 
 function openSources(kind) {
@@ -3619,7 +3642,7 @@ function openSources(kind) {
       ),
       el('p', { class: 'source-name' }, l.title || 'Untitled listing'),
       l.match_note ? el('p', { class: 'muted small' }, l.match_note) : null,
-      href ? el('a', { class: 'link small', href, target: '_blank', rel: 'noopener' }, 'Open listing ↗') : el('p', { class: 'muted small' }, 'No link given'),
+      listingLinks(l, href, l.title || searchQuery(entry)),
     );
   }));
   $('#sourceEmpty').hidden = items.length > 0;

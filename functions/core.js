@@ -222,6 +222,49 @@ export function parseJson(text) {
 
 const fence = (obj) => `\`\`\`json\n${JSON.stringify(obj)}\n\`\`\``;
 
+// Gemini's search answers sometimes give a real shop with a made-up product address. Each link is
+// opened once: a 404/410, a shop that sends it to its home page, or a site that doesn't exist marks
+// it broken (link_ok: false), and the app offers a search of that shop instead. A shop that blocks
+// the check (403, a timeout) is left as it is: that isn't proof the page is missing.
+const LINK_MS = 6000;
+const MAX_LINKS = 10;
+
+async function linkAlive(fetch, url) {
+  let u;
+  try {
+    u = new URL(url);
+    if (!/^https?:$/.test(u.protocol)) return null;
+  } catch {
+    return false;
+  }
+  try {
+    const res = await fetch(u.href, {
+      redirect: 'follow',
+      headers: { 'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1', Accept: 'text/html' },
+      signal: AbortSignal.timeout(LINK_MS),
+    });
+    res.body?.cancel?.().catch(() => {});
+    if (res.status === 404 || res.status === 410) return false;
+    let end = null;
+    try { end = new URL(res.url); } catch { /* no final address given */ }
+    if (res.ok && end && u.pathname.length > 1 && end.pathname === '/' && end.hostname.replace(/^www\./, '') === u.hostname.replace(/^www\./, '')) return false;
+    return res.ok ? true : null;
+  } catch (e) {
+    const code = e?.cause?.code || e?.code;
+    return code === 'ENOTFOUND' ? false : null; // no such site; anything else is a maybe
+  }
+}
+
+async function checkLinks({ fetch }, ai) {
+  const items = [...(Array.isArray(ai.listings) ? ai.listings : []), ai.official_price].filter((x) => x && typeof x.url === 'string' && x.url);
+  const urls = [...new Set(items.map((x) => x.url))].slice(0, MAX_LINKS);
+  const alive = new Map(await Promise.all(urls.map(async (url) => [url, await linkAlive(fetch, url)])));
+  for (const x of items) {
+    const ok = alive.get(x.url);
+    if (ok === true || ok === false) x.link_ok = ok;
+  }
+}
+
 async function cexLookup({ fetch, cexIndex }, query) {
   const params = `query=${encodeURIComponent(query)}&hitsPerPage=30&filters=${encodeURIComponent('boxVisibilityOnWeb=1')}`;
   const res = await fetch(CEX_SEARCH, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: JSON.stringify({ requests: [{ indexName: cexIndex, params }] }), signal: AbortSignal.timeout(10000) });
@@ -282,6 +325,10 @@ export async function runScan(rawInput, { uid, ipHash = null, deps }) {
       });
       out.gemini = await askGemini(deps, images, prompt, true, now + SCAN_BUDGET);
       ai = parseJson(out.gemini.text);
+      if (ai && deps.checkLinks !== false) {
+        await checkLinks(deps, ai).catch(() => {});
+        out.gemini = { ...out.gemini, text: fence(ai) };
+      }
       // Only keep it when Gemini says the barcode is what pinned the product down.
       const matched = ai && (String(ai.barcode || '').replace(/\D/g, '') === barcode || ai.identified_by === 'barcode');
       if (cacheId && matched && (ai.my_new || ai.my_used || ai.cex_my)) {

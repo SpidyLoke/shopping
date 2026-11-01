@@ -1837,3 +1837,4 @@ dialog.install-guide::backdrop { background: var(--bg); }
 .nav-shutter svg.i { width: 30px; height: 30px; }
 .nav-shutter:active span { transform: scale(0.92); }
 .verdict-recheck { margin-top: 10px; }
+.source-links { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: baseline; }

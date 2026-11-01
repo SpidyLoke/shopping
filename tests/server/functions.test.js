@@ -310,3 +310,28 @@ test('a Gemini call that hangs goes straight to the lighter model', async () => 
   assert.deepEqual(seen, ['main', 'lite']);
   assert.match(out.gemini.text, /from lite/);
 });
+
+test('made-up listing links are found and marked, real ones and blocked ones are left alone', async () => {
+  const { core, prompts } = await load();
+  const listings = [
+    { platform: 'Other', title: 'OMP ONE EVO X', price_rm: 1269, url: 'https://shop.example/products/made-up' },
+    { platform: 'Other', title: 'OMP ONE EVO X', price_rm: 1099, url: 'https://other.example/omp-one-evo-x' },
+    { platform: 'Shopee', title: 'OMP One Evo X', price_rm: 1150, url: 'https://shopee.example/real' },
+    { platform: 'Other', title: 'OMP', price_rm: 1200, url: 'https://blocked.example/p' },
+    { platform: 'Other', title: 'OMP', price_rm: 1200, url: 'https://nosuchsite.example/p' },
+  ];
+  const base = apis({ gemini: () => ({ ...MARKET, price: 39700, currency: 'JPY', listings, official_price: { price: 300, currency: 'EUR', seller: 'OMP', url: 'https://omp.example/gloves' } }) });
+  const fetch = async (url, opt) => {
+    if (url.startsWith('https://shop.example')) return { status: 404, ok: false, url };
+    if (url.startsWith('https://other.example')) return { status: 200, ok: true, url: 'https://other.example/' }; // sent to the home page
+    if (url.startsWith('https://shopee.example') || url.startsWith('https://omp.example')) return { status: 200, ok: true, url };
+    if (url.startsWith('https://blocked.example')) return { status: 403, ok: false, url };
+    if (url.startsWith('https://nosuchsite.example')) throw Object.assign(new TypeError('fetch failed'), { cause: { code: 'ENOTFOUND' } });
+    return base.fetch(url, opt);
+  };
+  const deps = { db: fakeDb(), fetch, prompts, keys: { vision: 'V', gemini: 'G' }, model: 'm', cexLookup: false, limits: LIMITS, clock: () => Date.UTC(2026, 9, 30, 4) };
+  const out = await core.runScan({ images: [IMG] }, { uid: 'u1', deps });
+  const ai = JSON.parse(out.gemini.text.replace(/^```json\n|\n```$/g, ''));
+  assert.deepEqual(ai.listings.map((l) => l.link_ok), [false, false, true, undefined, false]);
+  assert.equal(ai.official_price.link_ok, true);
+});

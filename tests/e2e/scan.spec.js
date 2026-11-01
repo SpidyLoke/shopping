@@ -1,6 +1,6 @@
 // Scanning: one photo, several photos, adding a photo later, clothes, and prices in other currencies.
 const { test, expect } = require('@playwright/test');
-const { mockApis, openApp, product, scanFromGallery, fixture, scanDone, savedHistory } = require('./helpers');
+const { mockApis, openApp, product, scan, scanFromGallery, fixture, scanDone, savedHistory } = require('./helpers');
 
 test('a Japanese tag gets RM prices, a verdict and CeX', async ({ page }) => {
   const calls = await mockApis(page, {
@@ -203,4 +203,21 @@ test('a scan with no prices can be checked again from the result, in any list st
   await expect(page.locator('#myNew')).toHaveText('RM 600');
   await expect(page.locator('#verdictRecheck')).toBeHidden();
   expect(calls.gemini.length).toBe(2);
+});
+
+test('a listing whose link was broken offers a search of that shop instead', async ({ page }) => {
+  await mockApis(page);
+  await openApp(page, { history: [scan('Gloves', { product_name: 'OMP One Evo-X Racing Gloves', search_query: 'OMP One Evo X gloves', my_new: { typical: 1184 }, listings: [
+    { platform: 'Other', condition: 'new', title: 'OMP ONE EVO X RACING GLOVES', price_rm: 1269, url: 'https://www.mikimarketing.com/products/made-up', exact_model: true, link_ok: false },
+    { platform: 'Other', condition: 'new', title: 'OMP ONE EVO X RACE GLOVES', price_rm: 1099, url: 'https://lifestylemotorsport.com/p/omp', exact_model: true },
+  ] }, { yen: 39700 })] });
+  await page.goto('/#/scan/Gloves');
+  await page.click('#myNew');
+  const items = page.locator('.source-item');
+  await expect(items.nth(0)).toContainText('Link was broken.');
+  await expect(items.nth(0).locator('a', { hasText: 'Open listing' })).toHaveCount(0);
+  const search = items.nth(0).locator('a', { hasText: 'Search mikimarketing.com' });
+  expect(decodeURIComponent(await search.getAttribute('href'))).toContain('site:mikimarketing.com OMP ONE EVO X RACING GLOVES');
+  await expect(items.nth(1).locator('a', { hasText: 'Open listing' })).toHaveAttribute('href', 'https://lifestylemotorsport.com/p/omp');
+  await expect(items.nth(1).locator('a', { hasText: 'Search lifestylemotorsport.com' })).toHaveCount(1);
 });
