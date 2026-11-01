@@ -142,6 +142,20 @@ test('daily and per-connection caps protect the bill', async () => {
   await assert.rejects(conn.scan({}, 'b', 'same'), (e) => e.details.reason === 'connection');
 });
 
+test('UNLIMITED: no allowance or connection cap for anyone, still counted, daily cap still holds', async () => {
+  const { scan, core, deps } = await setup({ ocr: '¥3,000', limits: { free: 1, perIp: 1, daily: 2, freeAsks: 1, unlimited: true } });
+  const first = await scan({}, 'u1', 'same');
+  assert.equal(first.usage.limit, null);
+  assert.equal(first.usage.unlimited, true);
+  assert.equal((await scan({}, 'u1', 'same')).usage.used, 2);
+  await assert.rejects(scan({}, 'u1', 'same'), (e) => e.details.reason === 'daily');
+  await core.runAsk({ prompt: 'one' }, { uid: 'u1', ipHash: 'same', deps });
+  await core.runAsk({ prompt: 'two' }, { uid: 'u1', ipHash: 'same', deps });
+  const u = await core.usageFor('u1', { db: deps.db, now: deps.clock(), limits: deps.limits });
+  assert.equal(u.unlimited, true);
+  assert.equal(u.asks.limit, null);
+});
+
 test('bad input is refused before anything is spent', async () => {
   const { scan, calls, db } = await setup();
   await assert.rejects(scan({ images: [] }), (e) => e.code === 'invalid-argument');

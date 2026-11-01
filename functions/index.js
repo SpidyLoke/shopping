@@ -11,6 +11,7 @@
 //   CACHE_DAYS    how long a barcode's market prices are reused (default 7)
 //   PASS_SCANS, PASS_DAYS  what a trip pass gives (default 60 scans over 14 days)
 //   APP_URL       where Stripe sends people back to (default https://spidyloke.github.io/shopping/)
+//   UNLIMITED     yes: no monthly allowance or per-connection cap for anyone (the daily caps still hold)
 //   OWNER_UIDS    account IDs (Settings shows yours) that may open the beta dashboard, comma-separated
 // Secrets (firebase functions:secrets:set NAME): VISION_KEY, GEMINI_KEY, STRIPE_SECRET_KEY and
 // STRIPE_WEBHOOK_SECRET (the Deploy backend workflow sets the Stripe ones, or "unset" until then),
@@ -50,6 +51,7 @@ const PASS_SCANS = defineInt('PASS_SCANS', { default: 60 });
 const PASS_DAYS = defineInt('PASS_DAYS', { default: 14 });
 const APP_URL = defineString('APP_URL', { default: 'https://spidyloke.github.io/shopping/' });
 const OWNER_UIDS = defineString('OWNER_UIDS', { default: '' });
+const UNLIMITED = defineString('UNLIMITED', { default: 'no' });
 const owners = () => OWNER_UIDS.value().split(',').map((x) => x.trim()).filter(Boolean);
 const STRIPE_SECRET_KEY = defineSecret('STRIPE_SECRET_KEY');
 const VAPID_PUBLIC_KEY = defineSecret('VAPID_PUBLIC_KEY');
@@ -79,6 +81,7 @@ const db = {
 const limits = () => ({
   free: FREE_SCANS.value(), pro: PRO_SCANS.value(), pass: PASS_SCANS.value(), daily: DAILY_SCANS.value(), perIp: PER_IP_SCANS.value(),
   freeAsks: FREE_ASKS.value(), proAsks: PRO_ASKS.value(), dailyAsks: DAILY_ASKS.value(),
+  unlimited: /^(yes|true|on|1)$/i.test(UNLIMITED.value().trim()),
 });
 
 const deps = () => ({

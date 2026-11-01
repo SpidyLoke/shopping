@@ -49,6 +49,19 @@ test('when the allowance runs out the scan says so instead of retrying', async (
   await expect(page.locator('#quotaLine')).toHaveText(/^0 of 1 scan left/);
 });
 
+test('with everyone unlimited, the allowance never runs out and Upgrade is gone', async ({ page }) => {
+  await mockApis(page);
+  await mockCloud(page, { ocr: '¥3,000', limits: { free: 1, unlimited: true } });
+  await openApp(page, { settings: { apiKey: '' } });
+  await scanFromGallery(page);
+  await scanFromGallery(page);
+  await expect(page.locator('#resError')).toBeHidden();
+  await page.goto('/#/');
+  await expect(page.locator('#quotaLine')).toHaveText('Unlimited scans');
+  await page.click('#settingsBtn');
+  await expect(page.locator('#upgradeBtn')).toBeHidden();
+});
+
 test('Worth it and questions use the backend too; Settings can switch to your own keys', async ({ page }) => {
   const google = await mockApis(page);
   const cloud = await mockCloud(page, { gemini: (p) => (p.includes('Reply with only a JSON object') && !p.includes('verdict') ? product() : 'It is a fair price.') });

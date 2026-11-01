@@ -318,7 +318,7 @@ After that, any change to `functions/` redeploys by itself. To use your own keys
 
 **From a computer instead:** `npm install -g firebase-tools`, `firebase login`, `firebase use --add`, `firebase functions:secrets:set VISION_KEY` and `GEMINI_KEY`, `firebase deploy --only functions,firestore`, then paste the web app config (Project settings → Your apps) into `firebase-config.js`.
 
-Limits and the model are settings (`functions/.env`: `FREE_SCANS`, `PRO_SCANS`, `DAILY_SCANS`, `PER_IP_SCANS`, `FREE_ASKS`, `PRO_ASKS`, `DAILY_ASKS`, `GEMINI_MODEL`, `CACHE_DAYS`); redeploy after changing them. To give someone the paid plan by hand until payments exist, set `plan: "pro"` on their `users/{uid}` document in Firestore.
+Limits and the model are settings (`functions/.env`: `FREE_SCANS`, `PRO_SCANS`, `DAILY_SCANS`, `PER_IP_SCANS`, `FREE_ASKS`, `PRO_ASKS`, `DAILY_ASKS`, `GEMINI_MODEL`, `CACHE_DAYS`); redeploy after changing them. `UNLIMITED=yes` (on for the beta) drops the monthly allowances and per-connection caps for everyone; the project-wide `DAILY_SCANS` and `DAILY_ASKS` still apply. Set it to `no` to bring the plans back. To give someone the paid plan by hand until payments exist, set `plan: "pro"` on their `users/{uid}` document in Firestore.
 
 Until someone makes an account, sign-in is anonymous: the account is that install, and removing the app from the home screen starts a new one. While scanning with a Kaimono account, Settings hides the API keys and own scan server sections, which only apply to own-key scanning.
 

@@ -24,7 +24,7 @@ export async function listPlans({ stripe, limits, passDays }) {
   const out = [];
   if (price(LOOKUP.pass)) out.push({ id: 'pass', amount: price(LOOKUP.pass).unit_amount / 100, currency: price(LOOKUP.pass).currency.toUpperCase(), days: passDays, scans: limits.pass });
   if (price(LOOKUP.monthly)) out.push({ id: 'monthly', amount: price(LOOKUP.monthly).unit_amount / 100, currency: price(LOOKUP.monthly).currency.toUpperCase(), scans: limits.pro });
-  return { plans: out, free: limits.free };
+  return { plans: out, free: limits.free, unlimited: !!limits.unlimited };
 }
 
 // A Stripe Checkout page for a signed-in (not anonymous) account; the app opens its URL.

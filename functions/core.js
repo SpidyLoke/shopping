@@ -56,6 +56,11 @@ export function planOf(user, now) {
 function usageOf(user, now, limits) {
   const plan = planOf(user, now);
   const month = monthKey(now);
+  // Everyone unlimited (UNLIMITED=yes): scans are still counted, just never refused.
+  if (limits.unlimited) {
+    const used = plan === 'pass' ? user.passUsed || 0 : user?.month === month ? user.used || 0 : 0;
+    return { plan, used, limit: null, unlimited: true, month, resetsAt: plan === 'pass' ? user.passUntil : resetsAt(now), until: plan === 'pass' ? user.passUntil : plan === 'pro' ? user.proUntil || null : null };
+  }
   if (plan === 'pass') return { plan, used: user.passUsed || 0, limit: limits.pass, month, resetsAt: user.passUntil, until: user.passUntil };
   return {
     plan,
@@ -76,7 +81,7 @@ function counted(user, u, step) {
 export async function usageFor(uid, { db, now = Date.now(), limits }) {
   const user = await db.get(`users/${uid}`);
   const u = usageOf(user, now, limits);
-  return { ...u, asks: { used: user?.asksMonth === u.month ? user.asksUsed || 0 : 0, limit: u.plan === 'free' ? limits.freeAsks : limits.proAsks } };
+  return { ...u, asks: { used: user?.asksMonth === u.month ? user.asksUsed || 0 : 0, limit: limits.unlimited ? null : u.plan === 'free' ? limits.freeAsks : limits.proAsks } };
 }
 
 // One scan from the allowance, plus the project-wide daily cap and a per-connection daily cap
@@ -88,14 +93,14 @@ async function reserve(db, { uid, ipHash, now, limits }) {
     const counter = (await t.get(`counters/day-${day}`)) || {};
     const ip = ipHash ? (await t.get(`ipDaily/${day}-${ipHash}`)) || {} : null;
     const u = usageOf(user, now, limits);
-    if (u.used >= u.limit) {
+    if (!u.unlimited && u.used >= u.limit) {
       const message = u.plan === 'pass' ? `No scans left on your trip pass (${u.limit} scans).` : `No scans left this month (${u.limit} a month on the ${u.plan} plan).`;
       throw new ScanError('resource-exhausted', message, { reason: 'quota', ...u });
     }
     if ((counter.scans || 0) >= limits.daily) {
       throw new ScanError('resource-exhausted', 'Kaimono has hit its scan limit for today. Try again tomorrow, or scan with your own keys (Settings).', { reason: 'daily' });
     }
-    if (ip && (ip.scans || 0) >= limits.perIp) {
+    if (ip && !limits.unlimited && (ip.scans || 0) >= limits.perIp) {
       throw new ScanError('resource-exhausted', 'Too many scans from this connection today.', { reason: 'connection' });
     }
     t.set(`users/${uid}`, { ...user, ...counted(user, u, 1), updatedAt: now });
@@ -393,11 +398,11 @@ async function reserveAsk(db, { uid, ipHash, now, limits }) {
     const user = (await t.get(`users/${uid}`)) || {};
     const counter = (await t.get(`counters/asks-${day}`)) || {};
     const ip = ipHash ? (await t.get(`ipDaily/asks-${day}-${ipHash}`)) || {} : null;
-    const limit = planOf(user, now) === 'free' ? limits.freeAsks : limits.proAsks;
+    const limit = limits.unlimited ? null : planOf(user, now) === 'free' ? limits.freeAsks : limits.proAsks;
     const used = user.asksMonth === month ? user.asksUsed || 0 : 0;
-    if (used >= limit) throw new ScanError('resource-exhausted', `No questions left this month (${limit} a month).`, { reason: 'asks', used, limit });
+    if (limit != null && used >= limit) throw new ScanError('resource-exhausted', `No questions left this month (${limit} a month).`, { reason: 'asks', used, limit });
     if ((counter.asks || 0) >= limits.dailyAsks) throw new ScanError('resource-exhausted', 'Kaimono has hit its limit for today. Try again tomorrow.', { reason: 'daily' });
-    if (ip && (ip.asks || 0) >= limits.perIp * 3) throw new ScanError('resource-exhausted', 'Too many requests from this connection today.', { reason: 'connection' });
+    if (ip && !limits.unlimited && (ip.asks || 0) >= limits.perIp * 3) throw new ScanError('resource-exhausted', 'Too many requests from this connection today.', { reason: 'connection' });
     t.set(`users/${uid}`, { ...user, asksMonth: month, asksUsed: used + 1, updatedAt: now });
     t.set(`counters/asks-${day}`, { asks: (counter.asks || 0) + 1 });
     if (ip) t.set(`ipDaily/asks-${day}-${ipHash}`, { asks: (ip.asks || 0) + 1, expireAt: new Date(now + 2 * DAY) });

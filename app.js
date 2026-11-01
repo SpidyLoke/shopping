@@ -6,7 +6,7 @@ import { buildPrompt, findBarcodes, gtinValid, MARKETS, marketFor } from './prom
 import { FIREBASE } from './firebase-config.js';
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.11.01-4';
+const APP_VERSION = '2026.11.01-5';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -710,6 +710,8 @@ function clearScanNotification(tag) {
 }
 
 function saveUsage(u) {
+  // A fresh allowance from the backend says whether everyone is unlimited (so switching it off sticks).
+  if ('limit' in u) u = { ...u, unlimited: !!u.unlimited };
   store.set('cloudUsage', { ...(store.get('cloudUsage') || {}), ...u, at: Date.now() });
   renderQuota();
 }
@@ -727,6 +729,7 @@ function quotaLeft() {
 
 function quotaText() {
   const u = store.get('cloudUsage');
+  if (cloudOn() && u?.unlimited) return 'Unlimited scans';
   const left = quotaLeft();
   if (left == null) return '';
   const scans = `${left} of ${u.limit} scan${u.limit === 1 ? '' : 's'} left`;
@@ -751,7 +754,7 @@ function renderQuota() {
   $('#accountLine').replaceChildren(email || 'Not signed in', el('small', {}, email ? 'Signed in' : 'An account keeps your plan if you change phones'));
   $('#accountBtn').textContent = email ? 'Sign out' : 'Sign in';
   $('#planLine').replaceChildren(PLAN_NAMES[plan] || 'Free plan', u.until ? el('small', {}, `${plan === 'pass' ? 'Until' : 'Renews or ends'} ${myDay(u.until)}`) : '');
-  $('#upgradeBtn').hidden = plan === 'pro';
+  $('#upgradeBtn').hidden = plan === 'pro' || !!u.unlimited;
   $('#upgradeBtn').textContent = plan === 'pass' ? 'Extend' : 'Upgrade';
   $('#manageBtn').hidden = plan !== 'pro';
   $('#statsBtn').hidden = !u.owner;
