@@ -6,7 +6,7 @@ import { buildPrompt, findBarcodes, gtinValid, MARKETS, marketFor } from './prom
 import { FIREBASE } from './firebase-config.js';
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.11.02-7';
+const APP_VERSION = '2026.11.02-8';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -1141,9 +1141,20 @@ function homeRange(entry, kind) {
   if (!exact.length && !entry.override && editionWords(entry.ai?.variant).length) return { unsourced: true, guess: rangeValue(r), others: backing.length };
   const prices = (exact.length ? exact : backing).map((l) => toNum(l.price_rm)).sort((a, b) => a - b);
   const n = prices.length;
-  return { low: prices[0], high: prices[n - 1], typical: n % 2 ? prices[(n - 1) / 2] : (prices[n / 2 - 1] + prices[n / 2]) / 2 };
+  return { low: prices[0], high: prices[n - 1], typical: n % 2 ? prices[(n - 1) / 2] : (prices[n / 2 - 1] + prices[n / 2]) / 2, count: n };
 }
 const homeValue = (entry, kind) => rangeValue(homeRange(entry, kind));
+
+// What a used one really goes for: a buyer takes the cheapest comparable listing, so to resell you
+// have to beat it, and to buy here it has to beat it. The lowest listing, not the middle one.
+function usedRef(entry) {
+  const r = homeRange(entry, 'used');
+  if (!rangeValue(r)) return null;
+  return toNum(r.low) || rangeValue(r);
+}
+// How many listings the used figure rests on (null when it's Gemini's own figure, e.g. clothes).
+const usedCount = (entry) => homeRange(entry, 'used')?.count ?? null;
+const THIN = 3; // fewer used listings than this and the resale call is flagged as a guess
 
 function rangeValue(r) {
   if (!r) return null;
@@ -1277,7 +1288,7 @@ function dealTags(entry) {
   if (!jp || !entry.ai) return [];
   if (pricesSimilar(entry)) return [{ key: 'similar', tone: 'plain', label: 'Only similar items found', short: 'No exact match', detail: `${M().adj} prices are for similar pieces, not this one.` }];
   const cex = cexFor(entry);
-  const myUsed = homeValue(entry, 'used');
+  const myUsed = usedRef(entry);
   const myNew = homeValue(entry, 'new');
   const cost = landedCost(entry, jp);
   const paid = cost.total;
@@ -1288,10 +1299,12 @@ function dealTags(entry) {
   const extras = [cost.card ? `${whole(cost.card)} card fee` : null, cost.extra ? `${whole(cost.extra)} extra` : null].filter(Boolean);
   const costNote = extras.length ? ` It costs you ${whole(paid)} with the ${extras.join(' and ')}.` : '';
   const evidence = { sold: 'sold prices', asking: 'asking prices, sold ones usually go for less' }[usedEvidence(entry)] || 'asking prices';
+  const n = usedCount(entry);
+  const thinUsed = n != null && n < THIN;
   const ladder = [
     [cex.cash, () => ({ key: 'cex-flip', tone: 'profit', amount: cex.cash - paid, label: `${more(cex.cash)} profit at CeX`, short: `CeX +${more(cex.cash)}`, detail: `CeX's cash offer is ${rm(cex.cash)}, a firm price.${costNote}` })],
     [cex.voucher, () => ({ key: 'cex-voucher', tone: 'profit', amount: cex.voucher - paid, label: `${more(cex.voucher)} profit in CeX voucher`, short: `Voucher +${more(cex.voucher)}`, detail: `CeX offers ${rm(cex.voucher)} in voucher.${costNote}` })],
-    [resale, () => ({ key: 'resell', tone: 'profit', amount: resale - paid, label: `${more(resale)} profit reselling`, short: `Resell +${more(resale)}`, detail: `Used ones go for about ${rm(myUsed)} in ${M().name} (${evidence})${settings.sellFee ? `, ${rm(resale)} after the ${settings.sellFee}% selling fee` : ''}.${costNote}` })],
+    [resale, () => ({ key: 'resell', tone: 'profit', thin: thinUsed, amount: resale - paid, label: `${more(resale)} profit reselling${thinUsed ? '?' : ''}`, short: `Resell +${more(resale)}`, detail: `The cheapest used one in ${M().name} is about ${rm(myUsed)} (${evidence})${settings.sellFee ? `, ${rm(resale)} after the ${settings.sellFee}% selling fee` : ''}.${thinUsed ? ` That's from only ${n} listing${n === 1 ? '' : 's'}: check second-hand prices yourself before buying.` : ''}${costNote}` })],
     [cex.sell, () => ({ key: 'under-cex', tone: 'good', label: `${more(cex.sell)} under CeX`, short: 'Under CeX', detail: `CeX sells it used for ${rm(cex.sell)}.${costNote}` })],
     [myNew, () => ({ key: 'under-new', tone: 'plain', label: `${more(myNew)} under ${M().short} new`, short: `${more(myNew)} off new`, detail: `New in ${M().name} it's about ${rm(myNew)}.${costNote}` })],
   ];
@@ -1335,7 +1348,7 @@ function rowTag(entry) {
 }
 
 function dealChip(t) {
-  return el('span', { class: `deal deal-${t.tone}`, title: t.detail }, t.label);
+  return el('span', { class: `deal deal-${t.tone}${t.thin ? ' thin' : ''}`, title: t.detail }, t.label);
 }
 
 // The brand's own price (any currency, from its official store), converted to the home currency.
@@ -1373,7 +1386,7 @@ function baseVerdict(entry) {
   const price = japanPrice(entry).rm;
   const jp = price ? landedCost(entry, price).total : null;
   const myNew = homeValue(entry, 'new');
-  const myUsed = homeValue(entry, 'used');
+  const myUsed = usedRef(entry);
   if (!entry.ai) return null;
   if (entry.findMode) return { cls: 'none', label: 'Where to buy', detail: 'Shops selling it, official store first.' };
   if (!jp) return { cls: 'none', label: 'Need the price', detail: 'Type the price from the tag or listing:', needPrice: true };
@@ -3440,6 +3453,7 @@ function renderPricesIn(entry) {
     $('#verdictLabel').textContent = v.label;
     $('#dealTags').replaceChildren(...dealTags(entry).map(dealChip));
     $('#verdictDetail').textContent = v.detail;
+    renderVerdictCheck(entry, v);
     $('.price-main').classList.toggle('need-price', Boolean(v.needPrice));
     $('#shareBtn').hidden = Boolean(v.needPrice);
     $('#findBtn').hidden = !(v.needPrice && entry.ai);
@@ -3818,6 +3832,22 @@ function pricesSimilar(entry) {
   // No listings at all means the figures are Gemini's own estimate.
   if (!mine.length) return Boolean(rangeValue(entry.ai.my_new) || rangeValue(entry.ai.my_used));
   return !mine.some((l) => listingMatch(entry, l) === 'exact');
+}
+
+// Second-hand prices swing a lot (a like-new CPU at RM 750 next to one asking RM 1,300). When a used
+// call rests on fewer than three listings, the verdict says so and links straight to the place
+// people sell used ones, so you can check before you buy.
+function renderVerdictCheck(entry, v) {
+  const link = $('#verdictCheck');
+  const n = usedCount(entry);
+  const usedCall = entry.secondHand || dealTags(entry).some((t) => t.key === 'resell');
+  const show = Boolean(entry.ai) && v?.cls !== 'none' && usedCall && entry.kind !== 'clothes' && (n == null ? !usedRef(entry) : n < THIN);
+  link.hidden = !show;
+  if (!show) return;
+  const links = marketOf(entry).links || [];
+  const [label, base] = links.find(([l]) => /carousell|ebay|vinted|olx|kaidee|gumtree/i.test(l)) || links[0] || ['Google', 'https://www.google.com/search?q='];
+  link.href = `${base}${encodeURIComponent(shortQuery(searchQuery(entry)))}`;
+  link.textContent = n ? `Used price is from only ${n} listing${n === 1 ? '' : 's'}. Check ${label} before you buy ›` : `No used listings found. Check ${label} before you buy ›`;
 }
 
 function renderSourceLines(entry) {

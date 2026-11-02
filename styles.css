@@ -1912,3 +1912,5 @@ html[data-typing] .bottom-nav { display: none; }
 .empty-note { color: var(--muted); padding: 24px 4px; text-align: center; }
 /* Grid cards: the deal badge gets the photo's width (minus the heart), not half of it */
 html[data-list="grid"] .history-item > .tag { max-width: calc(100% - 58px); padding: 4px 9px; font-size: 0.72rem; }
+.verdict-check { display: block; margin-top: 8px; font-size: 0.88rem; font-weight: 600; color: var(--warn); text-decoration: none; }
+.deal.thin { background: var(--warn-bg); color: var(--warn); }

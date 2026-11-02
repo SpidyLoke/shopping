@@ -46,13 +46,14 @@ test('costs from Settings come off the profit, and MY used says what it rests on
   await page.fill('#sellFeeInput', '10');
   await page.fill('#extraCostInput', '10');
   await page.click('#settingsView h1'); // typed fields save when they lose focus
-  // RM 300 + RM 6 card fee + RM 10 = RM 316; RM 400 less 10% = RM 360; RM 44 left.
+  // RM 300 + RM 6 card fee + RM 10 = RM 316; the cheapest used one, RM 390, less 10% = RM 351; RM 35 left,
+  // and only two listings behind it, so it's flagged as a guess.
   await page.goto('/#/scan/Flip');
-  await expect(page.locator('#dealTags .deal').first()).toHaveText('RM 44 profit reselling');
-  await expect(page.locator('#dealTags .deal').first()).toHaveAttribute('title', /sold prices\), RM 360 after the 10% selling fee\. It costs you RM 316 with the RM 6 card fee and RM 10 extra\./);
+  await expect(page.locator('#dealTags .deal').first()).toHaveText('RM 35 profit reselling?');
+  await expect(page.locator('#dealTags .deal').first()).toHaveAttribute('title', /cheapest used one in Malaysia is about RM 390 \(sold prices\), RM 351 after the 10% selling fee\. That's from only 2 listings: check second-hand prices yourself before buying\. It costs you RM 316 with the RM 6 card fee and RM 10 extra\./);
   await expect(page.locator('#myUsedHead')).toHaveText('MY used · sold');
   await page.goto('/#/history');
-  await expect(page.locator('#historyList .history-item .tag')).toHaveText('Resell +RM 44');
+  await expect(page.locator('#historyList .history-item .tag')).toHaveText('Resell +RM 35');
 });
 
 test('clothes priced only from a different design say No exact match', async ({ page }) => {
@@ -171,4 +172,16 @@ test('the prompt asks for the brand\'s official price, even in Quick mode', asyn
   await expect.poll(() => calls.gemini.length).toBe(1);
   expect(calls.gemini[0].prompt).toContain("Only search Shopee and Carousell Malaysia and the brand's official store.");
   expect(calls.gemini[0].prompt).toContain('"official_price"');
+});
+
+test('a used call resting on one listing is flagged, with a link to check Carousell before buying', async ({ page }) => {
+  await mockApis(page, { rates: { JPY: 0.0258 } });
+  const cpu = scan('CPU', { product_name: 'Intel Core i9-12900K Processor', search_query: 'Intel Core i9-12900K', my_used: { typical: 1300 }, listings: [
+    { platform: 'Carousell', condition: 'used', title: 'Intel Core i9-12900K Processor', price_rm: 1300, exact_model: true },
+  ] }, { yen: 44900, secondHand: true });
+  await openApp(page, { settings: { fxFee: 0 }, history: [cpu] });
+  await page.goto('/#/scan/CPU');
+  await expect(page.locator('#dealTags .deal.thin')).toContainText('profit reselling?');
+  await expect(page.locator('#verdictCheck')).toHaveText('Used price is from only 1 listing. Check Carousell before you buy ›');
+  await expect(page.locator('#verdictCheck')).toHaveAttribute('href', 'https://www.carousell.com.my/search/Intel%20Core%20i9-12900K');
 });

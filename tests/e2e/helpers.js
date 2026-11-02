@@ -13,8 +13,9 @@ function withListings(ai, overrides) {
   if (overrides.listings !== undefined) return ai;
   const fig = (r) => r && (r.typical || (r.low && r.high ? (r.low + r.high) / 2 : r.low || r.high));
   const title = [ai.product_name, ai.variant].filter(Boolean).join(' ');
+  // Used figures get three listings: fewer and the app flags the resale call as a guess.
   const listings = [['new', ai.my_new], ['used', ai.my_used]].filter(([, r]) => fig(r))
-    .map(([condition, r]) => ({ platform: 'Shopee', condition, title, price_rm: fig(r), exact_model: true }));
+    .flatMap(([condition, r]) => Array.from({ length: condition === 'used' ? 3 : 1 }, () => ({ platform: 'Shopee', condition, title, price_rm: fig(r), exact_model: true })));
   return { ...ai, listings };
 }
 
