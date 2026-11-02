@@ -6,7 +6,7 @@ import { buildPrompt, findBarcodes, gtinValid, MARKETS, marketFor } from './prom
 import { FIREBASE } from './firebase-config.js';
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.11.02-6';
+const APP_VERSION = '2026.11.02-7';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -1381,7 +1381,7 @@ function baseVerdict(entry) {
     const off = officialPrice(entry);
     if (off?.rm) return officialVerdict(jp, off);
     if (rescuing.has(entry.id)) return { cls: 'none', label: `Searching ${M().adj} shops…`, detail: `The first search found no ${M().adj} prices, so it's asking shops in ${M().name} directly.` };
-    return { cls: 'none', label: `No ${M().adj} prices found`, detail: `Not sold in ${M().name} that we could find. Check again, or tap Google below to look further.` };
+    return { cls: 'none', label: `No ${M().adj} prices found`, detail: `Not sold in ${M().name} that we could find.${rescueNote(entry)} Check again, or tap Google below to look further.` };
   }
   return entry.secondHand ? usedVerdict(entry, jp, myNew, myUsed) : newVerdict(jp, myNew, myUsed);
 }
@@ -1845,29 +1845,47 @@ Reply with only a JSON object:
 Up to 4 new and 4 used. price_rm is the price in ${m.currency}.`;
 }
 
+// Runs when a scan finishes and whenever a scan with no home prices is opened, so one that finished
+// while the app was in the background (where the request gets cut off) still gets its second look.
+// A failed look is tried again on the next open, at most once a minute.
 async function rescuePrices(entry) {
-  if (!entry?.ai || entry.rescued || rescuing.has(entry.id) || ['clothes', 'shelf'].includes(entry.kind) || entry.findMode) return;
-  if (homeValue(entry, 'new') || homeValue(entry, 'used') || !canScan()) return;
+  if (!entry?.ai || entry.rescued || rescuing.has(entry.id) || running.has(entry.id) || ['clothes', 'shelf'].includes(entry.kind) || entry.findMode) return;
+  if (homeValue(entry, 'new') || homeValue(entry, 'used') || !canScan() || !navigator.onLine) return;
+  if (entry.rescue?.error && Date.now() - entry.rescue.at < 60000) return;
   entry.rescued = true;
   rescuing.add(entry.id);
   refresh(entry);
   try {
     const { json } = await callGemini(null, rescuePrompt(entry), { hurry: true, links: true });
-    const found = (Array.isArray(json?.listings) ? json.listings : []).filter((l) => l && toNum(l.price_rm) > 0 && l.exact_model !== false && !overseasListing(entry, l));
-    if (found.length) {
-      entry.ai.listings = [...(Array.isArray(entry.ai.listings) ? entry.ai.listings : []), ...found.map((l) => ({ ...l, platform: l.platform || 'Other', second_look: true }))];
-      for (const [key, kind] of [['my_new', 'new'], ['my_used', 'used']]) {
-        const prices = found.filter((l) => String(l.condition || '').toLowerCase().startsWith(kind === 'new' ? 'new' : 'use')).map((l) => toNum(l.price_rm)).sort((a, b) => a - b);
-        if (!prices.length || rangeValue(entry.ai[key])) continue;
-        const n = prices.length;
-        entry.ai[key] = { low: prices[0], high: prices[n - 1], typical: n % 2 ? prices[(n - 1) / 2] : (prices[n / 2 - 1] + prices[n / 2]) / 2 };
-      }
+    const all = (Array.isArray(json?.listings) ? json.listings : []).filter((l) => l && toNum(l.price_rm) > 0 && l.exact_model !== false);
+    // "Brand new", "Like new", "Pre-owned"…: anything not second-hand counts as new.
+    const used = (l) => /used|second|pre-?owned|refurb|like new|ex-?demo|中古/i.test(`${l.condition || ''}`);
+    const marked = all.map((l) => ({ ...l, condition: used(l) ? 'used' : 'new', platform: l.platform || 'Other', second_look: true }));
+    const home = marked.filter((l) => !overseasListing(entry, l));
+    // Overseas ones are kept (tagged) so you can see them, but only home ones set the figures.
+    entry.ai.listings = [...(Array.isArray(entry.ai.listings) ? entry.ai.listings : []), ...marked];
+    for (const [key, kind] of [['my_new', 'new'], ['my_used', 'used']]) {
+      const prices = home.filter((l) => l.condition === kind).map((l) => toNum(l.price_rm)).sort((a, b) => a - b);
+      if (!prices.length || rangeValue(entry.ai[key])) continue;
+      const n = prices.length;
+      entry.ai[key] = { low: prices[0], high: prices[n - 1], typical: n % 2 ? prices[(n - 1) / 2] : (prices[n / 2 - 1] + prices[n / 2]) / 2 };
     }
-  } catch {
-    // The first answer stands; Check again is still there.
+    entry.rescue = { at: Date.now(), home: home.length, overseas: marked.length - home.length };
+  } catch (e) {
+    entry.rescued = false;
+    entry.rescue = { at: Date.now(), error: e.message };
   }
   rescuing.delete(entry.id);
   refresh(entry);
+}
+
+// What the second look found, for the verdict when there are still no home prices.
+function rescueNote(entry) {
+  const r = entry.rescue;
+  if (!r) return '';
+  if (r.error) return ` A second search couldn't finish (${friendlyError(r.error).replace(/\.$/, '')}); it tries again when you reopen this.`;
+  if (r.overseas) return ` A second search of ${M().name} shops found only shops based abroad (tap ${M().short} new to see them).`;
+  return ` A second search of ${M().name} shops found nothing either.`;
 }
 
 async function lookupCex(entry, update) {
@@ -4650,6 +4668,7 @@ function route(keepScroll = false) {
       if (current?.id !== entry.id) currentImageB64 = null;
       renderResult(entry);
       show('resultView', keepScroll);
+      rescuePrices(entry);
       return;
     }
   }

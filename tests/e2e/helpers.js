@@ -28,6 +28,7 @@ function product(overrides = {}) {
   }, overrides);
 }
 
+const DEFAULT_GEMINI = () => product();
 const geminiReply = (json) => ({ candidates: [{ content: { parts: [{ text: `\`\`\`json\n${JSON.stringify(json)}\n\`\`\`` }] } }] });
 
 /**
@@ -36,7 +37,7 @@ const geminiReply = (json) => ({ candidates: [{ content: { parts: [{ text: `\`\`
  * vision(index) returns the OCR text for each photo in a request.
  * rates maps currency → MYR.
  */
-async function mockApis(page, { gemini = () => product(), vision = () => '税込 ¥11,480', cexHits = [], rates = { JPY: 0.0278, USD: 4.4, SGD: 3.3 } } = {}) {
+async function mockApis(page, { gemini = DEFAULT_GEMINI, vision = () => '税込 ¥11,480', cexHits = [], rates = { JPY: 0.0278, USD: 4.4, SGD: 3.3 } } = {}) {
   const calls = { gemini: [], vision: [], cex: 0, rates: [] };
   // No Kaimono backend unless a test asks for one (cloud.js); the real project's config stays out.
   await page.route('**/firebase-config.js', (r) => r.fulfill({ contentType: 'text/javascript', body: 'export const FIREBASE = null;' }));
@@ -65,7 +66,8 @@ async function mockApis(page, { gemini = () => product(), vision = () => '税込
     const parts = body.contents[0].parts;
     const prompt = parts.at(-1).text;
     calls.gemini.push({ prompt, images: parts.filter((x) => x.inline_data).length, search: Boolean(body.tools) });
-    const reply = await gemini(prompt, body);
+    // The second look for home prices finds nothing unless a test answers it itself.
+    const reply = gemini === DEFAULT_GEMINI && prompt.includes('sells for in') ? { listings: [] } : await gemini(prompt, body);
     // { status: 503, error: '…' } answers as Gemini's error; a string as plain text.
     if (reply && reply.status >= 400 && reply.error) return r.fulfill({ status: reply.status, json: { error: { code: reply.status, message: reply.error, status: 'UNAVAILABLE' } } });
     r.fulfill({ json: typeof reply === 'string' ? { candidates: [{ content: { parts: [{ text: reply }] } }] } : geminiReply(reply) });

@@ -399,3 +399,16 @@ test('no home prices: one second look asks home shops directly, and a shop label
   await page.waitForTimeout(500);
   expect(calls.gemini.filter((c) => c.prompt.includes('sells for in Malaysia'))).toHaveLength(1);
 });
+
+test('opening an old scan with no home prices takes the second look, and says when only overseas shops turned up', async ({ page }) => {
+  await mockApis(page, {
+    gemini: (p) => (p.includes('sells for in Malaysia') ? { listings: [
+      { platform: 'Techinn', condition: 'Brand new', title: 'Intel Core i9-12900K', price_rm: 1778, url: 'https://www.tradeinn.com/techinn/x', seller_country: 'ES', exact_model: true },
+    ] } : product()),
+  });
+  await openApp(page, { history: [scan('CPU', { product_name: 'Intel Core i9-12900K Processor', my_new: null, my_used: null }, { yen: 44900 })] });
+  await page.goto('/#/scan/CPU');
+  await expect(page.locator('#verdictDetail')).toContainText('found only shops based abroad');
+  await page.click('#myNew');
+  await expect(page.locator('.source-item', { hasText: 'Overseas shop' })).toHaveCount(1);
+});
