@@ -6,7 +6,7 @@ import { buildPrompt, findBarcodes, gtinValid, MARKETS, marketFor } from './prom
 import { FIREBASE } from './firebase-config.js';
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.11.02-8';
+const APP_VERSION = '2026.11.02-9';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -1394,7 +1394,8 @@ function baseVerdict(entry) {
     const off = officialPrice(entry);
     if (off?.rm) return officialVerdict(jp, off);
     if (rescuing.has(entry.id)) return { cls: 'none', label: `Searching ${M().adj} shops…`, detail: `The first search found no ${M().adj} prices, so it's asking shops in ${M().name} directly.` };
-    return { cls: 'none', label: `No ${M().adj} prices found`, detail: `Not sold in ${M().name} that we could find.${rescueNote(entry)} Check again, or tap Google below to look further.` };
+    const note = rescueNote(entry);
+    return { cls: 'none', label: `No ${M().adj} prices found`, noPrices: true, detail: `${note.includes("isn't sold") ? note.trim() : `Not sold in ${M().name} that we could find.${note}`} Check again, or find where to buy it, overseas shops included.` };
   }
   return entry.secondHand ? usedVerdict(entry, jp, myNew, myUsed) : newVerdict(jp, myNew, myUsed);
 }
@@ -1851,10 +1852,10 @@ function rescuePrompt(entry) {
   const name = entry.override || ai.product_name || entry.webGuess || '';
   return `Find what this exact product sells for in ${m.name}: "${name}"${ai.variant && !entry.override ? ` (${ai.variant})` : ''}${ai.brand ? ` by ${ai.brand}` : ''}.
 Use Google Search: specialist shops for this kind of product in ${m.name}, the brand's ${m.name} distributor, big retailers, ${m.quickShops || 'the main marketplaces'}, and second-hand listings in ${m.name}. Try the model code on its own too.
-Only sellers based in ${m.name} with prices in ${m.currency}, and only the exact same model and variant: leave out other versions, mounts, sizes, bundles and accessories.
+Only sellers based in ${m.name} with prices in ${m.currency}. Exact same model and variant first; leave out bundles and accessories. If the exact model isn't sold in ${m.name}, also list up to 4 of the closest similar models that are (e.g. the consumer version of an enterprise device), with "exact_model": false and what differs in "match_note".
 Copy each URL exactly from a page your search returned; if you don't have the real address, use null. Never invent a price.
 Reply with only a JSON object:
-{"listings": [{"platform": "shop or marketplace name", "condition": "new | used", "title": "listing title exactly as shown", "price_rm": 0, "url": "URL or null", "seller_country": "${m.code}", "exact_model": true, "sold": false}]}
+{"listings": [{"platform": "shop or marketplace name", "condition": "new | used", "title": "listing title exactly as shown", "price_rm": 0, "url": "URL or null", "seller_country": "${m.code}", "exact_model": true, "match_note": "for a similar model, what differs", "sold": false}]}
 Up to 4 new and 4 used. price_rm is the price in ${m.currency}.`;
 }
 
@@ -1870,11 +1871,13 @@ async function rescuePrices(entry) {
   refresh(entry);
   try {
     const { json } = await callGemini(null, rescuePrompt(entry), { hurry: true, links: true });
-    const all = (Array.isArray(json?.listings) ? json.listings : []).filter((l) => l && toNum(l.price_rm) > 0 && l.exact_model !== false);
+    // Similar models (exact_model false) are kept and shown, never counted: the nearest thing you can get.
+    const all = (Array.isArray(json?.listings) ? json.listings : []).filter((l) => l && toNum(l.price_rm) > 0);
     // "Brand new", "Like new", "Pre-owned"…: anything not second-hand counts as new.
     const used = (l) => /used|second|pre-?owned|refurb|like new|ex-?demo|中古/i.test(`${l.condition || ''}`);
     const marked = all.map((l) => ({ ...l, condition: used(l) ? 'used' : 'new', platform: l.platform || 'Other', second_look: true }));
-    const home = marked.filter((l) => !overseasListing(entry, l));
+    const home = marked.filter((l) => !overseasListing(entry, l) && l.exact_model !== false);
+    const similar = marked.filter((l) => !overseasListing(entry, l) && l.exact_model === false).map((l) => toNum(l.price_rm)).sort((a, b) => a - b);
     // Overseas ones are kept (tagged) so you can see them, but only home ones set the figures.
     entry.ai.listings = [...(Array.isArray(entry.ai.listings) ? entry.ai.listings : []), ...marked];
     for (const [key, kind] of [['my_new', 'new'], ['my_used', 'used']]) {
@@ -1883,7 +1886,7 @@ async function rescuePrices(entry) {
       const n = prices.length;
       entry.ai[key] = { low: prices[0], high: prices[n - 1], typical: n % 2 ? prices[(n - 1) / 2] : (prices[n / 2 - 1] + prices[n / 2]) / 2 };
     }
-    entry.rescue = { at: Date.now(), home: home.length, overseas: marked.length - home.length };
+    entry.rescue = { at: Date.now(), home: home.length, overseas: marked.filter((l) => overseasListing(entry, l)).length, similar: similar.length, similarLow: similar[0] ?? null, similarHigh: similar.at(-1) ?? null };
   } catch (e) {
     entry.rescued = false;
     entry.rescue = { at: Date.now(), error: e.message };
@@ -1897,6 +1900,10 @@ function rescueNote(entry) {
   const r = entry.rescue;
   if (!r) return '';
   if (r.error) return ` A second search couldn't finish (${friendlyError(r.error).replace(/\.$/, '')}); it tries again when you reopen this.`;
+  if (r.similar) {
+    const range = r.similarLow === r.similarHigh ? rm(r.similarLow) : `${rm(r.similarLow)} to ${rm(r.similarHigh)}`;
+    return ` This exact model isn't sold in ${M().name} that we could find; similar ones go for ${range} (tap ${M().short} new or used to see them).`;
+  }
   if (r.overseas) return ` A second search of ${M().name} shops found only shops based abroad (tap ${M().short} new to see them).`;
   return ` A second search of ${M().name} shops found nothing either.`;
 }
@@ -3456,7 +3463,9 @@ function renderPricesIn(entry) {
     renderVerdictCheck(entry, v);
     $('.price-main').classList.toggle('need-price', Boolean(v.needPrice));
     $('#shareBtn').hidden = Boolean(v.needPrice);
-    $('#findBtn').hidden = !(v.needPrice && entry.ai);
+    // No price to judge, or nothing at home to judge it against: where could you buy it instead?
+    $('#findBtn').hidden = !((v.needPrice || v.noPrices) && entry.ai);
+    $('#findBtn').textContent = v.noPrices ? 'Find where to buy it' : 'Just find where to buy it';
     // Nothing found: a full re-check is the obvious next step, so it's right here.
     $('#verdictRecheck').hidden = !(v.cls === 'none' && entry.ai && !running.has(entry.id) && toNum(entry.yen));
     $('#verdictRecheck').textContent = entry.quick ? 'Run a full check' : 'Check again';

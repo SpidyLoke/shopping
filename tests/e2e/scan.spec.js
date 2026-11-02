@@ -412,3 +412,19 @@ test('opening an old scan with no home prices takes the second look, and says wh
   await page.click('#myNew');
   await expect(page.locator('.source-item', { hasText: 'Overseas shop' })).toHaveCount(1);
 });
+
+test('no exact model at home: the nearest similar ones are shown (not counted), and Find it is offered', async ({ page }) => {
+  await mockApis(page, {
+    gemini: (p) => (p.includes('sells for in Malaysia') ? { listings: [
+      { platform: 'Carousell', condition: 'used', title: 'Pico Neo 3 Link 256GB', price_rm: 750, url: null, seller_country: 'MY', exact_model: false, match_note: 'Neo 3 Link, the consumer version' },
+      { platform: 'Mudah', condition: 'used', title: 'Pico Neo 3 128GB', price_rm: 380, url: null, seller_country: 'MY', exact_model: false, match_note: 'consumer version, 128GB' },
+    ] } : product()),
+  });
+  await openApp(page, { history: [scan('VR', { product_name: 'Pico Neo 3 Pro', my_new: null, my_used: null }, { yen: 27980, secondHand: true })] });
+  await page.goto('/#/scan/VR');
+  await expect(page.locator('#verdictDetail')).toContainText("isn't sold in Malaysia that we could find; similar ones go for RM 380 to RM 750");
+  await expect(page.locator('#myUsed')).toHaveText('–');
+  await expect(page.locator('#findBtn')).toHaveText('Find where to buy it');
+  await page.click('#myUsed');
+  await expect(page.locator('.source-item')).toHaveCount(2);
+});
