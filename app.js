@@ -6,7 +6,7 @@ import { buildPrompt, findBarcodes, gtinValid, MARKETS, marketFor } from './prom
 import { FIREBASE } from './firebase-config.js';
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.11.02-5';
+const APP_VERSION = '2026.11.02-6';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -1380,6 +1380,7 @@ function baseVerdict(entry) {
   if (!myNew && !myUsed) {
     const off = officialPrice(entry);
     if (off?.rm) return officialVerdict(jp, off);
+    if (rescuing.has(entry.id)) return { cls: 'none', label: `Searching ${M().adj} shops…`, detail: `The first search found no ${M().adj} prices, so it's asking shops in ${M().name} directly.` };
     return { cls: 'none', label: `No ${M().adj} prices found`, detail: `Not sold in ${M().name} that we could find. Check again, or tap Google below to look further.` };
   }
   return entry.secondHand ? usedVerdict(entry, jp, myNew, myUsed) : newVerdict(jp, myNew, myUsed);
@@ -1712,6 +1713,7 @@ async function runScan(entry, imageB64, { quiet = false } = {}) {
   reportScanErrors(entry);
   update();
   if (!quiet) notifyDone();
+  rescuePrices(entry);
 }
 
 // ---------- "it's ready" buzz ----------
@@ -1802,7 +1804,10 @@ function applyAi(entry, ai, sources) {
   entry.sources = sources;
   const said = String(ai.barcode || '').replace(/\D/g, '');
   const read = findBarcodes(entry.ocrText);
-  entry.barcode = [8, 12, 13].includes(said.length) && gtinValid(said) ? said : read[0] || null;
+  // A 13-digit number starting with 2 is a shop's own stock label, never the product's barcode.
+  const real = (code) => [8, 12, 13].includes(code.length) && gtinValid(code) && !(code.length === 13 && code[0] === '2');
+  entry.barcode = real(said) ? said : read[0] || null;
+  entry.rescued = false; // a fresh answer may need its own second look for home prices
   entry.byBarcode = Boolean(entry.barcode) && (ai.identified_by === 'barcode' || (read.includes(entry.barcode) && ai.identified_by !== 'appearance'));
   // A graded or 中古 tag means a used item even if the app was in New mode; compare it like for like.
   if (ai.condition?.is_used === true && !entry.secondHand && !entry.secondHandEdited) {
@@ -1819,6 +1824,50 @@ function applyAi(entry, ai, sources) {
     if (typeof taxIncl === 'boolean') entry.taxIncluded = taxIncl;
   }
   entry.status.search = 'done';
+}
+
+// ---------- a second look for home prices ----------
+// A scan's one big search sometimes comes back with no home prices for something plainly sold there
+// (a Tamron lens at YL Camera and Shopee). Then one narrow follow-up asks only for listings in the
+// home country, new and used, and their middle price becomes the figure. Once per answer.
+const rescuing = new Set();
+
+function rescuePrompt(entry) {
+  const ai = entry.ai || {};
+  const m = marketOf(entry);
+  const name = entry.override || ai.product_name || entry.webGuess || '';
+  return `Find what this exact product sells for in ${m.name}: "${name}"${ai.variant && !entry.override ? ` (${ai.variant})` : ''}${ai.brand ? ` by ${ai.brand}` : ''}.
+Use Google Search: specialist shops for this kind of product in ${m.name}, the brand's ${m.name} distributor, big retailers, ${m.quickShops || 'the main marketplaces'}, and second-hand listings in ${m.name}. Try the model code on its own too.
+Only sellers based in ${m.name} with prices in ${m.currency}, and only the exact same model and variant: leave out other versions, mounts, sizes, bundles and accessories.
+Copy each URL exactly from a page your search returned; if you don't have the real address, use null. Never invent a price.
+Reply with only a JSON object:
+{"listings": [{"platform": "shop or marketplace name", "condition": "new | used", "title": "listing title exactly as shown", "price_rm": 0, "url": "URL or null", "seller_country": "${m.code}", "exact_model": true, "sold": false}]}
+Up to 4 new and 4 used. price_rm is the price in ${m.currency}.`;
+}
+
+async function rescuePrices(entry) {
+  if (!entry?.ai || entry.rescued || rescuing.has(entry.id) || ['clothes', 'shelf'].includes(entry.kind) || entry.findMode) return;
+  if (homeValue(entry, 'new') || homeValue(entry, 'used') || !canScan()) return;
+  entry.rescued = true;
+  rescuing.add(entry.id);
+  refresh(entry);
+  try {
+    const { json } = await callGemini(null, rescuePrompt(entry), { hurry: true, links: true });
+    const found = (Array.isArray(json?.listings) ? json.listings : []).filter((l) => l && toNum(l.price_rm) > 0 && l.exact_model !== false && !overseasListing(entry, l));
+    if (found.length) {
+      entry.ai.listings = [...(Array.isArray(entry.ai.listings) ? entry.ai.listings : []), ...found.map((l) => ({ ...l, platform: l.platform || 'Other', second_look: true }))];
+      for (const [key, kind] of [['my_new', 'new'], ['my_used', 'used']]) {
+        const prices = found.filter((l) => String(l.condition || '').toLowerCase().startsWith(kind === 'new' ? 'new' : 'use')).map((l) => toNum(l.price_rm)).sort((a, b) => a - b);
+        if (!prices.length || rangeValue(entry.ai[key])) continue;
+        const n = prices.length;
+        entry.ai[key] = { low: prices[0], high: prices[n - 1], typical: n % 2 ? prices[(n - 1) / 2] : (prices[n / 2 - 1] + prices[n / 2]) / 2 };
+      }
+    }
+  } catch {
+    // The first answer stands; Check again is still there.
+  }
+  rescuing.delete(entry.id);
+  refresh(entry);
 }
 
 async function lookupCex(entry, update) {
@@ -2079,6 +2128,7 @@ async function applyServerResult(entry, out, { quiet = false } = {}) {
   update();
   if (!quiet) notifyDone();
   if (entry.ai && settings.autoInfo && !entry.info) loadInfo(entry.id);
+  rescuePrices(entry);
   // Google's servers sit outside Malaysia and CeX may refuse them, so try from the phone as well.
   if (entry.ai && !entry.cex?.found && entry.kind !== 'clothes') await lookupCex(entry, update);
 }

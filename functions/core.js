@@ -537,8 +537,9 @@ export async function runAsk(input, { uid, ipHash = null, deps }) {
     // "Find it" lists shops: open each link once, as for a scan's listings.
     if (input.links === true && !ocrOnly && deps.checkLinks !== false) {
       const json = parseJson(out.text);
-      if (Array.isArray(json?.shops)) {
-        await checkLinks(deps, { listings: json.shops }).catch(() => {});
+      const list = Array.isArray(json?.shops) ? json.shops : Array.isArray(json?.listings) ? json.listings : null;
+      if (list) {
+        await checkLinks(deps, { listings: list }).catch(() => {});
         out.text = fence(json);
       }
     }

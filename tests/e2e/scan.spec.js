@@ -191,7 +191,7 @@ test('CeX: a row that leaves the brand out, or names a sub-brand too, still matc
 test('a scan with no prices can be checked again from the result, in any list style', async ({ page }) => {
   let n = 0;
   const calls = await mockApis(page, {
-    gemini: () => (++n === 1 ? product({ my_new: null, my_used: null }) : product({ my_new: { typical: 600 } })),
+    gemini: (p) => (p.includes('sells for in') ? { listings: [] } : ++n === 1 ? product({ my_new: null, my_used: null }) : product({ my_new: { typical: 600 } })),
   });
   await openApp(page, { settings: { listStyle: 'grid' } });
   await scanFromGallery(page);
@@ -202,7 +202,7 @@ test('a scan with no prices can be checked again from the result, in any list st
   await page.click('#verdictRecheck');
   await expect(page.locator('#myNew')).toHaveText('RM 600');
   await expect(page.locator('#verdictRecheck')).toBeHidden();
-  expect(calls.gemini.length).toBe(2);
+  expect(calls.gemini.filter((c) => !c.prompt.includes('sells for in')).length).toBe(2);
 });
 
 test('a listing whose link was broken offers a search of that shop instead', async ({ page }) => {
@@ -375,4 +375,27 @@ test('prices form one ladder, dearest first, with what you pay placed among them
   await expect(page.locator('#verdict #yenInput')).toBeVisible();
   await expect(page.locator('#verdict #favBtn')).toBeVisible();
   await expect(page.locator('#verdict #boughtBtn')).toBeVisible();
+});
+
+test('no home prices: one second look asks home shops directly, and a shop label is no barcode', async ({ page }) => {
+  const calls = await mockApis(page, {
+    vision: () => '中古 ¥74,980 2133076732686',
+    gemini: (p) => (p.includes('sells for in Malaysia') ? { listings: [
+      { platform: 'YL Camera', condition: 'new', title: 'Tamron 28-200mm F2.8-5.6 Di III RXD A071 Sony E', price_rm: 2399, url: 'https://ylcamera.example.my/a071', seller_country: 'MY', exact_model: true },
+      { platform: 'Shopee', condition: 'new', title: 'Tamron 28-200mm A071 Sony E-mount', price_rm: 2599, url: null, seller_country: 'MY', exact_model: true },
+      { platform: 'Carousell', condition: 'used', title: 'Tamron 28-200 A071 Sony', price_rm: 1800, url: null, seller_country: 'MY', exact_model: true },
+    ] } : product({ product_name: 'Tamron 28-200mm F/2.8-5.6 Di III RXD A071 for Sony E', search_query: 'Tamron 28-200mm A071', price: 74980,
+      barcode: '2133076732686', identified_by: 'barcode', my_new: null, my_used: null })),
+  });
+  await openApp(page);
+  await scanFromGallery(page);
+  await expect(page.locator('#myNew')).toHaveText('RM 2,499', { timeout: 15000 });
+  await expect(page.locator('#myUsed')).toHaveText('RM 1,800');
+  await expect(page.locator('#resIdLine')).toBeHidden(); // no "Barcode match" for a shop label
+  expect(calls.gemini.filter((c) => c.prompt.includes('sells for in Malaysia'))).toHaveLength(1);
+  // Opening it again doesn't ask again
+  await page.goto('/#/');
+  await page.goBack();
+  await page.waitForTimeout(500);
+  expect(calls.gemini.filter((c) => c.prompt.includes('sells for in Malaysia'))).toHaveLength(1);
 });

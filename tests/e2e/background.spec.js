@@ -35,7 +35,8 @@ test('a scan finishes on the server even when the phone closes after sending it'
   await openApp(page, { settings: { serverUrl: 'https://script.google.com/macros/s/TEST/exec', telegram: { token: 't', chatId: 5, bot: 'kaimono_bot' } } });
   await page.setInputFiles('#galleryInput', [fixture('tag.jpg')]);
   await expect(page.locator('#resName')).toHaveText('Sony DualSense Controller', { timeout: 20_000 });
-  expect(calls.gemini.length).toBe(0); // Google is called by the server, not the phone
+  // Google prices the scan on the server, not the phone (the phone may only take a second look for home prices)
+  expect(calls.gemini.filter((c) => !c.prompt.includes('sells for in')).length).toBe(0);
   expect(actions).toEqual(expect.arrayContaining(['scan', 'result']));
   expect(log.some((l) => l.url.includes('api.telegram.org') && l.url.includes('sendMessage'))).toBe(true);
 
