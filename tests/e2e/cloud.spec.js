@@ -1,4 +1,4 @@
-// Scanning with a Kaimono account: no API keys on the phone, a monthly allowance, the barcode cache.
+// Scanning with a Tagwise account: no API keys on the phone, a monthly allowance, the barcode cache.
 const { test, expect } = require('@playwright/test');
 const { mockApis, openApp, scanFromGallery, product } = require('./helpers');
 const { mockCloud } = require('./cloud');
@@ -6,7 +6,7 @@ const { mockCloud } = require('./cloud');
 // The service worker would fetch firebase-config.js itself, past the stubs.
 test.use({ serviceWorkers: 'block' });
 
-test('with no keys, a scan goes through the Kaimono backend and counts against the allowance', async ({ page }) => {
+test('with no keys, a scan goes through the Tagwise backend and counts against the allowance', async ({ page }) => {
   const google = await mockApis(page);
   const cloud = await mockCloud(page);
   await openApp(page, { settings: { apiKey: '' } });

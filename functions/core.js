@@ -1,4 +1,4 @@
-// Kaimono backend: one scan, run with the API keys held here instead of on the phone.
+// Tagwise backend: one scan, run with the API keys held here instead of on the phone.
 //
 // Pure logic. index.js wires in Firestore, the keys and fetch; the tests run the same code with
 // fakes. Each scan:
@@ -98,7 +98,7 @@ async function reserve(db, { uid, ipHash, now, limits }) {
       throw new ScanError('resource-exhausted', message, { reason: 'quota', ...u });
     }
     if ((counter.scans || 0) >= limits.daily) {
-      throw new ScanError('resource-exhausted', 'Kaimono has hit its scan limit for today. Try again tomorrow, or scan with your own keys (Settings).', { reason: 'daily' });
+      throw new ScanError('resource-exhausted', 'Tagwise has hit its scan limit for today. Try again tomorrow, or scan with your own keys (Settings).', { reason: 'daily' });
     }
     if (ip && !limits.unlimited && (ip.scans || 0) >= limits.perIp) {
       throw new ScanError('resource-exhausted', 'Too many scans from this connection today.', { reason: 'connection' });
@@ -511,7 +511,7 @@ async function reserveAsk(db, { uid, ipHash, now, limits }) {
     const limit = limits.unlimited ? null : planOf(user, now) === 'free' ? limits.freeAsks : limits.proAsks;
     const used = user.asksMonth === month ? user.asksUsed || 0 : 0;
     if (limit != null && used >= limit) throw new ScanError('resource-exhausted', `No questions left this month (${limit} a month).`, { reason: 'asks', used, limit });
-    if ((counter.asks || 0) >= limits.dailyAsks) throw new ScanError('resource-exhausted', 'Kaimono has hit its limit for today. Try again tomorrow.', { reason: 'daily' });
+    if ((counter.asks || 0) >= limits.dailyAsks) throw new ScanError('resource-exhausted', 'Tagwise has hit its limit for today. Try again tomorrow.', { reason: 'daily' });
     if (ip && !limits.unlimited && (ip.asks || 0) >= limits.perIp * 3) throw new ScanError('resource-exhausted', 'Too many requests from this connection today.', { reason: 'connection' });
     t.set(`users/${uid}`, { ...user, asksMonth: month, asksUsed: used + 1, updatedAt: now });
     t.set(`counters/asks-${day}`, { asks: (counter.asks || 0) + 1 });

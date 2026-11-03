@@ -105,7 +105,7 @@ test('Share this find makes a picture of the result', async ({ page }) => {
   await openApp(page, { history: [at300('Flip', { my_used: { typical: 400 }, my_new: { typical: 600 } })], settings: { fxFee: 0 } });
   await page.goto('/#/scan/Flip');
   const [download] = await Promise.all([page.waitForEvent('download'), page.click('#shareBtn')]);
-  expect(download.suggestedFilename()).toBe('kaimono-flip.jpg');
+  expect(download.suggestedFilename()).toBe('tagwise-flip.jpg');
   const size = require('fs').statSync(await download.path()).size;
   expect(size).toBeGreaterThan(20000);
 });

@@ -1,4 +1,4 @@
-# Kaimono Check
+# Tagwise
 
 **Live app:** https://spidyloke.github.io/shopping/
 **About page:** https://spidyloke.github.io/shopping/about/ (also linked at the bottom of Settings)
@@ -11,7 +11,7 @@ Phone web app for shopping in Japan. Snap a box, price tag or shelf label and it
 4. Converts the yen price to RM at the day's rate and gives a Buy / Marginal / Skip verdict
 5. Saves every scan to history on your phone
 
-It's a static site on GitHub Pages and installs to your home screen like an app. It scans either with your own Google API keys (they stay on your phone) or, once the Kaimono backend is set up, with a Kaimono account: no keys needed, a monthly allowance of scans (see [Kaimono backend](#kaimono-backend-firebase)).
+It's a static site on GitHub Pages and installs to your home screen like an app. It scans either with your own Google API keys (they stay on your phone) or, once the Tagwise backend is set up, with a Tagwise account: no keys needed, a monthly allowance of scans (see [Tagwise backend](#kaimono-backend-firebase)).
 
 ### Home country
 
@@ -61,10 +61,10 @@ Free tiers at time of writing: Vision gives 1,000 units a month per feature (eac
 
 Phones cut a web app's connections a few seconds after you switch away or close it, so a scan in progress fails. A free Google Apps Script "scan server" fixes that: the app hands each scan to it, it finishes the work on Google's side, and the app picks up the result next time it's open. It also sends you a Telegram message when each scan is done.
 
-1. Go to [script.google.com](https://script.google.com) (same Google account) → **New project**. Rename it "Kaimono server".
+1. Go to [script.google.com](https://script.google.com) (same Google account) → **New project**. Rename it "Tagwise server".
 2. Paste the short loader from [`server/Loader.gs`](https://raw.githubusercontent.com/SpidyLoke/shopping/main/server/Loader.gs) into `Code.gs` (below the sample `myFunction` is fine). Save. The loader fetches the real server code from this repo and re-checks it every 10 minutes, so server updates never need editing or redeploying. (You can paste the full [`server/Code.gs`](https://raw.githubusercontent.com/SpidyLoke/shopping/main/server/Code.gs) instead if you'd rather not load code from GitHub; then updates mean pasting it again and deploying a new version.)
 3. **Deploy → New deployment →** ⚙ **Web app**. Execute as **Me**, Who has access **Anyone**. **Deploy**.
-4. Authorise it. Google will warn the app isn't verified (it's your own script): **Advanced → Go to Kaimono server → Allow**. It needs permission to make web requests (Google APIs, CeX, ntfy).
+4. Authorise it. Google will warn the app isn't verified (it's your own script): **Advanced → Go to Tagwise server → Allow**. It needs permission to make web requests (Google APIs, CeX, ntfy).
 5. Copy the **Web app URL** (ends in `/exec`).
 6. In the app: **Settings → Background scanning**, paste the URL.
 7. **Telegram notifications:** in Telegram open **@BotFather**, send `/newbot`, pick any name and copy the token. Paste it into the app, open your new bot in Telegram and tap **Start**, then tap **Link** in the app. You'll get a hello message.
@@ -271,10 +271,10 @@ Shipping, luggage allowance and warranty aren't factored in. Gemini flags Japan-
 - **Clear history:** deletes all saved scans from the phone.
 - **How it works · About · Privacy · Terms** at the bottom. The first time the app opens (with no scans yet) a short intro explains it and that prices are estimates; **How it works** shows it again.
 - **Home country:** see [Home country](#home-country).
-- **Scan with** (once the backend is set up): **Kaimono** or **My keys**, with scans left this month and the anonymous **Account ID** to quote if you want the backend's record deleted.
+- **Scan with** (once the backend is set up): **Tagwise** or **My keys**, with scans left this month and the anonymous **Account ID** to quote if you want the backend's record deleted.
 - **API keys** and **Background scanning** fold away once set up. Saved keys and tokens are never shown or refilled; the box shows a hint like "Saved · AIza…x9Q2", and leaving it empty keeps what's saved. With no password-style fields and no form, iPhone doesn't offer to save a password. Settings is a page of its own (the Settings tab): every change saves as it's made, and typed fields save when you leave them.
 
-## Kaimono backend (Firebase)
+## Tagwise backend (Firebase)
 
 Optional. With it, people scan without their own Google keys: the backend (`functions/`) holds the keys, signs each install in anonymously, and gives each a monthly allowance. Until `firebase-config.js` has a project's config, the app only offers own-key scanning and nothing changes.
 
@@ -310,7 +310,7 @@ It does everything below (APIs, database, sign-in, API key, deploy, auto-delete,
 4. GitHub → this repository → **Settings → Secrets and variables → Actions**:
    - **Secrets → New repository secret** `FIREBASE_SERVICE_ACCOUNT`: open the downloaded file in Files, copy all of it, paste. Then delete the file from your phone.
    - **Variables → New repository variable** `FIREBASE_PROJECT_ID`: the project ID from step 1.
-5. GitHub → **Actions → Deploy backend → Run workflow**. The first run (about 5 minutes) turns on the Google APIs, creates the database in Singapore, makes an API key that only works for Vision and Gemini, deploys, sets up auto-deletion of old scan results and writes the project's web config into `firebase-config.js`. When it's green, reopen the app: Settings shows **Scan with: Kaimono**.
+5. GitHub → **Actions → Deploy backend → Run workflow**. The first run (about 5 minutes) turns on the Google APIs, creates the database in Singapore, makes an API key that only works for Vision and Gemini, deploys, sets up auto-deletion of old scan results and writes the project's web config into `firebase-config.js`. When it's green, reopen the app: Settings shows **Scan with: Tagwise**.
 
 6. **Payments (optional, any time later):** make a [Stripe](https://dashboard.stripe.com/register) account (Malaysian businesses are supported; sign-up works on a phone). In Stripe → Developers → API keys, copy the **Secret key** (`sk_test_…` while trying it out). Then either rerun the Cloud Shell setup, which asks for it (`bash scripts/cloud-shell-setup.sh --stripe` asks again, e.g. to switch to the live key), or put it in a GitHub secret `STRIPE_SECRET_KEY` and run **Deploy backend** again. It creates the two prices, the webhook that tells the backend about payments, and the customer portal. Pay with Stripe's test card `4242 4242 4242 4242` to try it; switch to the live key (`sk_live_…`, after Stripe has verified the business) to sell for real. Prices default to RM 19.90 (trip pass) and RM 29.90 a month: set `PASS_PRICE_SEN` and `MONTHLY_PRICE_SEN` (in sen, e.g. `2490`) as repository variables for the workflow, or in front of the Cloud Shell command (`PASS_PRICE_SEN=2490 bash scripts/cloud-shell-setup.sh --stripe`), to change them.
 
@@ -320,7 +320,7 @@ After that, any change to `functions/` redeploys by itself. To use your own keys
 
 Limits and the model are settings (`functions/.env`: `FREE_SCANS`, `PRO_SCANS`, `DAILY_SCANS`, `PER_IP_SCANS`, `FREE_ASKS`, `PRO_ASKS`, `DAILY_ASKS`, `GEMINI_MODEL`, `CACHE_DAYS`); redeploy after changing them. `UNLIMITED=yes` (on for the beta) drops the monthly allowances and per-connection caps for everyone; the project-wide `DAILY_SCANS` and `DAILY_ASKS` still apply. Set it to `no` to bring the plans back. To give someone the paid plan by hand until payments exist, set `plan: "pro"` on their `users/{uid}` document in Firestore.
 
-Until someone makes an account, sign-in is anonymous: the account is that install, and removing the app from the home screen starts a new one. While scanning with a Kaimono account, Settings hides the API keys and own scan server sections, which only apply to own-key scanning.
+Until someone makes an account, sign-in is anonymous: the account is that install, and removing the app from the home screen starts a new one. While scanning with a Tagwise account, Settings hides the API keys and own scan server sections, which only apply to own-key scanning.
 
 ## Running the beta
 
@@ -374,7 +374,7 @@ GitHub Actions runs both on every push (`.github/workflows/test.yml`).
 | `legal/` | Privacy policy and terms of use (linked from the first-run intro, Settings and the About page) |
 | `.github/workflows/deploy-backend.yml` | Sets up and deploys the backend from GitHub, so it needs no computer |
 | `functions/billing.js` | Payments: plans from Stripe, checkout, the customer portal and Stripe's payment events |
-| `functions/` | Kaimono backend: Cloud Functions for account scans and questions (`core.js` logic, `index.js` wiring) |
+| `functions/` | Tagwise backend: Cloud Functions for account scans and questions (`core.js` logic, `index.js` wiring) |
 | `firebase.json`, `firestore.rules` | Firebase deploy settings and database rules |
 | `sw.js` | Caches the app so it opens instantly and offline |
 | `manifest.webmanifest`, `icons/` | Home-screen install |

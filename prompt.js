@@ -1,4 +1,4 @@
-// The scan prompt, shared by the app (own-key scans) and the Kaimono backend (functions/), so both
+// The scan prompt, shared by the app (own-key scans) and the Tagwise backend (functions/), so both
 // ask Gemini exactly the same thing. Plain ES module with no browser or Node APIs.
 
 const yen = (n) => `¥${Math.round(n).toLocaleString('en-GB')}`;

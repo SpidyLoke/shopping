@@ -1,4 +1,4 @@
-// Kaimono Check scan server: phone-friendly loader. Paste only this into Apps Script.
+// Tagwise scan server: phone-friendly loader. Paste only this into Apps Script.
 // It downloads the real server code (server/Code.gs) from the app's GitHub repo and runs it,
 // re-checking every 10 minutes, so updates arrive without editing or redeploying anything here.
 const SOURCE = 'https://raw.githubusercontent.com/SpidyLoke/shopping/main/server/Code.gs';

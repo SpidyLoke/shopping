@@ -1,4 +1,4 @@
-# Deploys the Kaimono backend (functions/ and the database rules) to Firebase, so setting it up
+# Deploys the Tagwise backend (functions/ and the database rules) to Firebase, so setting it up
 # needs only a phone browser. Off until the repository variable FIREBASE_PROJECT_ID is set.
 #
 # Needs (GitHub → Settings → Secrets and variables → Actions):
@@ -102,11 +102,11 @@ jobs:
           fi
           if has VISION_KEY && has GEMINI_KEY; then echo "Keys already set."; exit 0; fi
           # Otherwise one key, usable only for Vision and Gemini.
-          name=$(gcloud services api-keys list --project "$PROJECT" --filter="displayName='Kaimono backend'" --format='value(name)' | head -n1)
+          name=$(gcloud services api-keys list --project "$PROJECT" --filter="displayName='Tagwise backend'" --format='value(name)' | head -n1)
           if [ -z "$name" ]; then
-            gcloud services api-keys create --project "$PROJECT" --display-name="Kaimono backend" \
+            gcloud services api-keys create --project "$PROJECT" --display-name="Tagwise backend" \
               --api-target=service=vision.googleapis.com --api-target=service=generativelanguage.googleapis.com
-            name=$(gcloud services api-keys list --project "$PROJECT" --filter="displayName='Kaimono backend'" --format='value(name)' | head -n1)
+            name=$(gcloud services api-keys list --project "$PROJECT" --filter="displayName='Tagwise backend'" --format='value(name)' | head -n1)
           fi
           key=$(gcloud services api-keys get-key-string "$name" --format='value(keyString)')
           echo "::add-mask::$key"
@@ -143,8 +143,8 @@ jobs:
             [ -n "${4:-}" ] && args+=(-d "recurring[interval]=$4")
             api https://api.stripe.com/v1/prices "${args[@]}" | jq -r '"\(.lookup_key): created \(.id)"'
           }
-          price kaimono_pass "Kaimono Check trip pass" "$PASS_PRICE"
-          price kaimono_monthly "Kaimono Check monthly" "$MONTHLY_PRICE" month
+          price kaimono_pass "Tagwise trip pass" "$PASS_PRICE"
+          price kaimono_monthly "Tagwise monthly" "$MONTHLY_PRICE" month
 
           # The webhook that tells the backend about payments.
           url="https://$REGION-$PROJECT.cloudfunctions.net/stripeWebhook"
@@ -166,7 +166,7 @@ jobs:
             api https://api.stripe.com/v1/billing_portal/configurations \
               -d "features[subscription_cancel][enabled]=true" -d "features[payment_method_update][enabled]=true" \
               -d "features[invoice_history][enabled]=true" -d "features[customer_update][enabled]=false" \
-              --data-urlencode "business_profile[headline]=Kaimono Check" >/dev/null
+              --data-urlencode "business_profile[headline]=Tagwise" >/dev/null
             echo "Customer portal set up."
           fi
 
@@ -212,7 +212,7 @@ jobs:
           if ! grep -q 'export const FIREBASE = null' firebase-config.js; then echo "Already connected."; exit 0; fi
           app=$($FIREBASE apps:list WEB --project "$PROJECT" --json | node .github/scripts/firebase-web-config.mjs app-id)
           if [ -z "$app" ]; then
-            app=$($FIREBASE apps:create WEB "Kaimono Check" --project "$PROJECT" --json | node .github/scripts/firebase-web-config.mjs created-id)
+            app=$($FIREBASE apps:create WEB "Tagwise" --project "$PROJECT" --json | node .github/scripts/firebase-web-config.mjs created-id)
           fi
           $FIREBASE apps:sdkconfig WEB "$app" --project "$PROJECT" --json | node .github/scripts/firebase-web-config.mjs write firebase-config.js
           git config user.name "github-actions[bot]"

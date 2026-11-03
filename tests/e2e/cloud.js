@@ -1,4 +1,4 @@
-// The Kaimono backend for app tests: the Firebase SDK is swapped for a stub whose callable functions
+// The Tagwise backend for app tests: the Firebase SDK is swapped for a stub whose callable functions
 // run the real functions/core.js here in the test, with an in-memory Firestore and faked Google APIs.
 const path = require('path');
 const { product } = require('./helpers');

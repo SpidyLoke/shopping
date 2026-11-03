@@ -1,5 +1,5 @@
 // Caches the app shell so it opens instantly (and offline) in Japan. API calls are never cached.
-const CACHE = 'kaimono-v62';
+const CACHE = 'tagwise-v63';
 const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'prompt.js', 'firebase-config.js', 'tour/sample-tag.svg', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'fonts/Geist-Variable.woff2'];
 
 self.addEventListener('install', (e) => {
@@ -39,7 +39,7 @@ self.addEventListener('push', (e) => {
   } catch {
     msg = { body: e.data?.text() };
   }
-  e.waitUntil(self.registration.showNotification(msg.title || 'Kaimono', {
+  e.waitUntil(self.registration.showNotification(msg.title || 'Tagwise', {
     body: msg.body || 'Your scan is ready.',
     tag: msg.tag || 'scan',
     icon: 'icons/icon-192.png',

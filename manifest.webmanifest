@@ -1,7 +1,7 @@
 {
-  "name": "Kaimono Check",
-  "short_name": "Kaimono",
-  "description": "Snap a Japanese price tag, get it translated, and compare against Shopee and Carousell Malaysia.",
+  "name": "Tagwise",
+  "short_name": "Tagwise",
+  "description": "Snap a price tag anywhere and see straight away if it's really cheaper than back home, with the profit if you resell.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

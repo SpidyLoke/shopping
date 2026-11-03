@@ -38,6 +38,7 @@ test('trip pass: plans from Stripe, make an account, pay, and the pass shows up'
   await page.fill('#accPassword', 'hunter2hunter2');
   await page.click('#accountSubmit');
   await expect.poll(() => stripe.length).toBe(1);
+  await page.waitForURL(/checkout\.stripe\.com/); // let the trip to Stripe land before coming back
   expect(cloud.calls.checkout).toEqual([{ uid: 'anon-1', plan: 'pass' }]);
   // Stripe confirms the payment to the backend, then sends the shopper back
   await cloud.pay('anon-1', 'pass');

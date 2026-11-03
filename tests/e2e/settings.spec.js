@@ -83,7 +83,7 @@ test('the testing export has scans and photos but no keys, server details or GPS
   });
   await page.click('#settingsBtn');
   const [download] = await Promise.all([page.waitForEvent('download'), page.click('#testExportBtn')]);
-  expect(download.suggestedFilename()).toMatch(/^kaimono-test-scans-/);
+  expect(download.suggestedFilename()).toMatch(/^tagwise-test-scans-/);
   const file = testInfo.outputPath('test.json');
   await download.saveAs(file);
   const text = require('fs').readFileSync(file, 'utf8');

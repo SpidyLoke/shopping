@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Sets up the Kaimono backend from Google Cloud Shell (the terminal in the Firebase or Google Cloud
+# Sets up the Tagwise backend from Google Cloud Shell (the terminal in the Firebase or Google Cloud
 # console), so it needs no computer: Cloud Shell is already signed in as you.
 #
 #   git clone https://github.com/SpidyLoke/shopping.git && cd shopping && bash scripts/cloud-shell-setup.sh
@@ -26,7 +26,7 @@ if [ -z "$PROJECT" ]; then
   exit 1
 fi
 cd "$(dirname "$0")/.."
-say "Kaimono backend for project $PROJECT"
+say "Tagwise backend for project $PROJECT"
 
 say "1. Blaze plan"
 if [ "$(gcloud billing projects describe "$PROJECT" --format='value(billingEnabled)' 2>/dev/null)" != "True" ]; then
@@ -84,11 +84,11 @@ say "6. The backend's API key"
 if secret_set VISION_KEY && secret_set GEMINI_KEY; then
   ok "Keys already set"
 else
-  name=$(gcloud services api-keys list --project "$PROJECT" --filter="displayName='Kaimono backend'" --format='value(name)' | head -n1)
+  name=$(gcloud services api-keys list --project "$PROJECT" --filter="displayName='Tagwise backend'" --format='value(name)' | head -n1)
   if [ -z "$name" ]; then
-    gcloud services api-keys create --project "$PROJECT" --display-name="Kaimono backend" \
+    gcloud services api-keys create --project "$PROJECT" --display-name="Tagwise backend" \
       --api-target=service=vision.googleapis.com --api-target=service=generativelanguage.googleapis.com >/dev/null
-    name=$(gcloud services api-keys list --project "$PROJECT" --filter="displayName='Kaimono backend'" --format='value(name)' | head -n1)
+    name=$(gcloud services api-keys list --project "$PROJECT" --filter="displayName='Tagwise backend'" --format='value(name)' | head -n1)
   fi
   key=$(gcloud services api-keys get-key-string "$name" --format='value(keyString)')
   secret_set VISION_KEY || put_secret VISION_KEY "$key"
@@ -134,8 +134,8 @@ else
       [ -n "${4:-}" ] && args+=(-d "recurring[interval]=$4")
       api https://api.stripe.com/v1/prices "${args[@]}" >/dev/null && echo "  $2: RM $(awk "BEGIN{printf \"%.2f\", $3/100}")"
     }
-    price kaimono_pass "Kaimono Check trip pass" "${PASS_PRICE_SEN:-1990}"
-    price kaimono_monthly "Kaimono Check monthly" "${MONTHLY_PRICE_SEN:-2990}" month
+    price kaimono_pass "Tagwise trip pass" "${PASS_PRICE_SEN:-1990}"
+    price kaimono_monthly "Tagwise monthly" "${MONTHLY_PRICE_SEN:-2990}" month
     # The webhook that tells the backend about payments (a new one for a new key's account).
     url="https://$REGION-$PROJECT.cloudfunctions.net/stripeWebhook"
     hook=$(api -G https://api.stripe.com/v1/webhook_endpoints -d limit=100 | jq -r --arg u "$url" '[.data[] | select(.url == $u)][0].id // empty')
@@ -155,7 +155,7 @@ else
       api https://api.stripe.com/v1/billing_portal/configurations \
         -d "features[subscription_cancel][enabled]=true" -d "features[payment_method_update][enabled]=true" \
         -d "features[invoice_history][enabled]=true" -d "features[customer_update][enabled]=false" \
-        --data-urlencode "business_profile[headline]=Kaimono Check" >/dev/null
+        --data-urlencode "business_profile[headline]=Tagwise" >/dev/null
       echo "  Customer portal set up"
     fi
     case "$stripe_key" in *_test_*) ok "Stripe connected in TEST mode: pay with card 4242 4242 4242 4242" ;; *) ok "Stripe connected: payments are live" ;; esac
@@ -221,7 +221,7 @@ if ! grep -q 'export const FIREBASE = null' firebase-config.js; then
 fi
 app=$($FIREBASE apps:list WEB --project "$PROJECT" --json | node .github/scripts/firebase-web-config.mjs app-id)
 if [ -z "$app" ]; then
-  app=$($FIREBASE apps:create WEB "Kaimono Check" --project "$PROJECT" --json | node .github/scripts/firebase-web-config.mjs created-id)
+  app=$($FIREBASE apps:create WEB "Tagwise" --project "$PROJECT" --json | node .github/scripts/firebase-web-config.mjs created-id)
 fi
 $FIREBASE apps:sdkconfig WEB "$app" --project "$PROJECT" --json | node .github/scripts/firebase-web-config.mjs write firebase-config.js >/dev/null
 config=$(node -e "import('./firebase-config.js').then((m) => console.log(JSON.stringify(m.FIREBASE)))")

@@ -1,4 +1,4 @@
-// Kaimono backend on Firebase: callable functions the app uses to scan without its own API keys.
+// Tagwise backend on Firebase: callable functions the app uses to scan without its own API keys.
 // The logic is in core.js; this file connects it to Firestore, the secrets and the settings below.
 //
 // Settings (functions/.env, or asked for on first deploy):

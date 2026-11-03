@@ -1,4 +1,4 @@
-// Kaimono Check scan server (Google Apps Script).
+// Tagwise scan server (Google Apps Script).
 //
 // The app hands each scan to this script, which makes the Google Vision, Translate, Gemini and CeX
 // calls on Google's side. A phone suspends a web app's network calls as soon as you leave it; this
@@ -39,7 +39,7 @@ function handle(e) {
 
   if (req.action === 'ping') {
     const result = { ok: true, version: VERSION };
-    if (req.notify) result.ntfy = sendNotification(req.notify, 'Kaimono Check', 'Test from your scan server: notifications are working.');
+    if (req.notify) result.ntfy = sendNotification(req.notify, 'Tagwise', 'Test from your scan server: notifications are working.');
     return reply(result);
   }
   if (req.action === 'telegramLink') return reply(telegramLink(req.token));
@@ -199,7 +199,7 @@ function runJob(req) {
     const name = (ai && ai.product_name) || 'Your scan';
     const price = ai && ai.jp_price_yen ? ` · ¥${Number(ai.jp_price_yen).toLocaleString('en-GB')}` : '';
     const failed = out.geminiError ? ' (price check failed, tap ↻ in the app)' : '';
-    out.ntfy = sendNotification(req.notify, 'Scan ready', `${name}${price}${failed}. Open Kaimono Check to see if it's worth it.`);
+    out.ntfy = sendNotification(req.notify, 'Scan ready', `${name}${price}${failed}. Open Tagwise to see if it's worth it.`);
     save(req.jobId, out);
   }
   return out;
@@ -261,7 +261,7 @@ function telegramLink(token) {
   const chats = list.map((u) => (u.message || u.edited_message || {}).chat).filter((c) => c && c.type === 'private');
   const chat = chats[chats.length - 1];
   if (!chat) return { error: `Open @${bot.username} in Telegram, tap Start (or send it any message), then tap Link again.` };
-  telegramSend({ token, chatId: chat.id }, 'Kaimono Check is linked. Scan results will show up here.');
+  telegramSend({ token, chatId: chat.id }, 'Tagwise is linked. Scan results will show up here.');
   return { ok: true, chatId: chat.id, bot: bot.username, name: chat.first_name || '' };
 }
 

@@ -1,7 +1,7 @@
 {
   "name": "kaimono-check",
   "private": true,
-  "description": "Kaimono Check: is it a good price? Tests and tooling (the app itself is static files).",
+  "description": "Tagwise: is it a good price? Tests and tooling (the app itself is static files).",
   "scripts": {
     "test": "npm run test:server && npm run test:e2e",
     "test:e2e": "playwright test",

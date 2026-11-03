@@ -12,8 +12,8 @@ const UA = {
 };
 
 for (const [name, steps, arrow] of [
-  ['safari18', ['Tap Share at the bottom of the screen', 'Scroll down and tap Add to Home Screen', 'Tap Add at the top right', 'Open Kaimono from your Home Screen'], 'bottom-centre'],
-  ['safari26', ['Tap ⋯ at the bottom right', 'Tap Share', 'Tap Add to Home Screen', 'Keep "Open as Web App" on, then tap Add', 'Open Kaimono from your Home Screen'], 'bottom-right'],
+  ['safari18', ['Tap Share at the bottom of the screen', 'Scroll down and tap Add to Home Screen', 'Tap Add at the top right', 'Open Tagwise from your Home Screen'], 'bottom-centre'],
+  ['safari26', ['Tap ⋯ at the bottom right', 'Tap Share', 'Tap Add to Home Screen', 'Keep "Open as Web App" on, then tap Add', 'Open Tagwise from your Home Screen'], 'bottom-right'],
 ]) {
   test.describe(`iPhone, ${name}`, () => {
     test.use({ userAgent: UA[name], hasTouch: true });

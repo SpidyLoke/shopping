@@ -1,7 +1,7 @@
 {
   "name": "kaimono-functions",
   "private": true,
-  "description": "Kaimono Check backend: account scans with server-held keys, monthly allowance, barcode price cache.",
+  "description": "Tagwise backend: account scans with server-held keys, monthly allowance, barcode price cache.",
   "type": "module",
   "main": "index.js",
   "engines": {

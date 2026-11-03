@@ -57,6 +57,6 @@ test('a backend that cannot be reached says so, instead of spinning forever', as
   await page.setInputFiles('#galleryInput', fixture('tag.jpg'));
   await expect(page.locator('#serverHint')).toContainText('Sending');
   for (let i = 0; i < 70; i += 1) await page.clock.runFor(1500);
-  await expect(page.locator('#resError')).toContainText("Kaimono couldn't reach its server");
+  await expect(page.locator('#resError')).toContainText("Tagwise couldn't reach its server");
   await expect(page.locator('#serverHint')).toBeHidden();
 });

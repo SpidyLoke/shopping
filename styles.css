@@ -5,7 +5,7 @@
   font-display: swap;
 }
 
-/* Kaimono Check
+/* Tagwise
    Indigo (ai-iro) on warm off-white, flat surfaces, light + dark.
    --accent is for text and icons, --accent-bg for filled buttons.
    Shape rule: containers 22px, inner tiles 16px, inputs 14px, anything you tap is a pill. */
@@ -1683,7 +1683,7 @@ dialog.camera::backdrop { background: #000; }
 .id-line .i { width: 15px; height: 15px; flex: none; }
 .id-line span { font-weight: 400; color: var(--muted); font-variant-numeric: tabular-nums; }
 
-/* Kaimono account: scans left this month */
+/* Tagwise account: scans left this month */
 .quota-line { margin: 6px 0 0; text-align: center; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .scan-with .setting-row { padding-top: 8px; }
 

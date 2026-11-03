@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Kaimono Check</title>
-  <meta name="description" content="Snap a Japanese price tag, get it translated, and compare against Shopee and Carousell Malaysia.">
+  <title>Tagwise</title>
+  <meta name="description" content="Snap a price tag anywhere and see straight away if it's really cheaper than back home, with the profit if you resell.">
   <meta name="theme-color" content="#f4f3ef" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#0d1020" media="(prefers-color-scheme: dark)">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <meta name="apple-mobile-web-app-title" content="Kaimono">
+  <meta name="apple-mobile-web-app-title" content="Tagwise">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -29,8 +29,8 @@
   <header class="topbar">
     <button class="back-btn" id="backBtn" type="button" hidden><svg class="i" viewBox="0 0 256 256" aria-hidden="true"><path d="M164.24,203.76a6,6,0,1,1-8.48,8.48l-80-80a6,6,0,0,1,0-8.48l80-80a6,6,0,0,1,8.48,8.48L88.49,128Z"/></svg><span>Back</span></button>
     <button class="brand" id="homeBtn" type="button" aria-label="Home">
-      <svg class="brand-mark" viewBox="0 0 512 512" aria-hidden="true"><rect width="512" height="512" rx="116" fill="var(--accent-bg)"/><path d="M204 204c0-34 22-56 52-56s52 22 52 56" fill="none" stroke="var(--accent-ink)" stroke-width="28" stroke-linecap="round"/><path d="M148 196h216l18 192a34 34 0 0 1-34 37H164a34 34 0 0 1-34-37z" fill="var(--accent-ink)"/><path d="M214 252l42 50 42-50M256 302v76M222 318h68M222 350h68" fill="none" stroke="var(--accent-bg)" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      <span class="brand-name">Kaimono</span>
+      <svg class="brand-mark" viewBox="0 0 512 512" aria-hidden="true"><rect width="512" height="512" rx="116" fill="var(--accent-bg)"/><g transform="rotate(-35 256 256)"><path d="M112 256 L192 172 H372 a24 24 0 0 1 24 24 V316 a24 24 0 0 1 -24 24 H192 Z" fill="var(--accent-ink)" stroke="var(--accent-ink)" stroke-width="12" stroke-linejoin="round"/><circle cx="172" cy="256" r="18" fill="var(--accent-bg)"/></g><path d="M240 246 L276 282 L340 210" fill="none" stroke="var(--accent-bg)" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span class="brand-name">Tagwise</span>
     </button>
     <a class="trip-line" id="tripLine" href="#/trip"></a>
   </header>
@@ -471,7 +471,7 @@
         <section class="settings-group scan-with" id="scanWithGroup" hidden>
           <div class="setting-row"><span>Scan with</span>
             <div class="segmented" role="radiogroup" aria-label="Scan with" data-setting="scanWith">
-              <button type="button" role="radio" data-value="cloud" aria-checked="false">Kaimono</button>
+              <button type="button" role="radio" data-value="cloud" aria-checked="false">Tagwise</button>
               <button type="button" role="radio" data-value="keys" aria-checked="false">My keys</button>
             </div>
           </div>
@@ -689,7 +689,7 @@
   </dialog>
   <!-- First run: what it does, and that its prices are estimates -->
   <dialog class="sheet intro-sheet" id="introSheet" aria-labelledby="introTitle">
-    <p class="eyebrow">Kaimono Check</p>
+    <p class="eyebrow">Tagwise</p>
     <h2 id="introTitle">Know the profit before you pay</h2>
     <ol class="intro-steps">
       <li><strong>Snap the tag.</strong> Or a few photos: the item, its label, the price. A barcode makes the match exact.</li>
@@ -699,7 +699,7 @@
     <p class="intro-note">Prices are estimates from AI and web search, and can be wrong. Tap any price to check the listings behind it before you buy.</p>
     <button class="btn btn-primary intro-go" type="button" id="introStart">Show me how (1 minute)</button>
     <button class="link small intro-skip" type="button" id="introSkip">Skip, I'll figure it out</button>
-    <p class="muted small intro-legal">By using Kaimono you agree to the <a href="legal/terms.html">Terms</a> and <a href="legal/privacy.html">Privacy policy</a>.</p>
+    <p class="muted small intro-legal">By using Tagwise you agree to the <a href="legal/terms.html">Terms</a> and <a href="legal/privacy.html">Privacy policy</a>.</p>
   </dialog>
   <!-- Account: email and password, so a plan survives a new phone -->
   <dialog class="sheet" id="accountSheet" aria-labelledby="accountTitle">
@@ -753,7 +753,7 @@
   <dialog class="install-guide" id="installGuide" aria-labelledby="installTitle">
     <div class="install-head">
       <img src="icons/icon.svg" alt="" width="56" height="56">
-      <h2 id="installTitle" tabindex="-1" autofocus>Put Kaimono on your Home Screen</h2>
+      <h2 id="installTitle" tabindex="-1" autofocus>Put Tagwise on your Home Screen</h2>
       <p class="muted small" id="installSub">It opens full screen like an app and works offline. Takes 10 seconds.</p>
     </div>
     <ol class="install-steps" id="installSteps"></ol>

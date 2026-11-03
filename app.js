@@ -1,4 +1,4 @@
-// Kaimono Check: photo → Google Vision OCR → Google Translate → Gemini (with Google Search)
+// Tagwise: photo → Google Vision OCR → Google Translate → Gemini (with Google Search)
 // for Shopee / Carousell Malaysia prices. Everything runs in the browser; the API key
 // lives in localStorage on the user's device only.
 
@@ -6,7 +6,7 @@ import { buildPrompt, findBarcodes, gtinValid, MARKETS, marketFor } from './prom
 import { FIREBASE } from './firebase-config.js';
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.11.02-9';
+const APP_VERSION = '2026.11.03-1';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -38,7 +38,7 @@ const store = {
 
 const settings = {
   get apiKey() { return store.get('apiKey', ''); },
-  // Kaimono account (the backend's keys, monthly allowance) or your own Google keys; own keys stay
+  // Tagwise account (the backend's keys, monthly allowance) or your own Google keys; own keys stay
   // the default for anyone who already has them.
   // Home country: where prices are compared and things resold (prompt.js MARKETS).
   get homeMarket() { return MARKETS[store.get('homeMarket', 'MY')] ? store.get('homeMarket', 'MY') : 'MY'; },
@@ -580,7 +580,7 @@ const FALLBACK_MODEL = 'gemini-flash-lite-latest';
 const geminiBusy = (e) => [429, 500, 503].includes(e.status) && !/prepay|credit|billing|quota exceeded for/i.test(e.message);
 
 // Reads every photo of the item in one request; the text and Google's guesses are pooled.
-// ---------- Kaimono backend (Firebase) ----------
+// ---------- Tagwise backend (Firebase) ----------
 // Scans and questions go through the backend's keys, within a monthly allowance (functions/).
 // Sign-in is anonymous and automatic for now: the account is this install. Firebase only loads
 // when it's used.
@@ -627,7 +627,7 @@ async function cloudCall(name, data, timeout = 60000) {
   try {
     ({ call } = await connectCloud());
   } catch (e) {
-    throw new Error(`Kaimono: couldn't connect (${e.message}). Check your signal.`);
+    throw new Error(`Tagwise: couldn't connect (${e.message}). Check your signal.`);
   }
   try {
     const { data: out } = await call(name, data, timeout);
@@ -636,7 +636,7 @@ async function cloudCall(name, data, timeout = 60000) {
     return out;
   } catch (e) {
     const code = String(e.code || '').replace('functions/', '');
-    const err = new Error(FINAL_CODES.includes(code) ? e.message : `Kaimono: ${e.message}`);
+    const err = new Error(FINAL_CODES.includes(code) ? e.message : `Tagwise: ${e.message}`);
     err.code = code;
     err.final = FINAL_CODES.includes(code);
     if (e.details?.reason === 'quota' && e.details.plan !== 'pro') err.message += ' Get more in Settings → Upgrade.';
@@ -664,13 +664,13 @@ async function enableNotifications() {
   if (!pushSupported()) {
     const c = installContext();
     if (c.ios && !c.standalone) {
-      alert('On iPhone, notifications only work once Kaimono is on your Home Screen. Add it first, then turn this on in the app.');
+      alert('On iPhone, notifications only work once Tagwise is on your Home Screen. Add it first, then turn this on in the app.');
       openInstallGuide();
-    } else alert('This browser can\'t show notifications from Kaimono.');
+    } else alert('This browser can\'t show notifications from Tagwise.');
     return false;
   }
   if (await Notification.requestPermission() !== 'granted') {
-    alert('Notifications are off for Kaimono. Turn them on in Settings → Notifications → Kaimono, then try again.');
+    alert('Notifications are off for Tagwise. Turn them on in Settings → Notifications → Tagwise, then try again.');
     return false;
   }
   try {
@@ -740,7 +740,7 @@ function quotaText() {
 
 function renderQuota() {
   const text = quotaText();
-  // Scanning with a Kaimono account, the API keys, model and own scan server don't apply.
+  // Scanning with a Tagwise account, the API keys, model and own scan server don't apply.
   $('#keysGroup').hidden = cloudOn();
   $('#serverGroup').hidden = cloudOn();
   const u = store.get('cloudUsage') || {};
@@ -766,7 +766,7 @@ function renderQuota() {
   $('#accountId').hidden = !uid;
   $('#accountId').textContent = uid ? `Account ID ${uid}` : '';
   $('#quotaStatus').textContent = cloudOn()
-    ? text || 'Scans use Kaimono\'s keys, within a monthly allowance. Scans of a barcode someone checked in the last week are free.'
+    ? text || 'Scans use Tagwise\'s keys, within a monthly allowance. Scans of a barcode someone checked in the last week are free.'
     : 'Scans use your own Google keys (below) and your own Google bill.';
 }
 
@@ -2013,7 +2013,7 @@ function serverJobRequest(entry, images) {
   };
 }
 
-// The Kaimono backend takes the photos and the scan options and builds the prompt itself.
+// The Tagwise backend takes the photos and the scan options and builds the prompt itself.
 function cloudJobRequest(entry, images) {
   return {
     jobId: entry.serverJob.id,
@@ -2031,7 +2031,7 @@ function cloudJobRequest(entry, images) {
 
 const jobRequest = (entry, images) => (entry.serverJob?.cloud ? cloudJobRequest(entry, images) : serverJobRequest(entry, images));
 
-// A scan job runs on the Kaimono backend or on your own Apps Script server; both answer alike.
+// A scan job runs on the Tagwise backend or on your own Apps Script server; both answer alike.
 function jobCall(entry, body, timeoutMs) {
   if (!entry.serverJob?.cloud) return serverCall(body, timeoutMs);
   return body.action === 'result' ? cloudCall('result', { jobId: body.jobId }, timeoutMs) : cloudCall('scan', body, timeoutMs);
@@ -2101,7 +2101,7 @@ function watchForReceipt(entry, jobId) {
       }
     }
     if (!stopped && lastError && Date.now() - entry.serverJob.sentAt > RECEIPT_GIVE_UP_MS && entry.serverJob?.id === jobId) {
-      giveUpServerJob(entry, `Kaimono couldn't reach its server (${lastError.replace(/^Kaimono: /, '')}). Tap ↻ to try again.`);
+      giveUpServerJob(entry, `Tagwise couldn't reach its server (${lastError.replace(/^Tagwise: /, '')}). Tap ↻ to try again.`);
       return;
     }
     if (!stopped) setTimeout(check, 1500);
@@ -2122,7 +2122,7 @@ async function applyServerResult(entry, out, { quiet = false } = {}) {
   // backend couldn't be reached is still taken if its result turns up after all.
   if (entry.serverJob?.done && !entry.serverJob.gaveUp) return;
   if (entry.serverJob?.gaveUp) {
-    entry.errors = (entry.errors || []).filter((m) => !m.startsWith('Kaimono'));
+    entry.errors = (entry.errors || []).filter((m) => !m.startsWith('Tagwise'));
     entry.serverJob = { ...entry.serverJob, gaveUp: false };
   }
   clearScanNotification(entry.id);
@@ -2243,7 +2243,7 @@ async function checkServerJob(entry) {
   } catch (e) {
     // Offline or the server is busy: try again on the next tick, but not forever.
     if (entry.serverJob && !entry.serverJob.done && Date.now() - entry.serverJob.sentAt > 5 * 60 * 1000) {
-      giveUpServerJob(entry, `${entry.serverJob.cloud ? 'Kaimono' : 'Scan server'} couldn't be reached (${e.message.replace(/^(Kaimono|Scan server): /, '')}). Tap ↻ to try again.`);
+      giveUpServerJob(entry, `${entry.serverJob.cloud ? 'Tagwise' : 'Scan server'} couldn't be reached (${e.message.replace(/^(Tagwise|Scan server): /, '')}). Tap ↻ to try again.`);
     }
   } finally {
     pendingPolls.delete(entry.id);
@@ -3022,7 +3022,7 @@ async function drawShareCard(entry) {
   }
   ctx.fillStyle = '#2b3a8c';
   ctx.font = font(700, 32);
-  ctx.fillText('Kaimono Check', 64, H - 60);
+  ctx.fillText('Tagwise', 64, H - 60);
   ctx.fillStyle = '#676a7d';
   ctx.font = font(500, 28);
   ctx.textAlign = 'right';
@@ -3033,7 +3033,7 @@ async function drawShareCard(entry) {
 async function shareCard(entry) {
   const blob = await shareCardBlob(entry);
   if (!blob) return;
-  const name = `kaimono-${(entry.ai?.product_name || 'find').replace(/[^a-z0-9]+/gi, '-').toLowerCase().slice(0, 40)}.jpg`;
+  const name = `tagwise-${(entry.ai?.product_name || 'find').replace(/[^a-z0-9]+/gi, '-').toLowerCase().slice(0, 40)}.jpg`;
   const file = new File([blob], name, { type: 'image/jpeg' });
   if (navigator.canShare?.({ files: [file] })) {
     try {
@@ -4149,7 +4149,7 @@ async function askQuestion(id, question) {
 function friendlyError(msg) {
   const m = String(msg || '');
   if (/high demand|overload|unavailable|\[50[234]\]|no answer after|try again later|deadline/i.test(m)) return "Google's AI is busy right now. Try again in a minute.";
-  return m.replace(/^(Kaimono: )?Gemini: /, '');
+  return m.replace(/^(Tagwise: )?Gemini: /, '');
 }
 
 function renderAsk(entry) {
@@ -4873,7 +4873,7 @@ async function exportBackup({ forTesting = false } = {}) {
   const images = {};
   for (const k of (await imageDb.run('readonly', (st) => st.getAllKeys())) || []) images[k] = await imageDb.get(k);
   const day = new Date().toISOString().slice(0, 10);
-  const name = forTesting ? `kaimono-test-scans-${day}.json` : `kaimono-backup-${day}.json`;
+  const name = forTesting ? `tagwise-test-scans-${day}.json` : `tagwise-backup-${day}.json`;
   const backup = { app: 'kaimono', version: 1, at: Date.now(), data, images };
   if (forTesting) backup.purpose = 'test';
   const blob = new Blob([JSON.stringify(backup)], { type: 'application/json' });
@@ -4897,7 +4897,7 @@ async function exportBackup({ forTesting = false } = {}) {
 
 async function importBackup(file) {
   const backup = JSON.parse(await file.text());
-  if (backup?.app !== 'kaimono' || !backup.data) throw new Error("That file isn't a Kaimono backup.");
+  if (backup?.app !== 'kaimono' || !backup.data) throw new Error("That file isn't a Tagwise backup.");
   const scans = (() => { try { return JSON.parse(backup.data['kc.history'] || '[]').length; } catch { return 0; } })();
   if (!confirm(`Replace everything in the app with this backup (${scans} scans)?`)) return false;
   for (const k of Object.keys(localStorage)) if (k.startsWith('kc.')) localStorage.removeItem(k);
@@ -4924,7 +4924,7 @@ $('#restoreInput').addEventListener('change', async (e) => {
   try {
     if (await importBackup(file)) location.reload();
   } catch (err) {
-    $('#backupStatus').textContent = err instanceof SyntaxError ? "That file isn't a Kaimono backup." : err.message;
+    $('#backupStatus').textContent = err instanceof SyntaxError ? "That file isn't a Tagwise backup." : err.message;
   }
 });
 
@@ -4972,8 +4972,8 @@ function installContext() {
 
 function installSteps(c) {
   const step = (title, mock = '', note = '') => `<li><p>${title}</p>${mock}${note ? `<p class="note">${note}</p>` : ''}</li>`;
-  const app = `<div class="mock-app"><img src="icons/icon-192.png" alt=""><span><strong>Kaimono</strong><br><small>spidyloke.github.io</small></span></div>`;
-  const home = step('Open Kaimono from your Home Screen', '<div class="mock mock-home"><span><i class="other"></i>Photos</span><span><img src="icons/icon-192.png" alt="">Kaimono</span><span><i class="other"></i>Maps</span></div>', 'From then on it opens full screen, like any app.');
+  const app = `<div class="mock-app"><img src="icons/icon-192.png" alt=""><span><strong>Tagwise</strong><br><small>spidyloke.github.io</small></span></div>`;
+  const home = step('Open Tagwise from your Home Screen', '<div class="mock mock-home"><span><i class="other"></i>Photos</span><span><img src="icons/icon-192.png" alt="">Tagwise</span><span><i class="other"></i>Maps</span></div>', 'From then on it opens full screen, like any app.');
   const copy = `<div class="copy-row"><input id="installLink" value="${INSTALL_LINK}" readonly aria-label="Link"><button class="btn btn-small" type="button" data-copy-install>Copy</button></div>`;
   if (c.otherBrowser) {
     return [
@@ -5002,10 +5002,10 @@ function installSteps(c) {
   }
   if (c.android) {
     return installPrompt
-      ? [step('Tap Install below', '', 'Chrome adds Kaimono to your Home Screen and app list.'), home]
+      ? [step('Tap Install below', '', 'Chrome adds Tagwise to your Home Screen and app list.'), home]
       : [step('Tap ⋮ at the top right of Chrome, then Install app', '', 'On some phones it says Add to Home screen.'), home];
   }
-  return [step('Open this link on your phone', copy, 'Kaimono is made for phones: scan this link into your phone or send it to yourself.')];
+  return [step('Open this link on your phone', copy, 'Tagwise is made for phones: scan this link into your phone or send it to yourself.')];
 }
 
 function openInstallGuide() {
@@ -5086,8 +5086,8 @@ const TOUR_STEPS = [
   { at: '#verdict', text: 'The verdict. Green means buy: here it costs far less than it fetches back home.' },
   { at: '#dealTags', text: 'Your profit if you sell it on, after your card fee. Here CeX alone would pay this much more than the tag.' },
   { at: '#prices', text: 'What it costs here in ringgit, and what it sells for new and used at home. Tap any price to see the exact listings behind it.' },
-  { at: '#boughtBtn', text: 'Buying it? Tap Bought. When it sells, type the price and Kaimono shows what you really made.' },
-  { at: '#judge', text: 'Wrong model or price? Tell us here. Every answer makes Kaimono more accurate.' },
+  { at: '#boughtBtn', text: 'Buying it? Tap Bought. When it sells, type the price and Tagwise shows what you really made.' },
+  { at: '#judge', text: 'Wrong model or price? Tell us here. Every answer makes Tagwise more accurate.' },
   { at: null, text: 'That\'s the lot. Now try a real tag: Item, Clothes or a whole Shelf, New or Used.', last: true },
 ];
 
@@ -5371,7 +5371,7 @@ function renderInstallTip() {
   const show = !standalone && !store.get('installDismissed') && (ios || installPrompt);
   $('#installTip').hidden = !show;
   if (!show) return;
-  $('#installText').textContent = ios ? 'Put Kaimono on your Home Screen: it opens like an app and works offline.' : 'Install Kaimono as an app for quicker scanning.';
+  $('#installText').textContent = ios ? 'Put Tagwise on your Home Screen: it opens like an app and works offline.' : 'Install Tagwise as an app for quicker scanning.';
   $('#installBtn').hidden = !installPrompt;
   $('#installHow').hidden = !ios;
 }
@@ -6303,7 +6303,7 @@ $('#serverTest').addEventListener('click', async () => {
       const res = await fetch('https://ntfy.sh/', {
         method: 'POST',
         headers,
-        body: JSON.stringify({ topic: settings.ntfyTopic, title: 'Kaimono Check', message: 'Test from your phone: your ntfy subscription works.' }),
+        body: JSON.stringify({ topic: settings.ntfyTopic, title: 'Tagwise', message: 'Test from your phone: your ntfy subscription works.' }),
       });
       lines[0] = `1. Phone → ntfy: ${describeNtfy({ code: res.status, body: (await res.text()).slice(0, 120) })}`;
     } catch {
