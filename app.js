@@ -6,7 +6,7 @@ import { buildPrompt, findBarcodes, gtinValid, MARKETS, marketFor } from './prom
 import { FIREBASE } from './firebase-config.js';
 
 // Bump together with version.json on every release so open copies of the app offer a reload.
-const APP_VERSION = '2026.11.03-1';
+const APP_VERSION = '2026.11.04-1';
 const DEFAULT_MODEL = 'gemini-flash-latest';
 const HISTORY_LIMIT = 80;
 const RATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -1147,9 +1147,16 @@ const homeValue = (entry, kind) => rangeValue(homeRange(entry, kind));
 
 // What a used one really goes for: a buyer takes the cheapest comparable listing, so to resell you
 // have to beat it, and to buy here it has to beat it. The lowest listing, not the middle one.
+// A used price above the new one isn't a used price (another version, or a hopeful seller): it's
+// shown, flagged, and left out of every call.
+function usedAboveNew(entry) {
+  const u = homeValue(entry, 'used'), n = homeValue(entry, 'new');
+  return Boolean(u && n && u > n * 1.02);
+}
+
 function usedRef(entry) {
   const r = homeRange(entry, 'used');
-  if (!rangeValue(r)) return null;
+  if (!rangeValue(r) || usedAboveNew(entry)) return null;
   return toNum(r.low) || rangeValue(r);
 }
 // How many listings the used figure rests on (null when it's Gemini's own figure, e.g. clothes).
@@ -1634,7 +1641,7 @@ function orderLadderIn(entry) {
   const cex = cexFor(entry);
   const rows = [
     [card('#myNew'), homeValue(entry, 'new')],
-    [card('#myUsed'), homeValue(entry, 'used')],
+    [card('#myUsed'), usedAboveNew(entry) ? null : homeValue(entry, 'used')],
     [card('#officialCard'), off?.rm || null],
     [card('#jpUsed'), resale && fx(entry) ? resale * fx(entry) : null],
     [card('#cexSell'), cex.sell || null],
@@ -3403,6 +3410,7 @@ function renderPricesIn(entry) {
     const hi = toNum(r?.high);
     $(valueSel).textContent = entry.ai || entry.status.search === 'failed' ? rm(rangeValue(r)) : '…';
     $(rangeSel).textContent = lo && hi && lo !== hi ? `${rm(lo)} to ${rm(hi)}`
+      : kind === 'used' && usedAboveNew(entry) ? 'Above the new price, so not counted'
       : r?.unsourced ? `AI guessed ${rm(r.guess)}, ${r.others ? 'no exact-model listing' : 'no listing found'}`
         : entry.ai && !rangeValue(r) ? 'None found' : '';
   }
@@ -3850,13 +3858,14 @@ function renderVerdictCheck(entry, v) {
   const link = $('#verdictCheck');
   const n = usedCount(entry);
   const usedCall = entry.secondHand || dealTags(entry).some((t) => t.key === 'resell');
-  const show = Boolean(entry.ai) && v?.cls !== 'none' && usedCall && entry.kind !== 'clothes' && (n == null ? !usedRef(entry) : n < THIN);
+  const show = Boolean(entry.ai) && v?.cls !== 'none' && usedCall && entry.kind !== 'clothes' && (usedAboveNew(entry) || (n == null ? !usedRef(entry) : n < THIN));
   link.hidden = !show;
   if (!show) return;
   const links = marketOf(entry).links || [];
   const [label, base] = links.find(([l]) => /carousell|ebay|vinted|olx|kaidee|gumtree/i.test(l)) || links[0] || ['Google', 'https://www.google.com/search?q='];
   link.href = `${base}${encodeURIComponent(shortQuery(searchQuery(entry)))}`;
-  link.textContent = n ? `Used price is from only ${n} listing${n === 1 ? '' : 's'}. Check ${label} before you buy ›` : `No used listings found. Check ${label} before you buy ›`;
+  link.textContent = usedAboveNew(entry) ? `The used listing is priced above new. Check ${label} before you buy ›`
+    : n ? `Used price is from only ${n} listing${n === 1 ? '' : 's'}. Check ${label} before you buy ›` : `No used listings found. Check ${label} before you buy ›`;
 }
 
 function renderSourceLines(entry) {
@@ -4906,6 +4915,45 @@ async function importBackup(file) {
   for (const [k, v] of Object.entries(backup.images || {})) await imageDb.put(k, v);
   return true;
 }
+
+// Adds the scans in a backup or a test export to the ones already here, replacing nothing: for scans
+// made in Safari before the app was on the Home Screen (iPhones keep the two apart), on another phone,
+// or before a reinstall. Scans already here are skipped; their trips come along.
+async function mergeBackup(file) {
+  const backup = JSON.parse(await file.text());
+  if (backup?.app !== 'kaimono' || !backup.data) throw new Error("That file isn't a Tagwise backup or export.");
+  const parse = (k) => { try { const v = JSON.parse(backup.data[k] || '[]'); return Array.isArray(v) ? v : []; } catch { return []; } };
+  const mine = loadHistory();
+  const have = new Set(mine.map((e) => e.id));
+  const add = parse('kc.history').filter((e) => e && e.id && !have.has(e.id));
+  if (!add.length) return 'Nothing new in that file: its scans are all here already.';
+  const trips = loadTrips(); const tripIds = new Set(trips.map((t) => t.id));
+  const newTrips = parse('kc.trips').filter((t) => t && t.id && !tripIds.has(t.id));
+  const merged = [...mine, ...add].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  try {
+    store.set('history', merged);
+    if (newTrips.length) store.set('trips', [...trips, ...newTrips]);
+  } catch {
+    store.set('history', mine);
+    throw new Error('Not enough room on this phone for all those scans. Delete some old ones, then try again.');
+  }
+  const there = new Set((await imageDb.run('readonly', (st) => st.getAllKeys())) || []);
+  for (const [k, v] of Object.entries(backup.images || {})) if (!there.has(k)) await imageDb.put(k, v);
+  const bought = add.filter((e) => e.bought).length;
+  return `Added ${add.length} scan${add.length === 1 ? '' : 's'}${bought ? `, ${bought} bought` : ''}${newTrips.length ? ` and ${newTrips.length} trip${newTrips.length === 1 ? '' : 's'}` : ''}.`;
+}
+$('#mergeInput').addEventListener('change', async (e) => {
+  const file = e.target.files?.[0];
+  e.target.value = '';
+  if (!file) return;
+  try {
+    const msg = await mergeBackup(file);
+    route(true);
+    $('#backupStatus').textContent = msg;
+  } catch (err) {
+    $('#backupStatus').textContent = err instanceof SyntaxError ? "That file isn't a Tagwise backup or export." : err.message;
+  }
+});
 
 for (const [btn, forTesting] of [['#backupBtn', false], ['#testExportBtn', true]]) {
   $(btn).addEventListener('click', async () => {

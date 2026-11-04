@@ -185,3 +185,17 @@ test('a used call resting on one listing is flagged, with a link to check Carous
   await expect(page.locator('#verdictCheck')).toHaveText('Used price is from only 1 listing. Check Carousell before you buy ›');
   await expect(page.locator('#verdictCheck')).toHaveAttribute('href', 'https://www.carousell.com.my/search/Intel%20Core%20i9-12900K');
 });
+
+test('a used price above the new one is shown but not counted', async ({ page }) => {
+  await mockApis(page, { rates: { JPY: 0.0234 } });
+  const lens = scan('Lens', { product_name: 'Tamron 28-200mm A071', search_query: 'Tamron 28-200mm A071', my_new: { typical: 2383 }, my_used: { typical: 2630 }, listings: [
+    ...[2350, 2383, 2415].map((p) => ({ platform: 'Shopee', condition: 'new', title: 'Tamron 28-200mm A071', price_rm: p, exact_model: true })),
+    { platform: 'Carousell', condition: 'used', title: 'Tamron 28-200mm A071', price_rm: 2630, exact_model: true },
+  ] }, { yen: 74980, secondHand: true });
+  await openApp(page, { settings: { fxFee: 0 }, history: [lens] });
+  await page.goto('/#/scan/Lens');
+  await expect(page.locator('#myUsedRange')).toHaveText('Above the new price, so not counted');
+  await expect(page.locator('#verdictCheck')).toContainText('The used listing is priced above new');
+  await expect(page.locator('#verdictDetail')).toContainText('No MY second-hand listings found');
+  await expect(page.locator('#myUsed').locator('xpath=ancestor::*[contains(@class,"price-card")][1]')).toHaveClass(/rung-none/);
+});

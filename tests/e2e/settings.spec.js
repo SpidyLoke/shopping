@@ -167,3 +167,22 @@ test('the Take a photo card uses the accent text colour (readable with Black in 
   expect(bg).toBe('rgb(238, 240, 247)');
   expect(fg).toBe('rgb(13, 16, 32)');
 });
+
+test('Add scans merges a backup or export into what is here, replacing nothing', async ({ page }) => {
+  const { mockApis: m, openApp: o, scan: s } = require('./helpers');
+  await m(page);
+  await o(page, { history: [s('Here')] });
+  const old = [s('Here'), { ...s('Pad', { product_name: 'DualSense Edge' }), bought: true, tripId: 'tripX' }, s('Lens')];
+  const file = { name: 'tagwise-backup-old.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({
+    app: 'kaimono', version: 1, data: { 'kc.history': JSON.stringify(old), 'kc.trips': JSON.stringify([{ id: 'tripX', name: 'Tokyo 2025', createdAt: 1 }]), 'kc.apiKey': '"THEIRS"' }, images: { Pad: 'AAAA' },
+  })) };
+  await page.click('#settingsBtn');
+  await page.setInputFiles('#mergeInput', file);
+  await expect(page.locator('#backupStatus')).toHaveText('Added 2 scans, 1 bought and 1 trip.');
+  const st = await page.evaluate(() => ({ h: JSON.parse(localStorage.getItem('kc.history')).map((e) => e.id).sort(), key: localStorage.getItem('kc.apiKey'), trips: JSON.parse(localStorage.getItem('kc.trips')).map((t) => t.name) }));
+  expect(st.h).toEqual(['Here', 'Lens', 'Pad']);
+  expect(st.key).toBe('"K"'); // settings untouched
+  expect(st.trips).toContain('Tokyo 2025');
+  await page.setInputFiles('#mergeInput', file);
+  await expect(page.locator('#backupStatus')).toHaveText('Nothing new in that file: its scans are all here already.');
+});
